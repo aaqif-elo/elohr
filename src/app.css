@@ -1,0 +1,32 @@
+@import 'tailwindcss';
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+:root {
+  --background-rgb: 224, 236, 228;
+  --foreground-rgb: 4, 10, 18;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background-rgb: 4, 10, 18;
+    --foreground-rgb: 224, 236, 228;
+  }
+}
+
+body {
+  background: rgb(var(--background-rgb));
+  color: rgb(var(--foreground-rgb));
+}
+
+/* Add this to fix grid content cut-off */
+.attendance-grid-container {
+  overflow-y: auto;
+  padding-top: 0.5rem;
+  max-height: 100%;
+}
