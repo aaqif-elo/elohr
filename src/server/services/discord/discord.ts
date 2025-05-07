@@ -7,6 +7,8 @@ import {
   TextChannel,
 } from "discord.js";
 
+import { config } from "dotenv";
+config();
 // Environment variables
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const DISCORD_SERVER_ID = process.env.DISCORD_SERVER_ID;
@@ -62,10 +64,10 @@ export const initializeDiscord = async () => {
     console.log("Discord client connected successfully");
 
     // Register event handlers
-    setupEventHandlers();
+    // setupEventHandlers();
 
     // Register application commands
-    await registerCommands();
+    // await registerCommands();
 
     return discordClient;
   } catch (error) {
@@ -122,7 +124,7 @@ async function registerCommands() {
   ];
 
   try {
-    const rest = new REST({ version: "10" }).setToken(DISCORD_BOT_TOKEN);
+    const rest = new REST().setToken(DISCORD_BOT_TOKEN);
     console.log(`Started refreshing ${commands.length} application commands`);
 
     await rest.put(Routes.applicationGuildCommands(BOT_ID, DISCORD_SERVER_ID), {
