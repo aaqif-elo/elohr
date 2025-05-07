@@ -1,5 +1,6 @@
 {
   "cSpell.words": [
     "solidjs"
-  ]
+  ],
+  "postman.settings.dotenv-detection-notification-visibility": false
 }

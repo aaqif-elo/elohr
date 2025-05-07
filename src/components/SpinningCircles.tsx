@@ -15,7 +15,7 @@ export enum SpinnerType {
   threeDots = 'threeDots',
 }
 
-export interface SpinnerProps extends JSX.SvgSVGAttributes<SVGSVGElement> {
+interface SpinnerProps extends JSX.SvgSVGAttributes<SVGSVGElement> {
   width?: string | number;
   height?: string | number;
   type?: SpinnerType;

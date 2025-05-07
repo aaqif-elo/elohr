@@ -1,6 +1,6 @@
-export type TimeUnit = 'week' | 'month' | 'quarter' | 'year';
+export type TimeUnit = "week" | "month" | "quarter" | "year";
 
-export interface LeaveInfo {
+interface LeaveInfo {
   date: Date;
   reason?: string;
   approved?: boolean;
@@ -56,34 +56,3 @@ export interface TrpcAttendanceSummary {
     absentDates: string[];
   };
 }
-
-// Add this to the utils.ts file where the conversion function is defined
-export const convertTrpcAttendanceSummaryToAttendanceSummary = (
-  summary: TrpcAttendanceSummary
-): AttendanceSummary => {
-  return {
-    timeRange: {
-      startDate: new Date(summary.timeRange.startDate),
-      endDate: new Date(summary.timeRange.endDate),
-    },
-    unit: summary.unit,
-    value: summary.value,
-    stats: {
-      daysWorked: summary.stats.daysWorked,
-      daysOnLeave: summary.stats.daysOnLeave,
-      daysAbsent: summary.stats.daysAbsent,
-      totalWorkDays: summary.stats.totalWorkDays,
-      // Convert string dates to Date objects
-      workedDates: summary.stats.workedDates.map(date => new Date(date)),
-      leaveDates: summary.stats.leaveDates.map(date => new Date(date)),
-      leaveInfo: summary.stats.leaveInfo.map(info => ({
-        date: new Date(info.date),
-        reason: info.reason,
-        approved: info.approved,
-        approvedBy: info.approvedBy,
-        approvedDate: info.approvedDate ? new Date(info.approvedDate) : undefined,
-      })),
-      absentDates: summary.stats.absentDates.map(date => new Date(date)),
-    },
-  };
-};

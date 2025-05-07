@@ -1,7 +1,14 @@
-import {Attendance, Break, ContractType, User, WorkSegment} from '@prisma/client';
-import {Attendance as AttendanceState} from './user.store';
+import {
+  Attendance,
+  Break,
+  ContractType,
+  User,
+  WorkSegment,
+} from "@prisma/client";
+import { Attendance as AttendanceState } from "./user.store";
 
-export interface TrpcUser extends Omit<User, 'leaves' | 'contracts' | 'createdAt' | 'updatedAt'> {
+export interface TrpcUser
+  extends Omit<User, "leaves" | "contracts" | "createdAt" | "updatedAt"> {
   leaves: {
     remainingLeaveCount: number;
     resetAt: string;
@@ -19,18 +26,18 @@ export interface TrpcUser extends Omit<User, 'leaves' | 'contracts' | 'createdAt
   updatedAt: string;
 }
 
-export interface TrpcBreaks extends Omit<Break, 'start' | 'end'> {
+interface TrpcBreaks extends Omit<Break, "start" | "end"> {
   start: string;
   end: string | null;
 }
 
-export interface TrpcWorkSegments extends Omit<WorkSegment, 'start' | 'end'> {
+interface TrpcWorkSegments extends Omit<WorkSegment, "start" | "end"> {
   start: string;
   end: string | null;
 }
 
 export interface TrpcAttendance
-  extends Omit<Attendance, 'breaks' | 'login' | 'logout' | 'workSegments'> {
+  extends Omit<Attendance, "breaks" | "login" | "logout" | "workSegments"> {
   breaks: TrpcBreaks[];
   login: string;
   logout: string | null;
@@ -41,14 +48,16 @@ export interface TrpcUserWithAttendance extends TrpcUser {
   attendance?: TrpcAttendance;
 }
 
-export const setTimeToEndOfDayInBD = (date: Date): Date => {
+const setTimeToEndOfDayInBD = (date: Date): Date => {
   const dateCopy = new Date(date);
   dateCopy.setDate(dateCopy.getDate() + 1);
   dateCopy.setUTCHours(17, 59, 0, 0);
   return dateCopy;
 };
 
-export const convertTrpcAttendanceToDbAttendance = (attendance: TrpcAttendance): Attendance => {
+export const convertTrpcAttendanceToDbAttendance = (
+  attendance: TrpcAttendance
+): Attendance => {
   // Handle case where logout was not triggered for the day
   const endOfDay = setTimeToEndOfDayInBD(new Date(attendance.login));
   const shouldHaveLoggedOut = new Date().getTime() > endOfDay.getTime();
@@ -61,35 +70,41 @@ export const convertTrpcAttendanceToDbAttendance = (attendance: TrpcAttendance):
       length_ms: item.length_ms
         ? item.length_ms
         : item.end
-          ? new Date(item.end).getTime() - new Date(item.start).getTime()
-          : shouldHaveLoggedOut
-            ? new Date(endOfDay).getTime() - new Date(item.start).getTime()
-            : null,
-      end: item.end ? new Date(item.end) : shouldHaveLoggedOut ? new Date(endOfDay) : null,
+        ? new Date(item.end).getTime() - new Date(item.start).getTime()
+        : shouldHaveLoggedOut
+        ? new Date(endOfDay).getTime() - new Date(item.start).getTime()
+        : null,
+      end: item.end
+        ? new Date(item.end)
+        : shouldHaveLoggedOut
+        ? new Date(endOfDay)
+        : null,
     } as T;
   };
 
   return {
     ...attendance,
     breaks: attendance.breaks.map(convertTrpcSegmentToSegment<Break>),
-    workSegments: attendance.workSegments.map(convertTrpcSegmentToSegment<WorkSegment>),
+    workSegments: attendance.workSegments.map(
+      convertTrpcSegmentToSegment<WorkSegment>
+    ),
     login: new Date(attendance.login),
     logout: attendance.logout
       ? new Date(attendance.logout)
       : shouldHaveLoggedOut
-        ? new Date(endOfDay)
-        : null,
+      ? new Date(endOfDay)
+      : null,
   };
 };
 
 export const convertTrpcUserToDbUser = (user: TrpcUser): User => {
   return {
     ...user,
-    leaves: user.leaves.map(leave => ({
+    leaves: user.leaves.map((leave) => ({
       ...leave,
       resetAt: new Date(leave.resetAt),
     })),
-    contracts: user.contracts.map(contract => ({
+    contracts: user.contracts.map((contract) => ({
       ...contract,
       startDate: new Date(contract.startDate),
       endDate: contract.endDate ? new Date(contract.endDate) : null,
@@ -102,11 +117,13 @@ export const convertTrpcUserToDbUser = (user: TrpcUser): User => {
   };
 };
 
-export const getEffectiveEndTime = (segment: WorkSegment | Break): Date => {
+const getEffectiveEndTime = (segment: WorkSegment | Break): Date => {
   return segment.end || new Date();
 };
 
-export const calculateMsWorkedOrBreaksTaken = (segments: (WorkSegment | Break)[]): number => {
+export const calculateMsWorkedOrBreaksTaken = (
+  segments: (WorkSegment | Break)[]
+): number => {
   return segments.reduce((total, segment) => {
     if (segment.length_ms) {
       return total + segment.length_ms;
@@ -123,7 +140,7 @@ export interface TimeSegment {
   start: Date;
   end?: Date; // Make end optional
   length_ms: number | null;
-  type: 'work' | 'break';
+  type: "work" | "break";
   channel?: string;
 }
 
@@ -134,7 +151,9 @@ export interface TimeSegment {
  * 2) Otherwise (older DB records), fall back to the original logic
  *    where we infer "work" segments from the intervals between breaks.
  */
-export function generateTimeSegments(attendance: AttendanceState): TimeSegment[] {
+export function generateTimeSegments(
+  attendance: AttendanceState
+): TimeSegment[] {
   return generateTimeSegmentPreState({
     breaks: attendance.breaks,
     workSegments: attendance.workSegments,
@@ -143,34 +162,34 @@ export function generateTimeSegments(attendance: AttendanceState): TimeSegment[]
   });
 }
 interface AttendanceWithoutLoginMaybe
-  extends Pick<Attendance, 'logout' | 'breaks' | 'workSegments'> {
+  extends Pick<Attendance, "logout" | "breaks" | "workSegments"> {
   login: Date | null;
 }
 export function generateTimeSegmentPreState(
   attendance: AttendanceWithoutLoginMaybe
 ): TimeSegment[] {
-  const {breaks, workSegments, login, logout} = attendance;
+  const { breaks, workSegments, login, logout } = attendance;
   const timeSegments: TimeSegment[] = [];
   let id = 1;
   // If workSegments exist and contain entries, use them directly
   if (workSegments && workSegments.length > 0) {
     // 1) Transform each workSegment into a TimeSegment of type 'work'
-    const mappedWorkSegments: TimeSegment[] = workSegments.map(ws => ({
+    const mappedWorkSegments: TimeSegment[] = workSegments.map((ws) => ({
       id: 0, // temporary placeholder; will assign later
       start: ws.start,
       end: ws.end ?? undefined,
       length_ms: ws.length_ms,
-      type: 'work',
+      type: "work",
       channel: ws.project,
     }));
 
     // 2) Transform each break into a TimeSegment of type 'break'
-    const mappedBreakSegments: TimeSegment[] = breaks.map(b => ({
+    const mappedBreakSegments: TimeSegment[] = breaks.map((b) => ({
       id: 0, // temporary placeholder; will assign later
       start: b.start,
       end: b.end ?? undefined,
       length_ms: b.length_ms,
-      type: 'break',
+      type: "break",
     }));
 
     // 3) Combine & sort by start time
@@ -179,7 +198,7 @@ export function generateTimeSegmentPreState(
     );
 
     // 4) Assign IDs in chronological order
-    combined.forEach(segment => {
+    combined.forEach((segment) => {
       segment.id = id++;
     });
 
@@ -205,8 +224,8 @@ export function generateTimeSegmentPreState(
         start: currentTime,
         end: breakTime.start,
         length_ms: breakTime.start.getTime() - currentTime.getTime(),
-        type: 'work',
-        channel: 'Working',
+        type: "work",
+        channel: "Working",
       });
     }
 
@@ -216,7 +235,7 @@ export function generateTimeSegmentPreState(
       start: breakTime.start,
       end: breakTime.end ?? undefined,
       length_ms: breakTime.length_ms,
-      type: 'break',
+      type: "break",
     });
 
     // 3) Update currentTime to the end of this break (if it exists).
@@ -237,8 +256,8 @@ export function generateTimeSegmentPreState(
       start: currentTime,
       end: logout ?? undefined,
       length_ms: logout ? logout.getTime() - currentTime.getTime() : null,
-      type: 'work',
-      channel: 'Working',
+      type: "work",
+      channel: "Working",
     });
   }
 
@@ -246,7 +265,7 @@ export function generateTimeSegmentPreState(
 }
 
 // Add this function to your existing utils.ts file
-import {AttendanceSummary, TrpcAttendanceSummary} from '../types/attendance';
+import { AttendanceSummary, TrpcAttendanceSummary } from "../types/attendance";
 
 export function convertTrpcAttendanceSummaryToAttendanceSummary(
   summary: TrpcAttendanceSummary
@@ -260,16 +279,18 @@ export function convertTrpcAttendanceSummaryToAttendanceSummary(
     value: summary.value,
     stats: {
       ...summary.stats,
-      workedDates: summary.stats.workedDates.map(date => new Date(date)),
-      leaveDates: summary.stats.leaveDates.map(date => new Date(date)),
-      leaveInfo: summary.stats.leaveInfo.map(info => ({
+      workedDates: summary.stats.workedDates.map((date) => new Date(date)),
+      leaveDates: summary.stats.leaveDates.map((date) => new Date(date)),
+      leaveInfo: summary.stats.leaveInfo.map((info) => ({
         date: new Date(info.date),
         reason: info.reason,
         approved: info.approved,
         approvedBy: info.approvedBy,
-        approvedDate: info.approvedDate ? new Date(info.approvedDate) : undefined,
+        approvedDate: info.approvedDate
+          ? new Date(info.approvedDate)
+          : undefined,
       })),
-      absentDates: summary.stats.absentDates.map(date => new Date(date)),
+      absentDates: summary.stats.absentDates.map((date) => new Date(date)),
     },
   };
 }

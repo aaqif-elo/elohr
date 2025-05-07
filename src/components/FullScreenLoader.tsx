@@ -1,6 +1,6 @@
-import {SpinningCircles} from './SpinningCircles';
+import { SpinningCircles } from "./SpinningCircles";
 
-export interface FullScreenLoaderProps {
+interface FullScreenLoaderProps {
   loaderText?: string;
 }
 

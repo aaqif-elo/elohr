@@ -1,17 +1,25 @@
-import {createSignal, createMemo, createEffect, Show, For, onMount, onCleanup} from 'solid-js';
-import {createStore} from 'solid-js/store';
-import './Calendar.css';
-import {getSystemTheme} from './utils';
-import {SpinningCircles} from '../SpinningCircles';
+import {
+  createSignal,
+  createMemo,
+  createEffect,
+  Show,
+  For,
+  onMount,
+  onCleanup,
+} from "solid-js";
+import { createStore } from "solid-js/store";
+import "./Calendar.css";
+import { getSystemTheme } from "./utils";
+import { SpinningCircles } from "../SpinningCircles";
 
 // Add imports for dropdown menu icon
-import {FiMoreVertical} from 'solid-icons/fi';
-import {UserRoleTypes} from '@prisma/client';
-import {getUser} from '~/store';
-import toast from 'solid-toast';
+import { FiMoreVertical } from "solid-icons/fi";
+import { UserRoleTypes } from "@prisma/client";
+import { getUser } from "~/store";
+import toast from "solid-toast";
 
 // Menu item type for our dropdown
-export type MenuAction = {
+type MenuAction = {
   label: string;
   action: (date: Date) => void | Promise<void>;
 };
@@ -26,13 +34,13 @@ export type DateHighlight = {
 };
 
 // Updated MonthStats to only include stats we can't calculate
-export type MonthStats = {
+type MonthStats = {
   absences: number;
   leavesTaken: number;
   [key: string]: number; // Allow for custom stats
 };
 
-export type HRCalendarProps = {
+type HRCalendarProps = {
   /**
    * Initial selected date
    */
@@ -82,11 +90,15 @@ export type HRCalendarProps = {
 
 export function HRCalendar(props: HRCalendarProps) {
   // Initialize with current date if not provided
-  const [currentDate, setCurrentDate] = createSignal(props.initialDate || new Date());
-  const [selectedDate, setSelectedDate] = createSignal(props.initialDate || new Date());
+  const [currentDate, setCurrentDate] = createSignal(
+    props.initialDate || new Date()
+  );
+  const [selectedDate, setSelectedDate] = createSignal(
+    props.initialDate || new Date()
+  );
   const [hoverInfo, setHoverInfo] = createStore({
     visible: false,
-    text: '',
+    text: "",
     x: 0,
     y: 0,
   });
@@ -94,14 +106,23 @@ export function HRCalendar(props: HRCalendarProps) {
   const [theme, setTheme] = createSignal(getSystemTheme());
 
   // Add new state for tracking hovered stat category
-  const [hoveredCategory, setHoveredCategory] = createSignal<string | null>(null);
+  const [hoveredCategory, setHoveredCategory] = createSignal<string | null>(
+    null
+  );
 
   // New state for dropdown menu
-  const [menuOpen, setMenuOpen] = createSignal<{date: Date; x: number; y: number} | null>(null);
+  const [menuOpen, setMenuOpen] = createSignal<{
+    date: Date;
+    x: number;
+    y: number;
+  } | null>(null);
 
   // Add new state for shift holiday mode
   const [shiftHolidayMode, setShiftHolidayMode] = createSignal(false);
-  const [holidayToShift, setHolidayToShift] = createSignal<{date: Date; name: string} | null>(null);
+  const [holidayToShift, setHolidayToShift] = createSignal<{
+    date: Date;
+    name: string;
+  } | null>(null);
 
   // Add new state for leave selection
   const [leaveSelectionMode, setLeaveSelectionMode] = createSignal(false);
@@ -114,7 +135,11 @@ export function HRCalendar(props: HRCalendarProps) {
   };
 
   // Check if a date is in the future or today
-  function isCurrentOrFuture(day: number, month: number, year: number): boolean {
+  function isCurrentOrFuture(
+    day: number,
+    month: number,
+    year: number
+  ): boolean {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const date = new Date(year, month, day);
@@ -124,8 +149,8 @@ export function HRCalendar(props: HRCalendarProps) {
   // Helper function to format date as YYYY-MM-DD
   function formatDateToYYYYMMDD(date: Date): string {
     const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
   }
 
@@ -139,12 +164,16 @@ export function HRCalendar(props: HRCalendarProps) {
     const highlight = props.dateHighlights?.[formattedDate];
 
     const isHolidayDate = highlight?.isHoliday === true;
-    const isWeekendDate = isWeekend(date.getDate(), date.getMonth(), date.getFullYear());
+    const isWeekendDate = isWeekend(
+      date.getDate(),
+      date.getMonth(),
+      date.getFullYear()
+    );
 
     // Replace onRequestLeave with internal handler
     if (!isPastDate && !isHolidayDate && !isWeekendDate) {
       actions.push({
-        label: 'Request Leave',
+        label: "Request Leave",
         action: () => {
           // Start leave selection mode
           setSelectedLeaveDates([date]);
@@ -157,8 +186,8 @@ export function HRCalendar(props: HRCalendarProps) {
     if (props.onCancelLeave && !isPastDate) {
       if (highlight?.isLeave) {
         actions.push({
-          label: 'Cancel leave request',
-          action: async date => {
+          label: "Cancel leave request",
+          action: async (date) => {
             props.onCancelLeave?.(date);
           },
         });
@@ -172,7 +201,7 @@ export function HRCalendar(props: HRCalendarProps) {
         // Allow converting to holiday if it's not already a holiday
         if (!isHolidayDate && props.onConvertToHoliday) {
           actions.push({
-            label: 'Mark as holiday',
+            label: "Mark as holiday",
             action: props.onConvertToHoliday,
           });
         }
@@ -180,7 +209,7 @@ export function HRCalendar(props: HRCalendarProps) {
         // Allow converting to workday if it's currently a holiday
         if (isHolidayDate && props.onConvertToWorkday) {
           actions.push({
-            label: 'Mark as regular workday',
+            label: "Mark as regular workday",
             action: props.onConvertToWorkday,
           });
         }
@@ -188,11 +217,11 @@ export function HRCalendar(props: HRCalendarProps) {
         // Allow shifting holiday if it's currently a holiday
         if (isHolidayDate && props.onShiftHoliday) {
           actions.push({
-            label: 'Shift holiday to another date',
-            action: date => {
+            label: "Shift holiday to another date",
+            action: (date) => {
               setHolidayToShift({
                 date,
-                name: highlight?.description || 'Holiday',
+                name: highlight?.description || "Holiday",
               });
               setShiftHolidayMode(true);
             },
@@ -239,18 +268,18 @@ export function HRCalendar(props: HRCalendarProps) {
     if (menuOpen()) {
       const handleOutsideClick = (e: MouseEvent) => {
         // Check if click target is part of the menu
-        const menuElement = document.querySelector('.day-menu-dropdown');
+        const menuElement = document.querySelector(".day-menu-dropdown");
         if (menuElement && !menuElement.contains(e.target as Node)) {
           closeMenu();
         }
       };
 
       // Add the event listener to document
-      document.addEventListener('click', handleOutsideClick);
+      document.addEventListener("click", handleOutsideClick);
 
       // Clean up when menu closes
       onCleanup(() => {
-        document.removeEventListener('click', handleOutsideClick);
+        document.removeEventListener("click", handleOutsideClick);
       });
     }
   });
@@ -285,13 +314,18 @@ export function HRCalendar(props: HRCalendarProps) {
 
   // Add function to toggle date selection
   function toggleDateSelection(date: Date) {
-    setSelectedLeaveDates(prev => {
+    setSelectedLeaveDates((prev) => {
       const dateStr = formatDateToYYYYMMDD(date);
-      const existingIndex = prev.findIndex(d => formatDateToYYYYMMDD(d) === dateStr);
+      const existingIndex = prev.findIndex(
+        (d) => formatDateToYYYYMMDD(d) === dateStr
+      );
 
       if (existingIndex >= 0) {
         // Remove date if already selected
-        return [...prev.slice(0, existingIndex), ...prev.slice(existingIndex + 1)];
+        return [
+          ...prev.slice(0, existingIndex),
+          ...prev.slice(existingIndex + 1),
+        ];
       } else {
         // Add date if not selected
         return [...prev, date];
@@ -328,7 +362,10 @@ export function HRCalendar(props: HRCalendarProps) {
     props.onSelect?.(newDate);
 
     // If selected date is not in current month view, update the view
-    if (month !== currentDate().getMonth() || year !== currentDate().getFullYear()) {
+    if (
+      month !== currentDate().getMonth() ||
+      year !== currentDate().getFullYear()
+    ) {
       setCurrentDate(newDate);
     }
   }
@@ -337,16 +374,16 @@ export function HRCalendar(props: HRCalendarProps) {
   createEffect(() => {
     if (shiftHolidayMode()) {
       const handleEscKey = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') {
+        if (e.key === "Escape") {
           setShiftHolidayMode(false);
           setHolidayToShift(null);
         }
       };
 
-      window.addEventListener('keydown', handleEscKey);
+      window.addEventListener("keydown", handleEscKey);
 
       onCleanup(() => {
-        window.removeEventListener('keydown', handleEscKey);
+        window.removeEventListener("keydown", handleEscKey);
       });
     }
   });
@@ -355,7 +392,7 @@ export function HRCalendar(props: HRCalendarProps) {
   function completeLeaveSelection() {
     const dates = selectedLeaveDates();
     if (dates.length === 0) {
-      toast.error('Please select at least one date for leave');
+      toast.error("Please select at least one date for leave");
       return;
     }
 
@@ -380,16 +417,16 @@ export function HRCalendar(props: HRCalendarProps) {
 
   // Update theme if system preference changes
   onMount(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
     const handleChange = () => {
       setTheme(getSystemTheme());
     };
 
-    mediaQuery.addEventListener('change', handleChange);
+    mediaQuery.addEventListener("change", handleChange);
 
     // Cleanup listener on component unmount
-    return () => mediaQuery.removeEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
   });
 
   // Default weekend days (Sunday and Saturday)
@@ -408,7 +445,10 @@ export function HRCalendar(props: HRCalendarProps) {
     let holidays = 0;
     if (props.dateHighlights) {
       for (let day = 1; day <= totalDaysInMonth; day++) {
-        const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const dateString = `${year}-${String(month + 1).padStart(
+          2,
+          "0"
+        )}-${String(day).padStart(2, "0")}`;
         const highlight = props.dateHighlights[dateString];
         if (highlight && highlight.isHoliday) {
           holidays++;
@@ -438,11 +478,17 @@ export function HRCalendar(props: HRCalendarProps) {
 
       for (let day = 1; day <= currentDay; day++) {
         const date = new Date(year, month, day);
-        const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const dateString = `${year}-${String(month + 1).padStart(
+          2,
+          "0"
+        )}-${String(day).padStart(2, "0")}`;
         const highlight = props.dateHighlights?.[dateString];
 
         // Skip weekends and holidays
-        if (!weekendDays().includes(date.getDay()) && !(highlight && highlight.isHoliday)) {
+        if (
+          !weekendDays().includes(date.getDay()) &&
+          !(highlight && highlight.isHoliday)
+        ) {
           workingDaysTillNow++;
         }
       }
@@ -486,7 +532,7 @@ export function HRCalendar(props: HRCalendarProps) {
 
     // Calculate days from previous month
     const prevMonthLastDay = new Date(year, month, 0).getDate();
-    const prevMonthDays = Array.from({length: previousMonthDays}, (_, i) => ({
+    const prevMonthDays = Array.from({ length: previousMonthDays }, (_, i) => ({
       day: prevMonthLastDay - previousMonthDays + i + 1,
       month: month - 1 < 0 ? 11 : month - 1,
       year: month - 1 < 0 ? year - 1 : year,
@@ -494,7 +540,7 @@ export function HRCalendar(props: HRCalendarProps) {
     }));
 
     // Current month days
-    const currentMonthDays = Array.from({length: totalDays}, (_, i) => ({
+    const currentMonthDays = Array.from({ length: totalDays }, (_, i) => ({
       day: i + 1,
       month,
       year,
@@ -505,12 +551,15 @@ export function HRCalendar(props: HRCalendarProps) {
     const allDays = [...prevMonthDays, ...currentMonthDays];
 
     // Add days from next month to complete the grid (6 rows x 7 days)
-    const nextMonthDays = Array.from({length: 42 - allDays.length}, (_, i) => ({
-      day: i + 1,
-      month: month + 1 > 11 ? 0 : month + 1,
-      year: month + 1 > 11 ? year + 1 : year,
-      currentMonth: false,
-    }));
+    const nextMonthDays = Array.from(
+      { length: 42 - allDays.length },
+      (_, i) => ({
+        day: i + 1,
+        month: month + 1 > 11 ? 0 : month + 1,
+        year: month + 1 > 11 ? year + 1 : year,
+        currentMonth: false,
+      })
+    );
 
     return [...allDays, ...nextMonthDays];
   });
@@ -519,14 +568,20 @@ export function HRCalendar(props: HRCalendarProps) {
   function isSelected(day: number, month: number, year: number): boolean {
     const selected = selectedDate();
     return (
-      selected.getDate() === day && selected.getMonth() === month && selected.getFullYear() === year
+      selected.getDate() === day &&
+      selected.getMonth() === month &&
+      selected.getFullYear() === year
     );
   }
 
   // Check if a date is today
   function isToday(day: number, month: number, year: number): boolean {
     const today = new Date();
-    return today.getDate() === day && today.getMonth() === month && today.getFullYear() === year;
+    return (
+      today.getDate() === day &&
+      today.getMonth() === month &&
+      today.getFullYear() === year
+    );
   }
 
   // Check if a date is a weekend
@@ -536,10 +591,16 @@ export function HRCalendar(props: HRCalendarProps) {
   }
 
   // Get date highlight information
-  function getHighlight(day: number, month: number, year: number): DateHighlight | undefined {
+  function getHighlight(
+    day: number,
+    month: number,
+    year: number
+  ): DateHighlight | undefined {
     if (!props.dateHighlights) return undefined;
 
-    const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dateString = `${year}-${String(month + 1).padStart(2, "0")}-${String(
+      day
+    ).padStart(2, "0")}`;
     return props.dateHighlights[dateString];
   }
 
@@ -568,7 +629,11 @@ export function HRCalendar(props: HRCalendarProps) {
     );
   }
 
-  function isWorkingDayTillNow(day: number, month: number, year: number): boolean {
+  function isWorkingDayTillNow(
+    day: number,
+    month: number,
+    year: number
+  ): boolean {
     const today = new Date();
     const date = new Date(year, month, day);
     return (
@@ -580,22 +645,26 @@ export function HRCalendar(props: HRCalendarProps) {
   }
 
   // Check if a date matches the currently hovered category
-  function matchesHoveredCategory(day: number, month: number, year: number): boolean {
+  function matchesHoveredCategory(
+    day: number,
+    month: number,
+    year: number
+  ): boolean {
     const category = hoveredCategory();
     if (!category) return false;
 
     switch (category) {
-      case 'holidays':
+      case "holidays":
         return isHoliday(day, month, year);
-      case 'workingDays':
+      case "workingDays":
         return isWorkingDay(day, month, year);
-      case 'workingDaysTillNow':
+      case "workingDaysTillNow":
         return isWorkingDayTillNow(day, month, year);
-      case 'weekends':
+      case "weekends":
         return isWeekend(day, month, year);
-      case 'absences':
+      case "absences":
         return isAbsence(day, month, year);
-      case 'leavesTaken':
+      case "leavesTaken":
         return isLeave(day, month, year);
       default:
         return false;
@@ -645,7 +714,7 @@ export function HRCalendar(props: HRCalendarProps) {
 
   // Hide tooltip when mouse leaves
   function hideTooltip() {
-    setHoverInfo('visible', false);
+    setHoverInfo("visible", false);
     setHoveredCategory(null);
   }
 
@@ -670,11 +739,11 @@ export function HRCalendar(props: HRCalendarProps) {
     // This ensures absences and other special dates always get highlighted correctly
     if (highlight) {
       if (highlight.isAbsence) {
-        setHoveredCategory('absences');
+        setHoveredCategory("absences");
       } else if (highlight.isHoliday) {
-        setHoveredCategory('holidays');
+        setHoveredCategory("holidays");
       } else if (highlight.isLeave) {
-        setHoveredCategory('leavesTaken');
+        setHoveredCategory("leavesTaken");
       }
 
       // Format the tooltip text with the description on a second line
@@ -709,27 +778,42 @@ export function HRCalendar(props: HRCalendarProps) {
       return;
     } else if (isWorkingDay(day, month, year)) {
       if (isWorkingDayTillNow(day, month, year)) {
-        setHoveredCategory('workingDaysTillNow');
+        setHoveredCategory("workingDaysTillNow");
       } else {
-        setHoveredCategory('workingDays');
+        setHoveredCategory("workingDays");
       }
     }
   }
 
   return (
-    <div class={`hr-calendar ${theme() === 'dark' ? 'dark-mode' : 'light-mode'}`}>
+    <div
+      class={`hr-calendar ${theme() === "dark" ? "dark-mode" : "light-mode"}`}
+    >
       {/* Leave selection mode prompt */}
       <Show when={leaveSelectionMode()}>
         <div class="shift-holiday-prompt">
           <div>
-            <span>Select dates for leave request ({selectedLeaveDates().length} selected)</span>
-            <div class="text-xs opacity-80">Click on dates to select/deselect</div>
+            <span>
+              Select dates for leave request ({selectedLeaveDates().length}{" "}
+              selected)
+            </span>
+            <div class="text-xs opacity-80">
+              Click on dates to select/deselect
+            </div>
           </div>
           <div class="flex gap-2">
-            <button type="button" onClick={cancelLeaveSelection} class="shift-cancel-btn">
+            <button
+              type="button"
+              onClick={cancelLeaveSelection}
+              class="shift-cancel-btn"
+            >
               Cancel
             </button>
-            <button type="button" onClick={completeLeaveSelection} class="shift-cancel-btn">
+            <button
+              type="button"
+              onClick={completeLeaveSelection}
+              class="shift-cancel-btn"
+            >
               Done
             </button>
           </div>
@@ -744,10 +828,12 @@ export function HRCalendar(props: HRCalendarProps) {
             <div
               class="stat-item"
               classList={{
-                'hover-highlight': hoveredCategory() === 'workingDays',
-                dimmed: hoveredCategory() !== null && hoveredCategory() !== 'workingDays',
+                "hover-highlight": hoveredCategory() === "workingDays",
+                dimmed:
+                  hoveredCategory() !== null &&
+                  hoveredCategory() !== "workingDays",
               }}
-              onMouseEnter={() => handleStatHover('workingDays')}
+              onMouseEnter={() => handleStatHover("workingDays")}
               onMouseLeave={handleStatLeave}
             >
               <div class="stat-label">Working Days (Total)</div>
@@ -758,24 +844,30 @@ export function HRCalendar(props: HRCalendarProps) {
             <div
               class="stat-item"
               classList={{
-                'hover-highlight': hoveredCategory() === 'workingDaysTillNow',
-                dimmed: hoveredCategory() !== null && hoveredCategory() !== 'workingDaysTillNow',
+                "hover-highlight": hoveredCategory() === "workingDaysTillNow",
+                dimmed:
+                  hoveredCategory() !== null &&
+                  hoveredCategory() !== "workingDaysTillNow",
               }}
-              onMouseEnter={() => handleStatHover('workingDaysTillNow')}
+              onMouseEnter={() => handleStatHover("workingDaysTillNow")}
               onMouseLeave={handleStatLeave}
             >
               <div class="stat-label">Working Days (Till Now)</div>
-              <div class="stat-value">{calculatedStats().workingDaysTillNow}</div>
+              <div class="stat-value">
+                {calculatedStats().workingDaysTillNow}
+              </div>
             </div>
 
             {/* Holidays */}
             <div
               class="stat-item"
               classList={{
-                'hover-highlight': hoveredCategory() === 'holidays',
-                dimmed: hoveredCategory() !== null && hoveredCategory() !== 'holidays',
+                "hover-highlight": hoveredCategory() === "holidays",
+                dimmed:
+                  hoveredCategory() !== null &&
+                  hoveredCategory() !== "holidays",
               }}
-              onMouseEnter={() => handleStatHover('holidays')}
+              onMouseEnter={() => handleStatHover("holidays")}
               onMouseLeave={handleStatLeave}
             >
               <div class="stat-label">Holidays</div>
@@ -786,10 +878,12 @@ export function HRCalendar(props: HRCalendarProps) {
             <div
               class="stat-item"
               classList={{
-                'hover-highlight': hoveredCategory() === 'absences',
-                dimmed: hoveredCategory() !== null && hoveredCategory() !== 'absences',
+                "hover-highlight": hoveredCategory() === "absences",
+                dimmed:
+                  hoveredCategory() !== null &&
+                  hoveredCategory() !== "absences",
               }}
-              onMouseEnter={() => handleStatHover('absences')}
+              onMouseEnter={() => handleStatHover("absences")}
               onMouseLeave={handleStatLeave}
             >
               <div class="stat-label">Absences</div>
@@ -800,10 +894,12 @@ export function HRCalendar(props: HRCalendarProps) {
             <div
               class="stat-item"
               classList={{
-                'hover-highlight': hoveredCategory() === 'leavesTaken',
-                dimmed: hoveredCategory() !== null && hoveredCategory() !== 'leavesTaken',
+                "hover-highlight": hoveredCategory() === "leavesTaken",
+                dimmed:
+                  hoveredCategory() !== null &&
+                  hoveredCategory() !== "leavesTaken",
               }}
-              onMouseEnter={() => handleStatHover('leavesTaken')}
+              onMouseEnter={() => handleStatHover("leavesTaken")}
               onMouseLeave={handleStatLeave}
             >
               <div class="stat-label">Leaves Taken</div>
@@ -815,7 +911,9 @@ export function HRCalendar(props: HRCalendarProps) {
           <Show when={shiftHolidayMode()}>
             <div class="shift-status-indicator">
               <p>Shifting holiday: "{holidayToShift()?.name}"</p>
-              <p class="shift-instructions">Navigate to any month and select a valid date</p>
+              <p class="shift-instructions">
+                Navigate to any month and select a valid date
+              </p>
               <button
                 type="button"
                 class="shift-cancel-btn"
@@ -835,7 +933,9 @@ export function HRCalendar(props: HRCalendarProps) {
           <div class="hr-calendar-header">
             {/* Move the shift prompt here instead of at the top level */}
             <Show when={shiftHolidayMode()}>
-              <div class="shift-holiday-indicator">Shifting: "{holidayToShift()?.name}"</div>
+              <div class="shift-holiday-indicator">
+                Shifting: "{holidayToShift()?.name}"
+              </div>
             </Show>
             <div class="hr-calendar-navigation">
               <button
@@ -855,7 +955,10 @@ export function HRCalendar(props: HRCalendarProps) {
                 ‹
               </button>
               <div class="hr-calendar-title">
-                {currentDate().toLocaleDateString('en-US', {month: 'long', year: 'numeric'})}
+                {currentDate().toLocaleDateString("en-US", {
+                  month: "long",
+                  year: "numeric",
+                })}
               </div>
               <button
                 type="button"
@@ -888,10 +991,22 @@ export function HRCalendar(props: HRCalendarProps) {
 
           <div class="hr-calendar-grid">
             <For each={monthData()}>
-              {dayInfo => {
-                const highlight = getHighlight(dayInfo.day, dayInfo.month, dayInfo.year);
-                const isWeekendDay = isWeekend(dayInfo.day, dayInfo.month, dayInfo.year);
-                const isFutureOrToday = isCurrentOrFuture(dayInfo.day, dayInfo.month, dayInfo.year);
+              {(dayInfo) => {
+                const highlight = getHighlight(
+                  dayInfo.day,
+                  dayInfo.month,
+                  dayInfo.year
+                );
+                const isWeekendDay = isWeekend(
+                  dayInfo.day,
+                  dayInfo.month,
+                  dayInfo.year
+                );
+                const isFutureOrToday = isCurrentOrFuture(
+                  dayInfo.day,
+                  dayInfo.month,
+                  dayInfo.year
+                );
                 const showMenuIcon = createMemo(() => {
                   return (
                     !isWeekendDay &&
@@ -900,7 +1015,9 @@ export function HRCalendar(props: HRCalendarProps) {
                   );
                 });
                 const isValidTarget = createMemo(() => {
-                  if (!isValidWorkDay(dayInfo.day, dayInfo.month, dayInfo.year)) {
+                  if (
+                    !isValidWorkDay(dayInfo.day, dayInfo.month, dayInfo.year)
+                  ) {
                     return false;
                   }
                   return shiftHolidayMode() || leaveSelectionMode();
@@ -908,7 +1025,7 @@ export function HRCalendar(props: HRCalendarProps) {
 
                 const isSelectedForLeave = createMemo(() => {
                   return selectedLeaveDates().some(
-                    date =>
+                    (date) =>
                       date.getDate() === dayInfo.day &&
                       date.getMonth() === dayInfo.month &&
                       date.getFullYear() === dayInfo.year
@@ -918,9 +1035,13 @@ export function HRCalendar(props: HRCalendarProps) {
                   <div
                     class="hr-calendar-day"
                     classList={{
-                      'current-month': dayInfo.currentMonth,
-                      'other-month': !dayInfo.currentMonth,
-                      selected: isSelected(dayInfo.day, dayInfo.month, dayInfo.year),
+                      "current-month": dayInfo.currentMonth,
+                      "other-month": !dayInfo.currentMonth,
+                      selected: isSelected(
+                        dayInfo.day,
+                        dayInfo.month,
+                        dayInfo.year
+                      ),
                       today: isToday(dayInfo.day, dayInfo.month, dayInfo.year),
                       weekend: isWeekendDay,
                       highlighted: !!highlight,
@@ -929,29 +1050,37 @@ export function HRCalendar(props: HRCalendarProps) {
                       leave: highlight?.isLeave,
                       // Use a function to directly check category inside the classList directive
                       // This ensures reactivity when hoveredCategory changes
-                      'hover-highlight': matchesHoveredCategory(
+                      "hover-highlight": matchesHoveredCategory(
                         dayInfo.day,
                         dayInfo.month,
                         dayInfo.year
                       ),
                       dimmed:
                         hoveredCategory() !== null &&
-                        !matchesHoveredCategory(dayInfo.day, dayInfo.month, dayInfo.year) &&
+                        !matchesHoveredCategory(
+                          dayInfo.day,
+                          dayInfo.month,
+                          dayInfo.year
+                        ) &&
                         !isWeekendDay,
-                      'has-menu': showMenuIcon(), // Hide menu during shift mode
-                      'shift-target': isValidTarget(), // Highlight valid shift targets
-                      'shift-invalid':
-                        (shiftHolidayMode() || leaveSelectionMode()) && !isValidTarget(), // Dim invalid targets during shift
-                      'leave-selected': isSelectedForLeave(),
+                      "has-menu": showMenuIcon(), // Hide menu during shift mode
+                      "shift-target": isValidTarget(), // Highlight valid shift targets
+                      "shift-invalid":
+                        (shiftHolidayMode() || leaveSelectionMode()) &&
+                        !isValidTarget(), // Dim invalid targets during shift
+                      "leave-selected": isSelectedForLeave(),
                     }}
                     style={{
-                      'background-color': highlight ? `${highlight.color}30` : undefined,
-                      'border-color': highlight ? highlight.color : undefined,
+                      "background-color": highlight
+                        ? `${highlight.color}30`
+                        : undefined,
+                      "border-color": highlight ? highlight.color : undefined,
                     }}
                     onClick={() =>
-                      !props.loading && handleSelectDate(dayInfo.day, dayInfo.month, dayInfo.year)
+                      !props.loading &&
+                      handleSelectDate(dayInfo.day, dayInfo.month, dayInfo.year)
                     }
-                    onMouseOver={e => handleDayMouseOver(e, dayInfo)}
+                    onMouseOver={(e) => handleDayMouseOver(e, dayInfo)}
                     onMouseOut={hideTooltip}
                   >
                     {dayInfo.day}
@@ -960,7 +1089,9 @@ export function HRCalendar(props: HRCalendarProps) {
                     {showMenuIcon() && (
                       <div
                         class="day-menu-icon"
-                        onClick={e => openMenu(e, dayInfo.day, dayInfo.month, dayInfo.year)}
+                        onClick={(e) =>
+                          openMenu(e, dayInfo.day, dayInfo.month, dayInfo.year)
+                        }
                       >
                         <FiMoreVertical />
                       </div>
@@ -981,11 +1112,13 @@ export function HRCalendar(props: HRCalendarProps) {
             left: `${menuOpen()?.x}px`,
             top: `${menuOpen()?.y}px`,
           }}
-          onClick={e => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
         >
           <ul>
             <For each={getMenuActions(menuOpen()!.date)}>
-              {action => <li onClick={() => handleMenuAction(action)}>{action.label}</li>}
+              {(action) => (
+                <li onClick={() => handleMenuAction(action)}>{action.label}</li>
+              )}
             </For>
           </ul>
         </div>
