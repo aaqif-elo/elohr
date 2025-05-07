@@ -2,10 +2,10 @@ import {createEffect, createMemo, createSignal, Show} from 'solid-js';
 import type {Component, JSX} from 'solid-js';
 import {getEffectiveEndTime} from './CircularTimeTracker';
 import {SpinningCircles} from '../SpinningCircles';
-import {getAdmin, getAvatarUrl, getUser, UserState} from '~/store';
+import {getAdmin, getAvatarUrl, getUser, UserState} from '../../store';
 import {getScrumTime, wasInScrum} from './utils';
 import {formatDuration} from '../util';
-import {generateTimeSegments} from '~/store/utils';
+import {generateTimeSegments} from '../../store/utils';
 
 interface AttendanceOverviewProps {
   loading: boolean;

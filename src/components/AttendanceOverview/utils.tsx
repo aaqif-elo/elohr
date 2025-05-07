@@ -1,5 +1,5 @@
-import {Attendance} from '~/store';
-import {generateTimeSegments} from '~/store/utils';
+import {Attendance} from '../../store';
+import {generateTimeSegments} from '../../store/utils';
 
 function getTimezoneDifference() {
   // Get current date in local timezone and target timezone

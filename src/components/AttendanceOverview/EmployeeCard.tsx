@@ -1,5 +1,5 @@
 import {Component, createMemo, JSX} from 'solid-js';
-import {Attendance} from '~/store';
+import {Attendance} from '../../store';
 import {formatDuration} from '../util';
 import {getStatus} from './utils';
 

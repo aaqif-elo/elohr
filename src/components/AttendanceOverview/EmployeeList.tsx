@@ -1,11 +1,11 @@
 import {Component, createMemo, createSignal, For, Show} from 'solid-js';
 import EmployeeCard from './EmployeeCard';
-import {getAdmin, getAvatarUrl} from '~/store';
+import {getAdmin, getAvatarUrl} from '../../store';
 import {getStatus} from './utils';
-import type {UserState} from '~/store';
+import type {UserState} from '../../store';
 import FilterSelection from './FilterSelect';
 import {formatDuration} from '../util';
-import {generateTimeSegments} from '~/store/utils';
+import {generateTimeSegments} from '../../store/utils';
 import {SpinningCircles} from '../SpinningCircles';
 
 type EmployeeListProps = {

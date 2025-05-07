@@ -1,7 +1,7 @@
 import {createSignal, For, Show} from 'solid-js';
 import type {Component} from 'solid-js';
 import {getSystemTheme} from './utils';
-import {TimeSegment} from '~/store/utils';
+import {TimeSegment} from '../../store/utils';
 
 // New interface for segment summaries
 interface SegmentSummary {

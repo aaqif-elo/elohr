@@ -15,7 +15,7 @@ import { SpinningCircles } from "../SpinningCircles";
 // Add imports for dropdown menu icon
 import { FiMoreVertical } from "solid-icons/fi";
 import { UserRoleTypes } from "@prisma/client";
-import { getUser } from "~/store";
+import { getUser } from "../../store";
 import toast from "solid-toast";
 
 // Menu item type for our dropdown

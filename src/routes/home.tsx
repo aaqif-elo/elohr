@@ -1,4 +1,4 @@
-import AttendanceOverview from '~/components/AttendanceOverview';
+import AttendanceOverview from '../components/AttendanceOverview';
 
 export default function Home() {
   return (

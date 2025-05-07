@@ -3,7 +3,7 @@ import {
   SlashCommandBuilder,
 } from "discord.js";
 import { EAttendanceCommands, ESlashCommandOptionNames } from "./discord.enums";
-import { canBreak, breakStart } from "~/server/db";
+import { canBreak, breakStart } from "../../../db";
 
 const breakCommand = new SlashCommandBuilder()
   .setName(EAttendanceCommands.BREAK)

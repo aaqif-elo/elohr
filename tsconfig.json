@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "forceConsistentCasingInFileNames": true,
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
@@ -12,8 +13,5 @@
     "noEmit": true,
     "types": ["vinxi/types/client", "node"],
     "isolatedModules": true,
-    "paths": {
-      "~/*": ["./src/*"]
-    }
   }
 }

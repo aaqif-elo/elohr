@@ -1,9 +1,9 @@
 import {RouteSectionProps, useLocation, useNavigate} from '@solidjs/router';
 import {createRenderEffect, createSignal, JSX, on, onMount, Show} from 'solid-js';
 import toast from 'solid-toast';
-import {api} from '~/lib/api';
-import {LOCAL_STORAGE_KEY, loginWithStoredJWT} from '~/lib/auth';
-import {getUser} from '~/store';
+import {api} from '../lib/api';
+import {LOCAL_STORAGE_KEY, loginWithStoredJWT} from '../lib/auth';
+import {getUser} from '../store';
 import FullScreenLoader from './FullScreenLoader';
 
 export function AuthGuard(props: RouteSectionProps): JSX.Element {

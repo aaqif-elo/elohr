@@ -1,15 +1,15 @@
 import {createEffect, createSignal, onCleanup, onMount, Show} from 'solid-js';
-import {getAdmin, getUser, setAdmin, setAttendance, setAttendanceSummary, UserState} from '~/store';
-import {api} from '~/lib/api';
+import {getAdmin, getUser, setAdmin, setAttendance, setAttendanceSummary, UserState} from '../../store';
+import {api} from '../../lib/api';
 import {AttendanceOverview} from './AttendanceOverview';
 import {isToday} from './utils';
-import {TrpcAttendance, TrpcUser, TrpcUserWithAttendance} from '~/store/utils';
+import {TrpcAttendance, TrpcUser, TrpcUserWithAttendance} from '../../store/utils';
 import {UserRoleTypes} from '@prisma/client';
 import {HRCalendar, DateHighlight} from './Calendar';
 import EmployeeList from './EmployeeList';
 import {CircularTimeTracking} from './CircularTimeTracker';
-import {generateTimeSegments} from '~/store/utils';
-import {TrpcAttendanceSummary} from '~/types/attendance';
+import {generateTimeSegments} from '../../store/utils';
+import {TrpcAttendanceSummary} from '../../types/attendance';
 import {HolidayModal} from './HolidayModal';
 import toast from 'solid-toast';
 

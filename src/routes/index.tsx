@@ -1,11 +1,11 @@
 import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createSignal, onMount, Show } from "solid-js";
 import toast from "solid-toast";
-import FullScreenLoader from "~/components/FullScreenLoader";
-import UnauthenticatedHome from "~/components/UnauthenticatedHome";
-import { api } from "~/lib/api";
-import { LOCAL_STORAGE_KEY, loginWithStoredJWT } from "~/lib/auth";
-import {setAttendance, setUser} from '~/store';
+import FullScreenLoader from "../components/FullScreenLoader";
+import UnauthenticatedHome from "../components/UnauthenticatedHome";
+import { api } from "../lib/api";
+import { LOCAL_STORAGE_KEY, loginWithStoredJWT } from "../lib/auth";
+import {setAttendance, setUser} from '../store';
 // import {prepareUrlAction, prepareUrlActionToken} from '~/lib/urlActionHandlers';
 
 export default function Home() {

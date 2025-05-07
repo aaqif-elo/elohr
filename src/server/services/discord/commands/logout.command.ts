@@ -9,7 +9,7 @@ import {
   getLogoutTime,
   logout,
   hasActiveLoginSessionFromYesterday,
-} from "~/server/db";
+} from "../../../db";
 
 const logoutCommand = new SlashCommandBuilder()
   .setName(EAttendanceCommands.LOGOUT)
