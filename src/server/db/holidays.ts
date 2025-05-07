@@ -1,26 +1,5 @@
-import {Holiday, HolidayType, Prisma} from '@prisma/client';
-import {db} from '.';
-
-/**
- * Normalize a date to UTC to ensure consistent date handling across timezones
- * Sets the time to end of day (23:59:59.999) in the local timezone
- */
-function normalizeDate(date: Date): Date {
-  const timeZoneOffsetHours = new Date().getTimezoneOffset() / 60;
-
-  // Preserve the same day in UTC time
-  return new Date(
-    Date.UTC(
-      date.getUTCFullYear(),
-      date.getUTCMonth(),
-      date.getUTCDate(),
-      23 + timeZoneOffsetHours,
-      59,
-      59,
-      999
-    )
-  );
-}
+import { Holiday, HolidayType, Prisma } from "@prisma/client";
+import { db, normalizeDate } from ".";
 
 // Add a new holiday
 async function addHoliday(
@@ -31,7 +10,9 @@ async function addHoliday(
   overridenDate?: Date
 ): Promise<Holiday> {
   const normalizedOriginalDate = normalizeDate(originalDate);
-  const normalizedOverridenDate = overridenDate ? normalizeDate(overridenDate) : undefined;
+  const normalizedOverridenDate = overridenDate
+    ? normalizeDate(overridenDate)
+    : undefined;
 
   const dayOfWeek = normalizedOriginalDate.getDay();
   const isWeekend = dayOfWeek === 5 || dayOfWeek === 6; // 6 is Saturday, 5 is Friday
@@ -50,11 +31,14 @@ async function addHoliday(
 }
 
 // Override an existing holiday
-async function overrideHoliday(id: string, overridenDate: Date): Promise<Holiday> {
+async function overrideHoliday(
+  id: string,
+  overridenDate: Date
+): Promise<Holiday> {
   const normalizedOverridenDate = normalizeDate(overridenDate);
 
   return db.holiday.update({
-    where: {id},
+    where: { id },
     data: {
       overridenDate: normalizedOverridenDate,
     },
@@ -97,7 +81,10 @@ async function ensureYearPopulated(year: string): Promise<void> {
 }
 
 // Get all holidays for a custom date range
-export async function getHolidaysForDateRange(startDate: Date, endDate: Date): Promise<Holiday[]> {
+export async function getHolidaysForDateRange(
+  startDate: Date,
+  endDate: Date
+): Promise<Holiday[]> {
   // Ensure all years in the range are populated
   const startYear = startDate.getFullYear();
   const endYear = endDate.getFullYear();
@@ -144,7 +131,7 @@ export async function getHolidaysForDateRange(startDate: Date, endDate: Date): P
 // Soft delete - mark a holiday as inactive
 async function deactivateHoliday(id: string): Promise<Holiday> {
   return db.holiday.update({
-    where: {id},
+    where: { id },
     data: {
       isActive: false,
     },
@@ -154,7 +141,7 @@ async function deactivateHoliday(id: string): Promise<Holiday> {
 // Mark a holiday as announced
 export async function markHolidayAsAnnounced(id: string): Promise<Holiday> {
   return db.holiday.update({
-    where: {id},
+    where: { id },
     data: {
       announcementSent: true,
     },
@@ -204,16 +191,18 @@ async function importHolidays(holidays: IHolidayObj[]): Promise<Holiday[]> {
   return results;
 }
 
-import {load} from 'cheerio';
-import axios from 'axios';
+import { load } from "cheerio";
+import axios from "axios";
 
-async function getHolidayInfoFromOfficeHolidaysDotCom(year: string): Promise<IHolidayObj[]> {
+async function getHolidayInfoFromOfficeHolidaysDotCom(
+  year: string
+): Promise<IHolidayObj[]> {
   const holidayListPage = await axios.get(
     `https://www.officeholidays.com/countries/bangladesh/${year}`,
     {
       headers: {
-        'user-agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36',
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36",
       },
     }
   );
@@ -227,19 +216,19 @@ async function getHolidayInfoFromOfficeHolidaysDotCom(year: string): Promise<IHo
     description: string,
     shouldAdd = false;
 
-  $('table.country-table > tbody > tr').each((i, elm) => {
+  $("table.country-table > tbody > tr").each((i, elm) => {
     $(elm)
-      .find('td')
+      .find("td")
       .each((j, innerTableCell) => {
         if (j === 1) {
-          const start = $(innerTableCell).children('time').attr('datetime');
+          const start = $(innerTableCell).children("time").attr("datetime");
           if (!start) return;
           date = new Date(new Date(start).setHours(0, 0, 0, 0));
         } else if (j === 2) {
           name = $(innerTableCell).text().trim();
         } else if (j === 3) {
           const type = $(innerTableCell).text().trim();
-          if (type === 'National Holiday') {
+          if (type === "National Holiday") {
             shouldAdd = true;
           }
         } else if (j === 4) {
@@ -260,7 +249,7 @@ async function getHolidayInfoFromOfficeHolidaysDotCom(year: string): Promise<IHo
 }
 
 // Define the range type
-type HolidayRange = 'week' | 'month' | 'year';
+type HolidayRange = "week" | "month" | "year";
 
 /**
  * Get holidays based on a date and range type
@@ -268,12 +257,15 @@ type HolidayRange = 'week' | 'month' | 'year';
  * @param range The range type ('week', 'month', or 'year')
  * @returns Holidays within the specified range
  */
-export async function getHolidays(date: Date, range: HolidayRange): Promise<Holiday[]> {
+export async function getHolidays(
+  date: Date,
+  range: HolidayRange
+): Promise<Holiday[]> {
   let startDate: Date;
   let endDate: Date;
 
   switch (range) {
-    case 'week':
+    case "week":
       // Get the start of the week (Sunday)
       startDate = new Date(date);
       startDate.setDate(date.getDate() - date.getDay());
@@ -286,7 +278,7 @@ export async function getHolidays(date: Date, range: HolidayRange): Promise<Holi
       endDate = normalizeDate(endDate); // Already end of day
       break;
 
-    case 'month':
+    case "month":
       // Get the start of the month
       startDate = new Date(date);
       startDate.setDate(1);
@@ -294,10 +286,12 @@ export async function getHolidays(date: Date, range: HolidayRange): Promise<Holi
       startDate.setHours(0, 0, 0, 0); // Beginning of day
 
       // Get the end of the month
-      endDate = normalizeDate(new Date(date.getFullYear(), date.getMonth() + 1, 0));
+      endDate = normalizeDate(
+        new Date(date.getFullYear(), date.getMonth() + 1, 0)
+      );
       break;
 
-    case 'year':
+    case "year":
       // Get the start of the year
       startDate = normalizeDate(new Date(date.getFullYear(), 0, 1));
       startDate.setHours(0, 0, 0, 0); // Beginning of day
@@ -324,13 +318,15 @@ export async function convertToHoliday(
   // Check for existing holiday
   const existingHoliday = await db.holiday.findFirst({
     where: {
-      OR: [{originalDate: normalizedDate}, {overridenDate: normalizedDate}],
+      OR: [{ originalDate: normalizedDate }, { overridenDate: normalizedDate }],
       isActive: true,
     },
   });
 
   if (existingHoliday) {
-    throw new Error(`A holiday already exists on ${normalizedDate.toDateString()}`);
+    throw new Error(
+      `A holiday already exists on ${normalizedDate.toDateString()}`
+    );
   }
 
   // Create the new holiday
@@ -382,7 +378,10 @@ export async function convertToWorkday(date: Date): Promise<Holiday> {
 /**
  * Shift a holiday from one date to another
  */
-export async function shiftHoliday(originalDate: Date, newDate: Date): Promise<Holiday> {
+export async function shiftHoliday(
+  originalDate: Date,
+  newDate: Date
+): Promise<Holiday> {
   const normalizedOriginalDate = normalizeDate(originalDate);
   const normalizedNewDate = normalizeDate(newDate);
 
@@ -416,20 +415,27 @@ export async function shiftHoliday(originalDate: Date, newDate: Date): Promise<H
   });
 
   if (!holiday) {
-    throw new Error(`No holiday found on ${normalizedOriginalDate.toDateString()}`);
+    throw new Error(
+      `No holiday found on ${normalizedOriginalDate.toDateString()}`
+    );
   }
 
   // Check if there's already a holiday on the target date
   const existingHolidayOnTarget = await db.holiday.findFirst({
     where: {
-      OR: [{originalDate: normalizedNewDate}, {overridenDate: normalizedNewDate}],
+      OR: [
+        { originalDate: normalizedNewDate },
+        { overridenDate: normalizedNewDate },
+      ],
       isActive: true,
-      id: {not: holiday.id}, // Exclude the holiday we're moving
+      id: { not: holiday.id }, // Exclude the holiday we're moving
     },
   });
 
   if (existingHolidayOnTarget) {
-    throw new Error(`A holiday already exists on ${normalizedNewDate.toDateString()}`);
+    throw new Error(
+      `A holiday already exists on ${normalizedNewDate.toDateString()}`
+    );
   }
 
   // Update the holiday with the new date
@@ -450,7 +456,9 @@ export interface HolidayChain {
  * @param fromDate The date to start looking from
  * @returns Information about the next holiday period or null if none found
  */
-export async function getNextHoliday(fromDate: Date = new Date()): Promise<HolidayChain | null> {
+export async function getNextHoliday(
+  fromDate: Date = new Date()
+): Promise<HolidayChain | null> {
   // Normalize the fromDate to ensure consistent comparison
   const normalizedFromDate = normalizeDate(fromDate);
   normalizedFromDate.setHours(0, 0, 0, 0); // Start of day
@@ -600,7 +608,9 @@ export async function getNextHoliday(fromDate: Date = new Date()): Promise<Holid
  * @param date The date to check
  * @returns Information about the holiday if it exists, otherwise null
  */
-export async function isHoliday(date: Date = new Date()): Promise<Holiday | null> {
+export async function isHoliday(
+  date: Date = new Date()
+): Promise<Holiday | null> {
   // Create start and end bounds for the given date (ignoring time)
   const startOfDay = new Date(date);
   startOfDay.setHours(0, 0, 0, 0);
