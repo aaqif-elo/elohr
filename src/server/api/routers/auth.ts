@@ -2,7 +2,7 @@ import { wrap } from "@typeschema/valibot";
 import { nullish, string } from "valibot";
 import { createTRPCRouter, publicProcedure } from "../trpc";
 import { createHmac } from "crypto";
-import { getUserByDiscordId } from "../../db";
+import { getUserByDiscordId, getUserById, ONE_MONTH_IN_MS } from "../../db";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import { UserRoleTypes } from "@prisma/client";
 
@@ -22,6 +22,41 @@ interface AuthAttemptPayload {
   dateTime: Date;
 }
 
+let msToAdd = ONE_MONTH_IN_MS;
+if (process.env.JWT_EXP_IN_MS) {
+  const parsed = parseInt(process.env.JWT_EXP_IN_MS);
+  if (!isNaN(parsed)) {
+    msToAdd = parsed;
+  }
+}
+
+export const generateJWTFromUserId = async (userId: string) => {
+  const user = await getUserById(userId);
+  if (!user) {
+    return null;
+  }
+  return await generateJWTFromUserDiscordId(user.discordInfo.id);
+};
+
+const generateJWTFromUserDiscordId = async (discordId: string) => {
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET not set");
+  }
+  const userWithAttendance = await getUserByDiscordId(discordId, true);
+  if (!userWithAttendance) {
+    return null;
+  }
+
+  const payload: customJwtPayload = {
+    exp: Math.floor((Date.now() + msToAdd) / 1000),
+    discordId: discordId,
+    dbId: userWithAttendance.user.id,
+    roles: userWithAttendance.user.roles,
+  };
+  const jwt = sign(payload, process.env.JWT_SECRET);
+  return { userWithAttendance, jwt };
+};
+
 const hashToAuthAttempt: Record<string, AuthAttemptPayload> = {};
 
 setInterval(() => {
@@ -36,8 +71,6 @@ setInterval(() => {
     }
   });
 }, 1000);
-
-const ONE_MONTH_IN_MS = 30 * 24 * 60 * 60 * 1000;
 
 const getUserDiscordIdFromValidJWT = (jwt?: string | null) => {
   if (!process.env.JWT_SECRET) {
@@ -130,13 +163,7 @@ export const authRouter = createTRPCRouter({
       if (!process.env.JWT_SECRET) {
         throw new Error("JWT_SECRET not set");
       }
-      let msToAdd = ONE_MONTH_IN_MS;
-      if (process.env.JWT_EXP_IN_MS) {
-        const parsed = parseInt(process.env.JWT_EXP_IN_MS);
-        if (!isNaN(parsed)) {
-          msToAdd = parsed;
-        }
-      }
+
       const payload: customJwtPayload = {
         exp: Math.floor((Date.now() + msToAdd) / 1000),
         discordId: authAttempt.discordUserId,
