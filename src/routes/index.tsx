@@ -3,9 +3,9 @@ import { createSignal, onMount, Show } from "solid-js";
 import toast from "solid-toast";
 import FullScreenLoader from "~/components/FullScreenLoader";
 import UnauthenticatedHome from "~/components/UnauthenticatedHome";
-// import {api} from '~/lib/api';
+import { api } from "~/lib/api";
 import { LOCAL_STORAGE_KEY, loginWithStoredJWT } from "~/lib/auth";
-// import {setAttendance, setUser} from '~/store';
+import {setAttendance, setUser} from '~/store';
 // import {prepareUrlAction, prepareUrlActionToken} from '~/lib/urlActionHandlers';
 
 export default function Home() {
@@ -74,25 +74,26 @@ export default function Home() {
 
   onMount(async () => {
     // Anything inside onMount runs only in the browser, never on the server.
-    const hasHash = typeof searchParams.hash === "string";
 
     // Case 1: Hash exists - process login first
-    if (hasHash) {
+    if (typeof searchParams.hash === "string") {
       console.log("Hash is", searchParams.hash);
       setLoggingIn(true);
 
       try {
-        // const loginPayload = await api.auth.loginWithHash.query(searchParams.hash);
+        const loginPayload = await api.auth.loginWithHash.query(
+          searchParams.hash
+        );
 
-        // if (loginPayload.jwt) {
-        //   localStorage.setItem(LOCAL_STORAGE_KEY, loginPayload.jwt);
-        // }
+        if (loginPayload.jwt) {
+          localStorage.setItem(LOCAL_STORAGE_KEY, loginPayload.jwt);
+        }
 
-        // const {user, attendance} = loginPayload.userWithAttendance;
-        // setUser(user);
-        // if (attendance) {
-        //   setAttendance(attendance);
-        // }
+        const { user, attendance } = loginPayload.userWithAttendance;
+        setUser(user);
+        if (attendance) {
+          setAttendance(attendance);
+        }
 
         toast.success("Successfully logged in!");
 
@@ -116,10 +117,10 @@ export default function Home() {
         const loggedIn = await loginWithStoredJWT(storedAuthJwt);
 
         if (loggedIn) {
-          toast.success('Successfully logged in!');
+          toast.success("Successfully logged in!");
           await processAllUrlActions();
         } else {
-          toast.error('Login failed: Your session has expired or is invalid');
+          toast.error("Login failed: Your session has expired or is invalid");
           setLoggingIn(false);
         }
       } else {

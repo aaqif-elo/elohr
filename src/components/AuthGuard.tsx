@@ -1,9 +1,9 @@
 import {RouteSectionProps, useLocation, useNavigate} from '@solidjs/router';
 import {createRenderEffect, createSignal, JSX, on, onMount, Show} from 'solid-js';
 import toast from 'solid-toast';
-// import {api} from '~/lib/api';
-import {LOCAL_STORAGE_KEY} from '~/lib/auth';
-// import {getUser} from '~/store';
+import {api} from '~/lib/api';
+import {LOCAL_STORAGE_KEY, loginWithStoredJWT} from '~/lib/auth';
+import {getUser} from '~/store';
 import FullScreenLoader from './FullScreenLoader';
 
 export function AuthGuard(props: RouteSectionProps): JSX.Element {
@@ -23,26 +23,26 @@ export function AuthGuard(props: RouteSectionProps): JSX.Element {
           return;
         }
 
-        // const auth = await api.auth.validateJWT.query(storedAuthJwt);
+        const auth = await api.auth.validateJWT.query(storedAuthJwt);
 
-        // if (auth) {
-        //   const user = getUser();
-        //   if (!user) {
-        //     const loggedIn = await loginWithStoredJWT(storedAuthJwt);
-        //     if (loggedIn) {
-        //       setIsAuthenticated(true);
-        //     } else {
-        //       toast.error('Your session has expired. Please login again.');
-        //       navigate('/');
-        //     }
-        //   } else {
-        //     setIsAuthenticated(true);
-        //   }
-        // } else {
-        //   localStorage.removeItem(LOCAL_STORAGE_KEY);
-        //   toast.error('Invalid authentication. Please login again.');
-        //   navigate('/');
-        // }
+        if (auth) {
+          const user = getUser();
+          if (!user) {
+            const loggedIn = await loginWithStoredJWT(storedAuthJwt);
+            if (loggedIn) {
+              setIsAuthenticated(true);
+            } else {
+              toast.error('Your session has expired. Please login again.');
+              navigate('/');
+            }
+          } else {
+            setIsAuthenticated(true);
+          }
+        } else {
+          localStorage.removeItem(LOCAL_STORAGE_KEY);
+          toast.error('Invalid authentication. Please login again.');
+          navigate('/');
+        }
       } catch (error) {
         console.error('Authentication error:', error);
         localStorage.removeItem(LOCAL_STORAGE_KEY);

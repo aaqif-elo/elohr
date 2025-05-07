@@ -1,0 +1,532 @@
+/* Base styles with CSS variables */
+.hr-calendar {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  max-width: 1000px; /* Increased width to accommodate side-by-side layout */
+  margin: 0 auto;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  transition: all 0.3s ease;
+  position: relative;
+  min-height: 500px; /* Ensure there's space for the loader to display */
+}
+
+/* New container for the side-by-side layout */
+.hr-calendar-container {
+  display: flex;
+  flex-direction: row;
+}
+
+/* Light mode (default) */
+.hr-calendar.light-mode {
+  --calendar-bg: #fff;
+  --header-bg: #f8f9fa;
+  --border-color: #e0e0e0;
+  --text-color: #333;
+  --text-muted: #aaa;
+  --day-hover-bg: #f5f5f5;
+  --weekend-bg: #f9f9f9;
+  --selected-bg: #e6f7ff;
+  --selected-border: #1890ff;
+  --today-border: #1890ff;
+  --tooltip-bg: #333;
+  --tooltip-color: white;
+  --stats-bg: #f8f9fa;
+  --stat-item-bg: white;
+  --stat-item-shadow: rgba(0, 0, 0, 0.1);
+  --stat-label-color: #666;
+  --stat-value-color: #333;
+  --button-border: #ddd;
+  --button-hover-bg: #f1f1f1;
+}
+
+/* Dark mode */
+.hr-calendar.dark-mode {
+  --calendar-bg: #1f1f1f;
+  --header-bg: #2d2d2d;
+  --border-color: #444;
+  --text-color: #e0e0e0;
+  --text-muted: #888;
+  --day-hover-bg: #2a2a2a;
+  --weekend-bg: #252525;
+  --selected-bg: #0c2a43;
+  --selected-border: #177ddc;
+  --today-border: #177ddc;
+  --tooltip-bg: #e0e0e0;
+  --tooltip-color: #333;
+  --stats-bg: #2d2d2d;
+  --stat-item-bg: #333;
+  --stat-item-shadow: rgba(0, 0, 0, 0.3);
+  --stat-label-color: #aaa;
+  --stat-value-color: #e0e0e0;
+  --button-border: #444;
+  --button-hover-bg: #3a3a3a;
+}
+
+/* Apply variables to elements */
+.hr-calendar {
+  background-color: var(--calendar-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+}
+
+/* Calendar main container - contains the actual calendar */
+.hr-calendar-main {
+  flex: 1;
+  min-width: 0; /* Prevent overflow in flex layout */
+}
+
+.hr-calendar-header {
+  background-color: var(--header-bg);
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color);
+  position: relative;
+  padding-top: 20px;
+}
+
+.hr-calendar-navigation {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hr-calendar-navigation button {
+  background: none;
+  border: 1px solid var(--button-border);
+  border-radius: 4px;
+  width: 30px;
+  height: 30px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: var(--text-color);
+}
+
+.hr-calendar-navigation button:hover {
+  background-color: var(--button-hover-bg);
+}
+
+.hr-calendar-title {
+  font-weight: 600;
+  font-size: 18px;
+  margin: 0 16px;
+  min-width: 140px;
+  text-align: center;
+  color: var(--text-color);
+}
+
+.hr-calendar-input input {
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 14px;
+  margin-left: 8px;
+  background-color: var(--calendar-bg);
+  color: var(--text-color);
+  color-scheme: var(--color-scheme, light dark);
+}
+
+.hr-calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  background-color: var(--header-bg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.hr-calendar-weekdays div {
+  padding: 12px 0;
+  text-align: center;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-color);
+}
+
+.hr-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: repeat(6, 1fr);
+  background-color: var(--calendar-bg);
+}
+
+.hr-calendar-day {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: 1px solid transparent;
+  position: relative;
+  font-size: 16px;
+  transition: all 0.2s ease;
+  color: var(--text-color);
+}
+
+.hr-calendar-day:hover {
+  background-color: var(--day-hover-bg);
+}
+
+.hr-calendar-day.current-month {
+  color: var(--text-color);
+}
+
+.hr-calendar-day.other-month {
+  color: var(--text-muted);
+}
+
+.hr-calendar-day.selected {
+  background-color: var(--selected-bg) !important; /* Override any other background */
+  border: 2px solid var(--selected-border);
+  font-weight: bold;
+  z-index: 1; /* Ensure selected is above other states */
+}
+
+.hr-calendar-day.today {
+  position: relative;
+  font-weight: bold;
+}
+
+.hr-calendar-day.today::after {
+  content: '';
+  position: absolute;
+  bottom: 5px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: var(--today-border);
+}
+
+.hr-calendar-day.weekend {
+  background-color: var(--weekend-bg);
+}
+
+.hr-calendar-day.highlighted {
+  font-weight: 600;
+}
+
+/* Update the tooltip styles to support multi-line text */
+.hr-calendar-tooltip {
+  position: fixed;
+  background-color: var(--tooltip-bg);
+  color: var(--tooltip-color);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  z-index: 1000;
+  pointer-events: none;
+  max-width: 250px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  /* New properties for better multi-line text support */
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+/* Add new class for the description text */
+.tooltip-description {
+  display: block;
+  font-size: 0.85em;
+  opacity: 0.75;
+  font-style: italic;
+  margin-top: 4px;
+}
+
+/* Stats area now on left side */
+.hr-calendar-stats {
+  width: 185px;
+  padding: 16px;
+  background-color: var(--stats-bg);
+  border-right: 1px solid var(--border-color);
+}
+
+.hr-calendar-stats h3 {
+  margin-top: 0;
+  margin-bottom: 16px;
+  font-size: 16px;
+  color: var(--text-color);
+}
+
+.stats-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stat-item {
+  background-color: var(--stat-item-bg);
+  border-radius: 6px;
+  padding: 12px;
+  box-shadow: 0 1px 3px var(--stat-item-shadow);
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--stat-label-color);
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--stat-value-color);
+}
+
+/* Loading overlay */
+.hr-calendar-loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--calendar-bg);
+  opacity: 0.9;
+  z-index: 10;
+  border-radius: 8px;
+}
+
+/* Hover correspondence styles */
+.hr-calendar-day.dimmed {
+  opacity: 0.4;
+  transition: opacity 0.2s ease;
+}
+
+.hr-calendar-day.hover-highlight {
+  opacity: 1;
+  border-width: 2px;
+  transform: scale(1.05);
+  z-index: 2;
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+.stat-item.dimmed {
+  opacity: 0.4;
+  transition: opacity 0.2s ease;
+}
+
+.stat-item.hover-highlight {
+  opacity: 1;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px var(--stat-item-shadow);
+  transition: all 0.2s ease;
+}
+
+/* For a subtle pulsing effect on hover highlight */
+@keyframes pulse {
+  0% {
+    transform: scale(1.05);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1.05);
+  }
+}
+
+/* Add styles for the menu icon and dropdown */
+.hr-calendar-day.has-menu {
+  position: relative;
+}
+
+.day-menu-icon {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: var(--calendar-bg);
+  color: var(--text-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  cursor: pointer;
+  z-index: 5;
+}
+
+.hr-calendar-day.has-menu:hover .day-menu-icon {
+  opacity: 1;
+}
+
+.day-menu-dropdown {
+  position: fixed;
+  background-color: var(--calendar-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  z-index: 1000;
+  min-width: 180px;
+}
+
+.day-menu-dropdown ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.day-menu-dropdown li {
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.day-menu-dropdown li:hover {
+  background-color: var(--day-hover-bg);
+}
+
+/* Responsive adjustments for mobile */
+@media (max-width: 768px) {
+  .hr-calendar-container {
+    flex-direction: column-reverse; /* Stats below on mobile */
+  }
+
+  .hr-calendar-stats {
+    width: auto;
+    border-right: none;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+  }
+}
+
+/* Shift holiday mode styles */
+.shift-holiday-prompt {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 10px;
+  background-color: #3b82f6;
+  color: white;
+  text-align: center;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-radius: 8px 8px 0 0;
+}
+
+.shift-cancel-btn {
+  background: rgba(255, 255, 255, 0.3);
+  border: none;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.shift-cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.shift-target {
+  cursor: pointer !important;
+  position: relative;
+  animation: pulse 1.5s infinite;
+}
+
+.shift-target:after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border: 2px dashed #3b82f6;
+  pointer-events: none;
+}
+
+.shift-invalid {
+  opacity: 0.5;
+  cursor: not-allowed !important;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+  }
+}
+
+/* Shift indicator in stats panel */
+.shift-status-indicator {
+  margin-top: 20px;
+  padding: 12px;
+  background-color: rgba(59, 130, 246, 0.15);
+  border-radius: 6px;
+  border-left: 4px solid #3b82f6;
+}
+
+.shift-instructions {
+  font-size: 12px;
+  margin-top: 6px;
+  opacity: 0.8;
+  margin-bottom: 10px;
+}
+
+/* Subtle indicator in the header */
+.shift-holiday-indicator {
+  font-size: 12px;
+  color: #3b82f6;
+  background-color: rgba(59, 130, 246, 0.1);
+  padding: 4px 8px;
+  border-radius: 4px;
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+/* Make room for the indicator */
+.hr-calendar-header {
+  position: relative;
+  padding-top: 20px;
+}
+
+.leave-selected {
+  background-color: rgba(25, 118, 210, 0.25) !important;
+  border: 2px solid #1976d2 !important;
+  font-weight: bold;
+}
+
+/* Make sure leave-selected has higher priority */
+.hr-calendar-day.leave-selected {
+  z-index: 1;
+  transform: scale(1.05);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  opacity: 1 !important;
+}
+
+/* Ensure the animation works well */
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(25, 118, 210, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 5px rgba(25, 118, 210, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(25, 118, 210, 0);
+  }
+}
