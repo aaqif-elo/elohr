@@ -6,6 +6,16 @@ import {
   Routes,
   TextChannel,
 } from "discord.js";
+import {
+  authCommandBody,
+  logoutCommandBody,
+  breakCommandBody,
+  getNextHolidayAnnouncementCommandBody,
+  setNextHolidayAnnouncementCommandBody,
+  requestLeaveCommandBody,
+  reviewLeaveCommandBody,
+  announceNextHolidayCommandBody,
+} from "./commands";
 
 import { config } from "dotenv";
 config();
@@ -115,12 +125,14 @@ async function registerCommands() {
   if (!DISCORD_BOT_TOKEN || !BOT_ID || !DISCORD_SERVER_ID) return;
 
   const commands = [
-    // Define your commands here
-    {
-      name: "hr",
-      description: "Access the HR system",
-    },
-    // Add more commands as needed
+    logoutCommandBody,
+    breakCommandBody,
+    authCommandBody,
+    getNextHolidayAnnouncementCommandBody,
+    setNextHolidayAnnouncementCommandBody,
+    requestLeaveCommandBody,
+    reviewLeaveCommandBody,
+    announceNextHolidayCommandBody,
   ];
 
   try {
