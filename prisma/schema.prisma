@@ -1,17 +1,185 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-generator client {
-  provider = "prisma-client-js"
+datasource db {
+  provider = "mongodb"
+  url      = env("DB_URL")
 }
 
-datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-1.1.x"]
+  // output        = "../../../node_modules/.prisma/client/"
+  // output        = "../../../node_modules/.prisma/client/.prisma/client"
+}
+
+enum UserRoleTypes {
+  FRONTEND   @map("Frontend")
+  BACKEND    @map("Backend")
+  MANAGEMENT @map("Management")
+  DEVOPS     @map("DevOps")
+  TESTING    @map("Testing")
+  UI_UX      @map("UI/UX")
+  FULLSTACK  @map("Fullstack")
+  LEAD       @map("Lead")
+  MOBILE     @map("Mobile")
+  INTERN     @map("Intern")
+  TESTER     @map("Tester")
+  ADMIN      @map("Admin")
+}
+
+enum ContractType {
+  CONTRACTUAL @map("Contractual")
+  PERMANENT   @map("Permanent")
+  PART_TIME   @map("Part-time")
+  INTERN      @map("Intern")
+}
+
+enum HolidayType {
+  NATIONAL @map("National Holiday")
+  ELO      @map("Elo Holiday")
+}
+
+enum AssociatedObjectType {
+  LEAVE_REQUEST @map("LeaveRequest")
+  // Add other types as needed
+}
+
+type DiscordInfo {
+  username      String
+  discriminator String
+  id            String
+  avatar        String
+}
+
+type Break {
+  start     DateTime
+  reason    String?
+  end       DateTime?
+  length_ms Int?
+}
+
+type WorkSegment {
+  start     DateTime
+  end       DateTime?
+  length_ms Int?
+  project   String
+}
+
+type Contract {
+  contractType ContractType
+  startDate    DateTime
+  endDate      DateTime?
+  reviewDate   DateTime
+  salaryInBDT  Int
+
+  createdAt DateTime? @default(now())
+  updatedAt DateTime?
+}
+
+type Leaves {
+  remainingLeaveCount Int // Current leave count
+  resetAt             DateTime // Date to be reset to 20 (or whatever the company policy is)
+}
+
+type ReviewedInfo {
+  approved Boolean
+  by       String   @db.ObjectId
+  date     DateTime
+}
+
+type AssociatedObject {
+  type AssociatedObjectType
+  id   String @db.ObjectId
 }
 
 model User {
-  id       String @id @default(uuid())
-  username String @unique
-  password String
+  id                  String          @id @default(auto()) @map("_id") @db.ObjectId
+  name                String
+  leaves              Leaves[] // Now using composite type
+  userEmail           String // Original email used during application
+  orgEmail            String // Optional organizational email
+  discordInfo         DiscordInfo
+  isAdmin             Boolean
+  exEmployee          Boolean
+  roles               UserRoleTypes[]
+  currentContractType ContractType
+  contracts           Contract[] // Now using composite type
+
+  // Relations
+  attendances   Attendance[]
+  leaveRequests Leave[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Attendance {
+  id           String        @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String        @map("user") @db.ObjectId // <-- mapping "user" from Mongo
+  user         User          @relation(fields: [userId], references: [id])
+  login        DateTime
+  breaks       Break[] // Now using composite type
+  workSegments WorkSegment[]
+  logout       DateTime?
+  totalBreak   Float?
+  totalWork    Float?
+  totalTime    Float?
+
+  @@map("attendances")
+}
+
+model Leave {
+  id          String        @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String        @map("user") @db.ObjectId // <-- mapping "user" from Mongo
+  user        User          @relation(fields: [userId], references: [id])
+  dates       DateTime[]
+  reason      String?
+  requestDate DateTime
+  reviewed    ReviewedInfo?
+
+  @@map("leaves")
+}
+
+model DeploymentAnnouncement {
+  id           String  @id @default(auto()) @map("_id") @db.ObjectId
+  channelId    String?
+  gitBranch    String
+  gitCommit    String
+  gitRepo      String
+  announcement String?
+  announced    Boolean @default(false)
+
+  @@unique([gitCommit, gitRepo])
+  @@map("deploymentannouncements")
+}
+
+model Holiday {
+  id               String      @id @default(auto()) @map("_id") @db.ObjectId
+  name             String
+  originalDate     DateTime
+  overridenDate    DateTime?
+  description      String?
+  type             HolidayType
+  dayOfWeek        Int // 0-6 representing Sunday-Saturday
+  isWeekend        Boolean
+  isActive         Boolean     @default(true)
+  announcementSent Boolean     @default(false)
+
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@map("holidays")
+}
+
+model ActionToken {
+  id               String            @id @default(auto()) @map("_id") @db.ObjectId
+  token            String            @unique
+  action           String
+  expiresAt        DateTime
+  used             Boolean           @default(false)
+  usedAt           DateTime?
+  messageId        String?           // Discord message ID
+  associatedObject AssociatedObject? // Reference to associated object
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 }
