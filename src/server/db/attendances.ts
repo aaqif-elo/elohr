@@ -1,9 +1,14 @@
-import {Attendance} from '@prisma/client';
-import {db} from '.';
-import {ChangeStream, ChangeStreamDocument, MongoClient} from 'mongodb';
-import EventEmitter, {on} from 'events';
+import { Attendance } from "@prisma/client";
+import { db, getEndOfDay, getStartOfDay, ONE_DAY_IN_MS } from ".";
+import { ChangeStream, ChangeStreamDocument, MongoClient } from "mongodb";
+import EventEmitter, { on } from "events";
+import { generateJWTFromUserId } from "../api/routers";
+import { getAttendanceStatsImage } from "../services/discord/utils";
 
-let changeStream: ChangeStream<Document, ChangeStreamDocument<Document>> | null = null,
+let changeStream: ChangeStream<
+    Document,
+    ChangeStreamDocument<Document>
+  > | null = null,
   client: MongoClient | null = null;
 
 const attendanceCache = new Map<string, Attendance>();
@@ -13,9 +18,18 @@ export interface AttendanceEvents {
 }
 
 declare interface AttendanceEventEmitter {
-  on<K extends keyof AttendanceEvents>(event: K, listener: AttendanceEvents[K]): this;
-  off<K extends keyof AttendanceEvents>(event: K, listener: AttendanceEvents[K]): this;
-  once<K extends keyof AttendanceEvents>(event: K, listener: AttendanceEvents[K]): this;
+  on<K extends keyof AttendanceEvents>(
+    event: K,
+    listener: AttendanceEvents[K]
+  ): this;
+  off<K extends keyof AttendanceEvents>(
+    event: K,
+    listener: AttendanceEvents[K]
+  ): this;
+  once<K extends keyof AttendanceEvents>(
+    event: K,
+    listener: AttendanceEvents[K]
+  ): this;
   emit<K extends keyof AttendanceEvents>(
     event: K,
     ...args: Parameters<AttendanceEvents[K]>
@@ -36,32 +50,32 @@ export const attendanceEvents = new AttendanceEventEmitter();
 /**
  * Returns today's start (00:00:00.000) and end (23:59:59.999) timestamps.
  */
-export function getStartAndEndOfDay(now: Date): {start: Date; end: Date} {
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const day = now.getDate();
-
+export function getStartAndEndOfDay(now: Date): { start: Date; end: Date } {
   // Start of today
-  const start = new Date(year, month, day, 0, 0, 0, 0);
+  const start = getStartOfDay(now);
 
   // End of today
-  const end = new Date(year, month, day, 23, 59, 59, 999);
+  const end = getEndOfDay(now);
 
-  return {start, end};
+  return { start, end };
+}
+
+function getDateRangePayload(date: Date) {
+  const { start, end } = getStartAndEndOfDay(date);
+  return {
+    gte: start,
+    lte: end,
+  };
 }
 
 const generateCacheKey = (userId: string, date: Date) =>
-  `${userId}-${date.toLocaleDateString().replaceAll('/', '-')}`;
+  `${userId}-${date.toLocaleDateString().replaceAll("/", "-")}`;
 
 const updateCacheForUser = async (userId: string, date: Date) => {
-  const {start, end} = getStartAndEndOfDay(date);
   const attendance = await db.attendance.findFirst({
     where: {
       userId,
-      login: {
-        gte: start,
-        lte: end,
-      },
+      login: getDateRangePayload(date),
     },
   });
 
@@ -86,36 +100,44 @@ const updateCacheForDocument = async (attendanceId: string) => {
     },
   });
   if (attendance) {
-    const cacheKey = generateCacheKey(attendance.userId, new Date(attendance.login));
+    const cacheKey = generateCacheKey(
+      attendance.userId,
+      new Date(attendance.login)
+    );
     attendanceCache.set(cacheKey, attendance);
-    attendanceEvents.emit('attendanceUpdated', attendance);
+    attendanceEvents.emit("attendanceUpdated", attendance);
   }
 };
 
 const attendanceWatcher = async () => {
-  if (!process.env.DB_URL || !process.env.ATTENDANCE_DB || !process.env.ATTENDANCE_COLLECTION) {
-    throw new Error('Missing environment variables for attendance watcher');
+  if (
+    !process.env.DB_URL ||
+    !process.env.ATTENDANCE_DB ||
+    !process.env.ATTENDANCE_COLLECTION
+  ) {
+    throw new Error("Missing environment variables for attendance watcher");
   }
-  console.log('starting attendance watcher', client);
+  console.log("starting attendance watcher", client);
   client = new MongoClient(process.env.DB_URL);
   await client.connect();
-  console.log('client connected', client);
+  console.log("client connected", client);
 
   const attendanceDb = client.db(process.env.ATTENDANCE_DB);
-  const attendanceCollection = attendanceDb.collection(process.env.ATTENDANCE_COLLECTION);
+  const attendanceCollection = attendanceDb.collection(
+    process.env.ATTENDANCE_COLLECTION
+  );
 
   changeStream = attendanceCollection.watch();
-  changeStream.on('change', next => {
+  changeStream.on("change", (next) => {
     // Print any change event
 
-    if (next.operationType === 'update' || next.operationType === 'insert') {
+    if (next.operationType === "update" || next.operationType === "insert") {
       updateCacheForDocument(next.documentKey._id.toString());
     }
   });
 };
 
 export const getAttendanceForUser = async (userId: string, date?: Date) => {
-  const ONE_DAY_IN_MS = 24 * 60 * 60 * 1000;
   let watcher = false;
   if (!date) {
     watcher = true;
@@ -161,17 +183,23 @@ export const getAttendancesInDateRange = async (
  * @param holidays Array of holiday dates to exclude
  * @returns Number of working days
  */
-export const countWorkingDays = (startDate: Date, endDate: Date, holidays: Date[] = []): number => {
+export const countWorkingDays = (
+  startDate: Date,
+  endDate: Date,
+  holidays: Date[] = []
+): number => {
   let count = 0;
   const currentDate = new Date(startDate);
 
   // Create a set of holiday dates for faster lookup
-  const holidaySet = new Set(holidays.map(date => new Date(date).toISOString().split('T')[0]));
+  const holidaySet = new Set(
+    holidays.map((date) => new Date(date).toISOString().split("T")[0])
+  );
 
   // Loop through each day in the range
   while (currentDate <= endDate) {
     const dayOfWeek = currentDate.getDay();
-    const dateString = currentDate.toISOString().split('T')[0];
+    const dateString = currentDate.toISOString().split("T")[0];
 
     // Skip weekends (0 = Sunday, 6 = Saturday) and holidays
     if (dayOfWeek !== 0 && dayOfWeek !== 6 && !holidaySet.has(dateString)) {
@@ -183,4 +211,259 @@ export const countWorkingDays = (startDate: Date, endDate: Date, holidays: Date[
   }
 
   return count;
+};
+
+/**
+ * Get the logged-in attendance for a user
+ * @param userId The user's ID
+ * @returns The attendance record if found, otherwise null
+ */
+export const getLoggedInAttendance = async (userId: string, date = new Date()) => {
+  const attendance = await db.attendance.findFirst({
+    where: {
+      userId,
+      login: getDateRangePayload(new Date()),
+      logout: { isSet: false },
+    },
+  });
+  return attendance;
+};
+
+/**
+ * Check if a user can take a break
+ * @param userId The user's ID
+ * @param day The date to check (default is today)
+ * @returns True if the user can take a break, or the start time of the last break
+ */
+export const canBreak = async (userId: string, day: Date | null = null) => {
+  const breakFound = await db.attendance.findFirst({
+    where: {
+      userId,
+      login: getDateRangePayload(day || new Date()),
+      logout: { isSet: false },
+    },
+    select: {
+      breaks: true,
+    },
+  });
+
+  if (breakFound === null) {
+    return true;
+  }
+
+  const lastBreak = breakFound.breaks[breakFound.breaks.length - 1];
+  if (!lastBreak) {
+    return true;
+  }
+  return lastBreak.end === null ? lastBreak.start : true;
+};
+
+/**
+ * Start a break for a user
+ * @param userId The user's ID
+ * @param reason The reason for the break (default is empty string)
+ * @returns The start time of the break
+ */
+export const breakStart = async (userId: string, reason: string = "") => {
+  const breakStartTime = new Date();
+  const attendance = await getLoggedInAttendance(userId);
+
+  if (!attendance) {
+    return null;
+  }
+
+  // End the latest work segment if still open
+  if (attendance.workSegments.length > 0) {
+    const lastSeg = attendance.workSegments[attendance.workSegments.length - 1];
+    if (!lastSeg.end) {
+      lastSeg.end = breakStartTime;
+      lastSeg.length_ms = breakStartTime.getTime() - lastSeg.start.getTime();
+    }
+  }
+
+  // Now proceed with your existing logic for break:
+  attendance.breaks.push({
+    start: breakStartTime,
+    reason,
+    end: null,
+    length_ms: null,
+  });
+
+  await db.attendance.update({
+    where: {
+      id: attendance.id,
+    },
+    data: {
+      breaks: attendance.breaks,
+      workSegments: attendance.workSegments,
+    },
+  });
+  return breakStartTime;
+};
+
+/**
+ * End a break for a user
+ * @param userId The user's ID
+ * @param project The project the user is working on (optional)
+ * @returns Null if no break is found, otherwise a string announcing the end of the break
+ */
+export const breakEnd = async (userId: string, project?: string) => {
+  const attendance = await getLoggedInAttendance(userId);
+
+  if (!attendance) {
+    return null;
+  }
+
+  const lastBreak = attendance.breaks[attendance.breaks.length - 1];
+  if (!lastBreak || lastBreak.end) {
+    return null;
+  }
+
+  lastBreak.end = new Date();
+  lastBreak.length_ms = lastBreak.end.getTime() - lastBreak.start.getTime();
+
+  // If a project is provided, add it to the work segments
+  if (project) {
+    attendance.workSegments.push({
+      start: lastBreak.end,
+      end: null,
+      project,
+      length_ms: null,
+    });
+  }
+
+  // Update the attendance record in the database
+  await db.attendance.update({
+    where: {
+      id: attendance.id,
+    },
+    data: {
+      breaks: attendance.breaks,
+      workSegments: attendance.workSegments,
+    },
+  });
+
+  let prefix = "";
+  if (!lastBreak.reason) {
+    prefix = "Break";
+  } else {
+    prefix = lastBreak.reason + " break";
+  }
+
+  return `${prefix} for ${Math.round(
+    lastBreak.length_ms / (1000 * 60)
+  )} minutes ended at ${lastBreak.end.toLocaleString()}`;
+};
+
+/**
+ * Get today's login time for a user
+ * @param userId
+ * @returns A date object representing the login time, or null if not found
+ */
+export const getLoginTime = async (userId: string) => {
+  const attendance = await db.attendance.findFirst({
+    where: {
+      userId,
+      login: getDateRangePayload(new Date()),
+    },
+  });
+  return attendance ? attendance.login : null;
+};
+
+/**
+ * Checks if a user has an active login session from yesterday
+ * @param userId
+ * @returns A boolean indicating if the user has an active login session from yesterday
+ */
+export const hasActiveLoginSessionFromYesterday = async (userId: string) => {
+  const yesterday = new Date(Date.now() - ONE_DAY_IN_MS);
+  const attendance = await getLoggedInAttendance(userId, yesterday);
+
+  return attendance !== null;
+};
+
+/**
+ * Get the logout time for a user
+ * @param userId
+ * @returns A date object representing the logout time, or null if not found
+ */
+export const getLogoutTime = async (userId: string) => {
+  const attendance = await db.attendance.findFirst({
+    where: {
+      userId,
+      login: getDateRangePayload(new Date()),
+      logout: { isSet: true },
+    },
+  });
+  return attendance ? attendance.logout : null;
+};
+
+/**
+ * Log out a user
+ * @param userId
+ * @returns An object containing the logout time and report, or null if not found
+ */
+export const logout = async (userId: string) => {
+  const logoutTime = new Date();
+  const attendance = await getLoggedInAttendance(userId);
+  if (!attendance) {
+    return null;
+  }
+
+  if ((await canBreak(userId)) !== true) {
+    await breakEnd(userId);
+  }
+
+  // Close the final work segment if still open
+  if (attendance.workSegments.length > 0) {
+    const lastSeg = attendance.workSegments[attendance.workSegments.length - 1];
+    if (!lastSeg.end) {
+      lastSeg.end = logoutTime;
+      lastSeg.length_ms = logoutTime.getTime() - lastSeg.start.getTime();
+    }
+  }
+
+  let totalBreak = 0;
+  attendance.breaks.forEach((brek) => {
+    totalBreak += brek.length_ms || 0;
+  });
+
+  const totalTime = logoutTime.getTime() - attendance.login.getTime();
+
+  const totalWorkTime = totalTime - totalBreak;
+
+  // Update the attendance doc
+  attendance.logout = logoutTime;
+  attendance.totalBreak = totalBreak;
+  attendance.totalWork = totalWorkTime;
+  attendance.totalTime = totalTime;
+
+  await db.attendance.update({
+    where: {
+      id: attendance.id,
+    },
+    data: {
+      logout: attendance.logout,
+      totalBreak: attendance.totalBreak,
+      totalWork: attendance.totalWork,
+      totalTime: attendance.totalTime,
+    },
+  });
+
+  const jwtWithUser = await generateJWTFromUserId(userId);
+
+  const token = jwtWithUser?.jwt;
+
+  if (!token) {
+    return {
+      report: null,
+      time: logoutTime,
+    };
+  }
+  const attendanceImage = await getAttendanceStatsImage(token);
+
+  return {
+    report: attendanceImage,
+    time: logoutTime,
+  };
 };
