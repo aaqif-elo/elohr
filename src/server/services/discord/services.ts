@@ -7,7 +7,8 @@ import {
   Client,
 } from "discord.js";
 import { getNextHoliday, markUpcomingHolidaysAsAnnounced } from "../../db";
-import { getHashFromDiscordUserId } from "../../api/routers";
+
+import { generateJWTFromUserDiscordId } from "../../api/routers/auth";
 
 export const getHRLoginInteractionReplyPayload = async (
   interaction: ChatInputCommandInteraction,
@@ -15,37 +16,46 @@ export const getHRLoginInteractionReplyPayload = async (
 ) => {
   try {
     const discordId = interaction.user.id;
-    const authLink = getHashFromDiscordUserId(discordId);
+    // new: actually generate the signed JWT
+    const jwtResp = await generateJWTFromUserDiscordId(discordId);
+    if (!jwtResp?.jwt) {
+      await interaction.reply({
+        content: `❌ Error generating login link. Please try again later.`,
+        flags: "Ephemeral",
+      });
+      return;
+    }
+    const loginUrl = `${
+      process.env.NODE_ENV === "production"
+        ? process.env.FRONTEND_URL
+        : `http://localhost:${process.env.PORT}`
+    }/?token=${jwtResp.jwt}`;
+
     const loginButton = new ButtonBuilder()
       .setLabel("ELO HR Login")
       .setStyle(ButtonStyle.Link)
-      .setURL(authLink)
-      .setEmoji("🌐")
-      .setDisabled(false);
+      .setURL(loginUrl)
+      .setEmoji("🌐");
 
-    let message = `<@${discordId}> Please log in to the ELO HR Portal by clicking the button below `;
-    if (reason) {
-      message += ` to ${reason}`;
-    }
-    message += `:\n\n*This link will expire in 30 seconds*`;
+    let message = `<@${discordId}> Please log in to the ELO HR Portal`;
+    if (reason) message += ` to ${reason}`;
+    message += ` by clicking below:`;
 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
       loginButton
     );
 
-    interaction.reply({
+    await interaction.reply({
       content: message,
       components: [row],
       flags: "Ephemeral",
     });
-    return;
   } catch (error) {
     console.error("Error generating HR login link:", error);
-    interaction.reply({
-      content: `❌ Error generating HR login link. Please try again later.`,
+    await interaction.reply({
+      content: `❌ Error generating login link. Please try again later.`,
       flags: "Ephemeral",
     });
-    return;
   }
 };
 
