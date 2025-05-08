@@ -2,7 +2,7 @@
   "name": "example-with-prisma",
   "type": "module",
   "scripts": {
-    "dev": "vinxi dev",
+    "dev": "nodemon",
     "build": "vinxi build",
     "start": "vinxi start",
     "generate": "prisma generate"
@@ -10,7 +10,8 @@
   "devDependencies": {
     "@types/event-source-polyfill": "^1.0.5",
     "@types/jsonwebtoken": "^9.0.9",
-    "@types/node": "^22.15.14"
+    "@types/node": "^22.15.14",
+    "nodemon": "^3.1.10"
   },
   "dependencies": {
     "@prisma/client": "^6.7.0",
@@ -39,5 +40,12 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "nodemonConfig": {
+    "watch": [
+      "src/server"
+    ],
+    "ext": "ts,js,json",
+    "exec": "vinxi dev"
   }
 }
