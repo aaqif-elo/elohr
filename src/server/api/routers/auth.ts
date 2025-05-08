@@ -112,40 +112,44 @@ const getUserDiscordIdFromValidJWT = (jwt?: string | null) => {
   }
 };
 
+export const getHashFromDiscordUserId = (discordUserId: string): string => {
+  if (!process.env.HASHING_KEY) {
+    throw new Error("HASHING_KEY not set");
+  }
+  if (!process.env.FRONTEND_URL) {
+    throw new Error("FRONTEND_URL not set");
+  }
+
+  console.log("input", discordUserId);
+
+  const randomSalt =
+    Math.random().toString(36).substring(2, 15) +
+    Math.random().toString(36).substring(2, 15);
+
+  const timestamp = new Date().getTime();
+
+  const hash = createHmac("sha256", process.env.HASHING_KEY)
+    .update(discordUserId + timestamp.toString() + randomSalt.toString())
+    .digest("hex");
+
+  hashToAuthAttempt[hash] = {
+    discordUserId,
+    dateTime: new Date(),
+  };
+
+  const url =
+    process.env.NODE_ENV === "production"
+      ? process.env.FRONTEND_URL
+      : "http://localhost:" + process.env.PORT;
+
+  return `${url}/?hash=${hash}`;
+};
+
 export const authRouter = createTRPCRouter({
   generateAuthHash: publicProcedure
     .input(wrap(string()))
     .query(async ({ input: discordUserId }) => {
-      if (!process.env.HASHING_KEY) {
-        throw new Error("HASHING_KEY not set");
-      }
-      if (!process.env.FRONTEND_URL) {
-        throw new Error("FRONTEND_URL not set");
-      }
-
-      console.log("input", discordUserId);
-
-      const randomSalt =
-        Math.random().toString(36).substring(2, 15) +
-        Math.random().toString(36).substring(2, 15);
-
-      const timestamp = new Date().getTime();
-
-      const hash = createHmac("sha256", process.env.HASHING_KEY)
-        .update(discordUserId + timestamp.toString() + randomSalt.toString())
-        .digest("hex");
-
-      hashToAuthAttempt[hash] = {
-        discordUserId,
-        dateTime: new Date(),
-      };
-
-      const url =
-        process.env.NODE_ENV === "production"
-          ? process.env.FRONTEND_URL
-          : "http://localhost:" + process.env.PORT;
-
-      return `${url}/?hash=${hash}`;
+      return getHashFromDiscordUserId(discordUserId);
     }),
   loginWithHash: publicProcedure
     .input(wrap(string()))
