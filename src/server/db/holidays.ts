@@ -649,3 +649,49 @@ export async function isHoliday(
 
   return holiday;
 }
+
+/**
+ * Mark upcoming holidays as announced
+ * @param date The date to check from
+ * @returns The number of holidays marked as announced
+ */
+export async function markUpcomingHolidaysAsAnnounced(
+  date: Date = new Date()
+): Promise<number> {
+  const holiday = await getNextHoliday(date);
+
+  if (!holiday) {
+    throw new Error("No holiday found on the provided date");
+  }
+
+  const isChained = holiday.startDate !== holiday.endDate;
+
+  if (isChained) {
+    if (!holiday) {
+      throw new Error("No holiday found starting on the provided date");
+    }
+
+    // Get all holidays in the date range and mark them as announced
+    const startDate = new Date(holiday.startDate);
+    const endDate = new Date(holiday.endDate);
+
+    // Mark all holidays within this range as announced
+    const holidays = await getHolidaysForDateRange(startDate, endDate);
+
+    // Mark each holiday as announced
+    const results = await Promise.all(
+      holidays.map((h) => markHolidayAsAnnounced(h.id))
+    );
+    return results.length;
+  } else {
+    // For a single holiday, find and mark it
+    const holiday = await isHoliday(date);
+
+    if (!holiday) {
+      throw new Error("No holiday found on the provided date");
+    }
+
+    await markHolidayAsAnnounced(holiday.id);
+    return 1;
+  }
+}
