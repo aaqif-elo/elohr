@@ -24,16 +24,13 @@ export const breakCommandHandler = async (
   userId: string,
   reason?: string
 ): Promise<string> => {
-  console.log("Break command handler called");
   const canTakeBreak = await canBreak(userId);
-  console.log("Can take break: ", canTakeBreak);
   if (canTakeBreak === true) {
     const breakInfo = await breakStart(userId, reason);
-    console.log("Break info: ", breakInfo);
     if (breakInfo) {
       return `✅ ${
         reason === "" ? "Break" : reason + " break"
-      } started at ${breakInfo}...`;
+      } started at ${breakInfo.toLocaleTimeString()}...`;
     } else {
       return ``;
     }
