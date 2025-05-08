@@ -34,7 +34,6 @@ export async function getUserByDiscordId(
 
   if (withAttendance) {
     const attendance = await getAttendanceForUser(user.id);
-    console.log("attendance", attendance);
     return { user, attendance };
   } else {
     return user;
