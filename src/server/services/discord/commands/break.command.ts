@@ -2,7 +2,10 @@ import {
   RESTPostAPIChatInputApplicationCommandsJSONBody,
   SlashCommandBuilder,
 } from "discord.js";
-import { EAttendanceCommands, ESlashCommandOptionNames } from "./discord.enums";
+import {
+  EAttendanceCommands,
+  ESlashCommandOptionNames,
+} from "../discord.enums";
 import { canBreak, breakStart } from "../../../db";
 
 const breakCommand = new SlashCommandBuilder()
@@ -21,9 +24,12 @@ export const breakCommandHandler = async (
   userId: string,
   reason?: string
 ): Promise<string> => {
+  console.log("Break command handler called");
   const canTakeBreak = await canBreak(userId);
+  console.log("Can take break: ", canTakeBreak);
   if (canTakeBreak === true) {
     const breakInfo = await breakStart(userId, reason);
+    console.log("Break info: ", breakInfo);
     if (breakInfo) {
       return `✅ ${
         reason === "" ? "Break" : reason + " break"
@@ -32,11 +38,7 @@ export const breakCommandHandler = async (
       return ``;
     }
   } else {
-    if (typeof canTakeBreak === "string") {
-      return `❌ You are already on a break which started at ${canTakeBreak}...`;
-    } else {
-      return ``;
-    }
+    return `❌ You are already on a break which started at ${canTakeBreak.toLocaleTimeString()}...`;
   }
 };
 

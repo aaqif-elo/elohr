@@ -2,7 +2,7 @@ import {
   RESTPostAPIChatInputApplicationCommandsJSONBody,
   SlashCommandBuilder,
 } from "discord.js";
-import { EAttendanceCommands } from "./discord.enums";
+import { EAttendanceCommands } from "../discord.enums";
 import {
   getLoginTime,
   ONE_DAY_IN_MS,
