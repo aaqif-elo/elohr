@@ -1,6 +1,6 @@
 import { defineConfig } from "@solidjs/start/config";
 import tailwindcss from "@tailwindcss/vite";
-import { initializeDiscord } from "./src/server/services/discord/discord";
+import { initializeDiscord } from "./src/server/services/discord/index";
 
 console.log("Loading app.config.ts");
 console.log("NODE_ENV", process.env);
