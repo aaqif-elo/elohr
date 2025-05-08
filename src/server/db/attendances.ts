@@ -1,20 +1,77 @@
-import { Attendance } from "@prisma/client";
-import { db, getEndOfDay, getStartOfDay, ONE_DAY_IN_MS } from ".";
-import { ChangeStream, ChangeStreamDocument, MongoClient } from "mongodb";
-import EventEmitter, { on } from "events";
-import { generateJWTFromUserId } from "../api/routers";
-import { getAttendanceStatsImage } from "../services/discord/utils";
-
-let changeStream: ChangeStream<
-    Document,
-    ChangeStreamDocument<Document>
-  > | null = null,
-  client: MongoClient | null = null;
-
-const attendanceCache = new Map<string, Attendance>();
+// At the top of the file, add this to access the global object:
+declare global {
+  var _attendanceEventsGlobal: AttendanceEventEmitter | undefined;
+}
 
 export interface AttendanceEvents {
   attendanceUpdated: (attendance: Attendance) => void;
+}
+
+class AttendanceEventEmitter extends EventEmitter {
+  public toIterable<K extends keyof AttendanceEvents>(
+    event: K,
+    opts: { signal?: AbortSignal }
+  ): AsyncIterable<[Parameters<AttendanceEvents[K]>[0]]> {
+    const events: [Parameters<AttendanceEvents[K]>[0]][] = [];
+    const queue: ((
+      value: IteratorResult<[Parameters<AttendanceEvents[K]>[0]]>
+    ) => void)[] = [];
+
+    // Fix the listener signature - use exactly one parameter
+    const listener = (data: Parameters<AttendanceEvents[K]>[0]) => {
+      if (queue.length > 0) {
+        const resolve = queue.shift()!;
+        resolve({ value: [data], done: false });
+      } else {
+        events.push([data]);
+      }
+    };
+
+    // Cast the listener to match the expected type
+    this.on(event, listener);
+
+    opts.signal?.addEventListener(
+      "abort",
+      () => {
+        this.off(event, listener);
+      },
+      { once: true }
+    );
+
+    return {
+      [Symbol.asyncIterator]() {
+        return {
+          next: async (): Promise<
+            IteratorResult<[Parameters<AttendanceEvents[K]>[0]]>
+          > => {
+            if (events.length > 0) {
+              return { value: events.shift()!, done: false };
+            }
+
+            if (opts.signal?.aborted) {
+              return { value: undefined, done: true };
+            }
+
+            return new Promise((resolve) => {
+              queue.push(resolve);
+
+              if (opts.signal) {
+                const abortHandler = () => {
+                  const index = queue.indexOf(resolve);
+                  if (index >= 0) queue.splice(index, 1);
+                  resolve({ value: undefined, done: true });
+                };
+
+                opts.signal.addEventListener("abort", abortHandler, {
+                  once: true,
+                });
+              }
+            });
+          },
+        };
+      },
+    };
+  }
 }
 
 declare interface AttendanceEventEmitter {
@@ -36,16 +93,24 @@ declare interface AttendanceEventEmitter {
   ): boolean;
 }
 
-class AttendanceEventEmitter extends EventEmitter {
-  public toIterable<K extends keyof AttendanceEvents>(
-    event: K,
-    opts: NonNullable<Parameters<typeof on>[2]>
-  ): AsyncIterable<Parameters<AttendanceEvents[K]>> {
-    return on(this, event, opts) as any;
-  }
-}
+// Then replace your event emitter export with:
+export const attendanceEvents =
+  global._attendanceEventsGlobal || new AttendanceEventEmitter();
+// Store in global scope to ensure it's a singleton
+global._attendanceEventsGlobal = attendanceEvents;
+attendanceEvents.setMaxListeners(10);
 
-export const attendanceEvents = new AttendanceEventEmitter();
+console.log(
+  "Initializing attendanceEvents singleton instance",
+  attendanceEvents
+);
+
+import { Attendance } from "@prisma/client";
+import { db, ONE_DAY_IN_MS } from ".";
+import { getStartOfDay, getEndOfDay } from "./util";
+import EventEmitter from "events";
+import { generateJWTFromUserId } from "../api/routers";
+import { getAttendanceStatsImage } from "../services/discord/utils";
 
 /**
  * Returns today's start (00:00:00.000) and end (23:59:59.999) timestamps.
@@ -68,89 +133,17 @@ function getDateRangePayload(date: Date) {
   };
 }
 
-const generateCacheKey = (userId: string, date: Date) =>
-  `${userId}-${date.toLocaleDateString().replaceAll("/", "-")}`;
-
-const updateCacheForUser = async (userId: string, date: Date) => {
+export const getAttendanceForUser = async (
+  userId: string,
+  date = new Date()
+) => {
   const attendance = await db.attendance.findFirst({
     where: {
       userId,
       login: getDateRangePayload(date),
     },
   });
-
-  if (attendance) {
-    const cacheKey = generateCacheKey(userId, date);
-    attendanceCache.set(cacheKey, attendance);
-  }
-};
-
-const getCachedAttendance = async (userId: string, date: Date) => {
-  const cacheKey = generateCacheKey(userId, date);
-  if (!attendanceCache.has(cacheKey)) {
-    await updateCacheForUser(userId, date);
-  }
-  return attendanceCache.get(cacheKey) || null;
-};
-
-const updateCacheForDocument = async (attendanceId: string) => {
-  const attendance = await db.attendance.findFirst({
-    where: {
-      id: attendanceId,
-    },
-  });
-  if (attendance) {
-    const cacheKey = generateCacheKey(
-      attendance.userId,
-      new Date(attendance.login)
-    );
-    attendanceCache.set(cacheKey, attendance);
-    attendanceEvents.emit("attendanceUpdated", attendance);
-  }
-};
-
-const attendanceWatcher = async () => {
-  if (
-    !process.env.DB_URL ||
-    !process.env.ATTENDANCE_DB ||
-    !process.env.ATTENDANCE_COLLECTION
-  ) {
-    throw new Error("Missing environment variables for attendance watcher");
-  }
-  console.log("starting attendance watcher", client);
-  client = new MongoClient(process.env.DB_URL);
-  await client.connect();
-  console.log("client connected", client);
-
-  const attendanceDb = client.db(process.env.ATTENDANCE_DB);
-  const attendanceCollection = attendanceDb.collection(
-    process.env.ATTENDANCE_COLLECTION
-  );
-
-  changeStream = attendanceCollection.watch();
-  changeStream.on("change", (next) => {
-    // Print any change event
-
-    if (next.operationType === "update" || next.operationType === "insert") {
-      updateCacheForDocument(next.documentKey._id.toString());
-    }
-  });
-};
-
-export const getAttendanceForUser = async (userId: string, date?: Date) => {
-  let watcher = false;
-  if (!date) {
-    watcher = true;
-    date = new Date();
-  } else if (new Date().getTime() - date.getTime() < ONE_DAY_IN_MS) {
-    watcher = true;
-  }
-
-  if (watcher && !client) {
-    await attendanceWatcher();
-  }
-
-  return getCachedAttendance(userId, date);
+  return attendance;
 };
 
 /**
@@ -315,6 +308,8 @@ export const breakStart = async (userId: string, reason: string = "") => {
       workSegments: attendance.workSegments,
     },
   });
+
+  attendanceEvents.emit("attendanceUpdated", attendance);
   return breakStartTime;
 };
 
@@ -366,10 +361,10 @@ export const breakEnd = async (userId: string, project?: string) => {
   } else {
     prefix = lastBreak.reason + " break";
   }
-
+  attendanceEvents.emit("attendanceUpdated", attendance);
   return `${prefix} for ${Math.round(
     lastBreak.length_ms / (1000 * 60)
-  )} minutes ended at ${lastBreak.end.toLocaleString()}`;
+  )} minutes ended at ${lastBreak.end.toLocaleTimeString()}`;
 };
 
 /**
@@ -473,7 +468,7 @@ export const logout = async (userId: string) => {
       totalTime: attendance.totalTime,
     },
   });
-
+  attendanceEvents.emit("attendanceUpdated", attendance);
   const jwtWithUser = await generateJWTFromUserId(userId);
 
   const token = jwtWithUser?.jwt;
@@ -539,6 +534,7 @@ export const login = async (userId: string, project: string) => {
     },
   });
 
+  attendanceEvents.emit("attendanceUpdated", newAttendance);
   return newAttendance;
 };
 
@@ -594,6 +590,6 @@ export const switchProject = async (userId: string, project: string) => {
       workSegments: attendance.workSegments,
     },
   });
-
+  attendanceEvents.emit("attendanceUpdated", attendance);
   return true;
 };
