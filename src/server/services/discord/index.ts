@@ -81,11 +81,11 @@ export const initializeDiscord = async () => {
     await discordClient.login(DISCORD_BOT_TOKEN);
     console.log("Discord client connected successfully");
 
-    // Register application commands
-    await registerCommands();
-
     // Register event handlers
     setupEventHandlers();
+
+    // Register application commands
+    await registerCommands();
 
     return discordClient;
   } catch (error) {
@@ -116,24 +116,14 @@ function setupEventHandlers() {
 
     // Setup voice state update handler
     discordClient.on("voiceStateUpdate", (oldState, newState) => {
-      if (production) {
-        handleVoiceStateChange(
-          oldState,
-          newState,
-          sendAttendanceChangeMessageAndSetStatus
-        );
-      }
+      // if (production) {
+      handleVoiceStateChange(
+        oldState,
+        newState,
+        sendAttendanceChangeMessageAndSetStatus
+      );
+      // }
     });
-
-    // Post startup message
-    if (ATTENDANCE_CHANNEL_ID) {
-      const channel = discordClient.channels.cache.get(
-        ATTENDANCE_CHANNEL_ID
-      ) as TextChannel;
-      if (channel) {
-        channel.send("HR Bot is now online!");
-      }
-    }
   });
 
   // Handle interactions (slash commands)
