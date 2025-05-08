@@ -218,7 +218,10 @@ export const countWorkingDays = (
  * @param userId The user's ID
  * @returns The attendance record if found, otherwise null
  */
-export const getLoggedInAttendance = async (userId: string, date = new Date()) => {
+export const getLoggedInAttendance = async (
+  userId: string,
+  date = new Date()
+) => {
   const attendance = await db.attendance.findFirst({
     where: {
       userId,
@@ -466,4 +469,22 @@ export const logout = async (userId: string) => {
     report: attendanceImage,
     time: logoutTime,
   };
+};
+
+/**
+ * Check if the user can break or resume
+ * @param userId The user's ID
+ * @returns An error message if the user cannot break or resume, otherwise true
+ */
+export const canBreakOrResume = async (userId: string) => {
+  const attendance = await getLoggedInAttendance(userId);
+  if (!attendance) {
+    return "❌ You are not logged in.";
+  }
+
+  if (attendance.logout) {
+    return "❌ You have already logged out.";
+  }
+
+  return true;
 };
