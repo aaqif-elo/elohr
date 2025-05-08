@@ -1,32 +1,65 @@
-# SolidStart
+# Elohr
 
-Everything you need to build a Solid project, powered by [`solid-start`](https://start.solidjs.com);
+Elohr is a SolidStart application for managing employee leave requests, attendance tracking, and contract details. It uses SolidJS on the front end, Prisma for the database ORM, and Tailwind CSS for styling.
 
-## Creating a project
+## Features
+
+- User management with roles and permissions  
+- Submit, approve, and track leave requests  
+- Record daily attendance  
+- Configurable reset policies and composite types  
+- SQLite / PostgreSQL support via Prisma  
+
+## Prerequisites
+
+- Node.js >= 16  
+- pnpm (or npm/yarn)  
+- A database URL in `.env` (e.g. `DATABASE_URL="file:./dev.db"` or a Postgres connection string)
+
+## Setup
+
+1. Install dependencies
 
 ```bash
-# create a new project in the current directory
-npm init solid@latest
-
-# create a new project in my-app
-npm init solid@latest my-app
+pnpm install
 ```
 
-## Developing
+2. Copy .env.example to .env and update your database connection string.
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+3. Run Prisma generate
 
 ```bash
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
+npx prisma generate
 ```
 
-## Building
+## Development
 
-Solid apps are built with _presets_, which optimise your project for deployment to different environments.
+Start the dev server with hot reload:
 
-By default, `npm run build` will generate a Node app that you can run with `npm start`. To use a different preset, add it to the `devDependencies` in `package.json` and specify in your `app.config.js`.
+```bash
+pnpm run dev
+```
 
-## This project was created with the [Solid CLI](https://solid-cli.netlify.app)
+Open `http://localhost:{PORT}` in your browser.
+
+## Building & Deployment
+
+Build the production version:
+
+```bash
+pnpm run build
+```
+
+Preview the production build locally:
+
+```bash
+pnpm run preview
+```
+
+Deploy your build according to your platform (Node, Vercel, Netlify, etc.).
+
+Contributing
+Feel free to open issues and submit pull requests. Please follow the existing code style and add tests for new features.
+
+License
+MIT © [elo](https://elobyte.com)
