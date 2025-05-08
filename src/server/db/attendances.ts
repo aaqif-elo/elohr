@@ -225,8 +225,15 @@ export const getLoggedInAttendance = async (
   const attendance = await db.attendance.findFirst({
     where: {
       userId,
-      login: getDateRangePayload(new Date()),
-      logout: { isSet: false },
+      login: getDateRangePayload(date),
+      OR: [
+        {
+          logout: { isSet: false },
+        },
+        {
+          logout: null,
+        },
+      ],
     },
   });
   return attendance;
@@ -243,7 +250,14 @@ export const canBreak = async (userId: string, day: Date | null = null) => {
     where: {
       userId,
       login: getDateRangePayload(day || new Date()),
-      logout: { isSet: false },
+      OR: [
+        {
+          logout: { isSet: false },
+        },
+        {
+          logout: null,
+        },
+      ],
     },
     select: {
       breaks: true,
@@ -395,7 +409,14 @@ export const getLogoutTime = async (userId: string) => {
     where: {
       userId,
       login: getDateRangePayload(new Date()),
-      logout: { isSet: true },
+      OR: [
+        {
+          logout: { isSet: false },
+        },
+        {
+          logout: null,
+        },
+      ],
     },
   });
   return attendance ? attendance.logout : null;
@@ -485,6 +506,94 @@ export const canBreakOrResume = async (userId: string) => {
   if (attendance.logout) {
     return "❌ You have already logged out.";
   }
+
+  return true;
+};
+
+/**
+ * Log in a user
+ * @param userId The user's ID
+ * @param project The project the user is working on
+ * @returns The attendance record if successful, otherwise a string error message
+ */
+export const login = async (userId: string, project: string) => {
+  const attendance = await getLoggedInAttendance(userId);
+  if (attendance) {
+    return "❌ You are already logged in.";
+  }
+
+  const loginTime = new Date();
+  const newAttendance = await db.attendance.create({
+    data: {
+      userId,
+      login: loginTime,
+      workSegments: [
+        {
+          start: loginTime,
+          end: null,
+          project,
+          length_ms: null,
+        },
+      ],
+      breaks: [],
+    },
+  });
+
+  return newAttendance;
+};
+
+/**
+ * Check if the user is on a break
+ * @param userId The user's ID
+ * @returns A boolean indicating if the user is on a break
+ */
+export const isOnBreak = async (userId: string) => {
+  const attendance = await getLoggedInAttendance(userId);
+  if (!attendance) {
+    return false;
+  }
+
+  const lastBreak = attendance.breaks[attendance.breaks.length - 1];
+  return lastBreak && !lastBreak.end;
+};
+
+/**
+ * Switch the current project for a user
+ * @param userId The user's ID
+ * @param project The project name
+ * @returns A boolean indicating if the project switch was successful
+ */
+export const switchProject = async (userId: string, project: string) => {
+  const attendance = await getLoggedInAttendance(userId);
+  if (!attendance) {
+    return false;
+  }
+
+  // End the latest work segment if still open
+  if (attendance.workSegments.length > 0) {
+    const lastSeg = attendance.workSegments[attendance.workSegments.length - 1];
+    if (!lastSeg.end) {
+      lastSeg.end = new Date();
+      lastSeg.length_ms = lastSeg.end.getTime() - lastSeg.start.getTime();
+    }
+  }
+
+  // Add a new work segment with the new project
+  attendance.workSegments.push({
+    start: new Date(),
+    end: null,
+    project,
+    length_ms: null,
+  });
+
+  await db.attendance.update({
+    where: {
+      id: attendance.id,
+    },
+    data: {
+      workSegments: attendance.workSegments,
+    },
+  });
 
   return true;
 };
