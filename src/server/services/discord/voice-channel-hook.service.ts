@@ -49,6 +49,13 @@ const addAttendanceChange = async (attendanceChangePayload: {
           );
         } else {
           login(user.id, currentVoiceChannelName).then((loginResponse) => {
+            if (typeof loginResponse === "string") {
+              callBack(
+                `${process.env.STATUS_TAG_ERROR} ${loginResponse}`,
+                user.discordInfo.id
+              );
+              return;
+            }
             getGuildMember(user.discordInfo.id).then((member) => {
               if (
                 member.user.avatar &&
@@ -58,9 +65,9 @@ const addAttendanceChange = async (attendanceChangePayload: {
               }
             });
             callBack(
-              `${process.env.STATUS_TAG_AVAILABLE} Successfully logged in at ${
-                loginResponse as string
-              }...`,
+              `${
+                process.env.STATUS_TAG_AVAILABLE
+              } Successfully logged in at ${loginResponse.login.toLocaleTimeString()}...`,
               user.discordInfo.id
             );
           });
@@ -89,7 +96,7 @@ const addAttendanceChange = async (attendanceChangePayload: {
             (breakEndResponse) => {
               let response = `Error ending break!`;
               if (breakEndResponse) {
-                response = `${process.env.STATUS_TAG_AVAILABLE} break ended at ${breakEndResponse}...`;
+                response = `${process.env.STATUS_TAG_AVAILABLE} ${breakEndResponse}...`;
               }
               callBack(response, user.discordInfo.id);
             }
@@ -192,7 +199,6 @@ export const handleVoiceStateChange = async (
 
     // Joining a channel from offline/afk
     if (comingOnline) {
-      console.log("joining a channel from AFK or disconnected state");
       const canResume = await isOnBreak(user.id);
       if (canResume) {
         return addAttendanceChange({
