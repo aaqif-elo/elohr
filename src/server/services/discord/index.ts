@@ -24,15 +24,17 @@ import {
   ELeaveCommands,
 } from "./discord.enums";
 import { interactionHandler } from "./interaction-handlers";
+import { handleVoiceStateChange } from "./voice-channel-hook.service";
+import { setNameStatus } from "./utils";
 config();
 // Environment variables
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const DISCORD_SERVER_ID = process.env.DISCORD_SERVER_ID;
 const BOT_ID = process.env.BOT_ID;
-const ATTENDANCE_CHANNEL_ID =
-  process.env.NODE_ENV === "production"
-    ? process.env.ATTENDANCE_CHANNEL_ID
-    : process.env.TEST_CHANNEL_ID;
+const production = process.env.NODE_ENV === "production";
+const ATTENDANCE_CHANNEL_ID = production
+  ? process.env.ATTENDANCE_CHANNEL_ID
+  : process.env.TEST_CHANNEL_ID;
 
 // Create Discord client
 export const discordClient = new Client({
@@ -91,6 +93,22 @@ export const initializeDiscord = async () => {
   }
 };
 
+const sendAttendanceChangeMessageAndSetStatus = (
+  message: string,
+  userDiscordId: string
+) => {
+  if (!ATTENDANCE_CHANNEL_ID) return;
+  const channel = discordClient.channels.cache.get(ATTENDANCE_CHANNEL_ID);
+
+  if (!channel || !(channel instanceof TextChannel)) {
+    console.error("Attendance channel not found or is not a TextChannel");
+    return;
+  }
+  channel.send(`<@${userDiscordId}> ${message}`);
+  console.log(message.slice(0, 2).trim(), message);
+  setNameStatus(discordClient, message.slice(0, 2).trim(), userDiscordId);
+};
+
 // Setup event handlers
 function setupEventHandlers() {
   discordClient.on("ready", () => {
@@ -98,8 +116,13 @@ function setupEventHandlers() {
 
     // Setup voice state update handler
     discordClient.on("voiceStateUpdate", (oldState, newState) => {
-      // Implement voice state handling logic here
-      console.log("Voice state updated");
+      if (production) {
+        handleVoiceStateChange(
+          oldState,
+          newState,
+          sendAttendanceChangeMessageAndSetStatus
+        );
+      }
     });
 
     // Post startup message
