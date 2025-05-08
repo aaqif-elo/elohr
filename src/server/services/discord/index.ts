@@ -13,11 +13,17 @@ import {
   getNextHolidayAnnouncementCommandBody,
   setNextHolidayAnnouncementCommandBody,
   requestLeaveCommandBody,
-  reviewLeaveCommandBody,
   announceNextHolidayCommandBody,
 } from "./commands";
 
 import { config } from "dotenv";
+import {
+  EAdminCommands,
+  EAttendanceCommands,
+  EAuthCommands,
+  ELeaveCommands,
+} from "./discord.enums";
+import { interactionHandler } from "./interaction-handlers";
 config();
 // Environment variables
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -73,11 +79,11 @@ export const initializeDiscord = async () => {
     await discordClient.login(DISCORD_BOT_TOKEN);
     console.log("Discord client connected successfully");
 
-    // Register event handlers
-    // setupEventHandlers();
-
     // Register application commands
-    // await registerCommands();
+    await registerCommands();
+
+    // Register event handlers
+    setupEventHandlers();
 
     return discordClient;
   } catch (error) {
@@ -111,12 +117,26 @@ function setupEventHandlers() {
   discordClient.on("interactionCreate", async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
-    // Handle different commands
-    switch (interaction.commandName) {
-      // Implement your command handlers here
-      default:
-        await interaction.reply("Unknown command");
+    const validInteractions = [
+      ...Object.values(EAttendanceCommands),
+      ...Object.values(EAdminCommands),
+      ...Object.values(ELeaveCommands),
+      ...Object.values(EAuthCommands),
+    ];
+
+    if (
+      !validInteractions.includes(
+        interaction.commandName as EAttendanceCommands
+      )
+    ) {
+      interaction.reply({
+        content: `<@${interaction.user.id}> ❌ Invalid command!`,
+        flags: "Ephemeral",
+      });
+      return;
     }
+
+    interactionHandler(interaction, discordClient);
   });
 }
 
@@ -131,7 +151,6 @@ async function registerCommands() {
     getNextHolidayAnnouncementCommandBody,
     setNextHolidayAnnouncementCommandBody,
     requestLeaveCommandBody,
-    reviewLeaveCommandBody,
     announceNextHolidayCommandBody,
   ];
 
