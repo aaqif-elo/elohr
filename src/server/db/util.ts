@@ -20,11 +20,10 @@ export function normalizeDate(date: Date): Date {
 }
 
 export function getStartOfDay(date: Date): Date {
-  const normalizedDate = normalizeDate(date);
   return new Date(
-    normalizedDate.getFullYear(),
-    normalizedDate.getMonth(),
-    normalizedDate.getDate(),
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
     0,
     0,
     0,
@@ -33,11 +32,10 @@ export function getStartOfDay(date: Date): Date {
 }
 
 export function getEndOfDay(date: Date): Date {
-  const normalizedDate = normalizeDate(date);
   return new Date(
-    normalizedDate.getFullYear(),
-    normalizedDate.getMonth(),
-    normalizedDate.getDate(),
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
     23,
     59,
     59,
