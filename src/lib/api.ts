@@ -4,7 +4,6 @@ import {
   httpSubscriptionLink,
   loggerLink,
   splitLink,
-  TRPCClient,
 } from "@trpc/client";
 import type { AppRouter } from "../server/api/root";
 import { LOCAL_STORAGE_KEY } from "./auth";
@@ -19,15 +18,6 @@ const getBaseUrl = () => {
   }
   console.log(process.env.PORT);
   return `http://localhost:${process.env.PORT ?? 3000}`;
-};
-
-// Custom type for our extended client
-export type ExtendedTRPCClient = TRPCClient<AppRouter> & {
-  setHeaders: (headers: Record<string, string>) => void;
-  setHeader: (name: string, value: string) => void;
-  clearHeader: (name: string) => void;
-  clearHeaders: () => void;
-  getHeaders: () => Record<string, string>;
 };
 
 // Create a custom headers store
@@ -69,23 +59,3 @@ export const api = createTRPCClient<AppRouter>({
     }),
   ],
 });
-
-// Export with the extended functionality
-// export const api = {
-//   ...trpcClient,
-//   setHeaders: (headers: Record<string, string>) => {
-//     Object.assign(customHeaders, headers);
-//   },
-//   setHeader: (name: string, value: string) => {
-//     customHeaders[name] = value;
-//   },
-//   clearHeader: (name: string) => {
-//     delete customHeaders[name];
-//   },
-//   clearHeaders: () => {
-//     Object.keys(customHeaders).forEach(key => {
-//       delete customHeaders[key];
-//     });
-//   },
-//   getHeaders: () => ({...customHeaders}),
-// };
