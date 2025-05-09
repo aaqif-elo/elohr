@@ -26,6 +26,12 @@ import { handleVoiceStateChange } from "./voice-channel-hook.service";
 import { setNameStatus } from "./utils";
 import { startCronJobs } from "./cron-jobs";
 config();
+
+// Add this near the top of the file
+declare global {
+  var _discordClientGlobal: Client | undefined;
+}
+
 // Environment variables
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const DISCORD_SERVER_ID = process.env.DISCORD_SERVER_ID;
@@ -36,14 +42,19 @@ const ATTENDANCE_CHANNEL_ID = production
   : process.env.TEST_CHANNEL_ID;
 
 // Create Discord client
-export const discordClient = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildVoiceStates,
-  ],
-  partials: [Partials.Message, Partials.Channel],
-});
+export const discordClient = 
+  global._discordClientGlobal || 
+  new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMembers,
+      GatewayIntentBits.GuildVoiceStates,
+    ],
+    partials: [Partials.Message, Partials.Channel],
+  });
+
+// Store in global scope to ensure it's a singleton
+global._discordClientGlobal = discordClient;
 
 export const getGuildMember = async (discordId: string) => {
   if (!discordClient.isReady()) {
