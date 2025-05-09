@@ -377,7 +377,20 @@ export const getWeatherReport = async () => {
     const weather = await axios.get(weatherApiKey);
     const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
     const stringifiedWeather = JSON.stringify(weather.data);
-    const prompt = `Can you generate a weather report from this? Include a fitting emoji and maybe a quirky quote for the day which relates to software/web development/agile/tech etc. Let's keep it short and succinct `;
+    const prompt = `Can you generate a weather report from this? Include a fitting emoji and maybe a quirky quote for the day which relates to software/web development/agile/tech etc. Let's keep it short and succinct. 
+    
+    Follow this format:
+
+    Dhaka, Bangladesh - May 9, 2025 ☀️
+
+    {Weather report}
+
+    Sunrise: 5:19 AM
+    Sunset: 6:30 PM
+
+    Quote (Italized) 🤖
+
+    Ensure that it is formatted to be displayed in Discord via discord.js`;
     const response = await ai.models.generateContent({
       model: "gemini-2.0-flash-lite",
       contents: [`${stringifiedWeather} ${prompt}`],

@@ -78,8 +78,6 @@ const holidayAnnouncementHandler = async (discordClient: Client<boolean>) => {
 };
 
 export const startCronJobs = async (discordClient: Client<boolean>) => {
-  console.log("started cron jobs");
-
   // Logout users on break every weekday at 11:59 PM
   autoLogoutPeopleOnABreakJob(async () => {
     autoLogoutUsersWhoAreStillLoggedIn(discordClient);
