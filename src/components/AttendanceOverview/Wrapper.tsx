@@ -1,17 +1,28 @@
-import {createEffect, createSignal, onCleanup, onMount, Show} from 'solid-js';
-import {getAdmin, getUser, setAdmin, setAttendance, setAttendanceSummary, UserState} from '../../store';
-import {api} from '../../lib/api';
-import {AttendanceOverview} from './AttendanceOverview';
-import {isToday} from './utils';
-import {TrpcAttendance, TrpcUser, TrpcUserWithAttendance} from '../../store/utils';
-import {UserRoleTypes} from '@prisma/client';
-import {HRCalendar, DateHighlight} from './Calendar';
-import EmployeeList from './EmployeeList';
-import {CircularTimeTracking} from './CircularTimeTracker';
-import {generateTimeSegments} from '../../store/utils';
-import {TrpcAttendanceSummary} from '../../types/attendance';
-import {HolidayModal} from './HolidayModal';
-import toast from 'solid-toast';
+import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import {
+  getAdmin,
+  getUser,
+  setAdmin,
+  setAttendance,
+  setAttendanceSummary,
+  UserState,
+} from "../../store";
+import { api } from "../../lib/api";
+import { AttendanceOverview } from "./AttendanceOverview";
+import { isToday } from "./utils";
+import {
+  TrpcAttendance,
+  TrpcUser,
+  TrpcUserWithAttendance,
+} from "../../store/utils";
+import { UserRoleTypes } from "@prisma/client";
+import { HRCalendar, DateHighlight } from "./Calendar";
+import EmployeeList from "./EmployeeList";
+import { CircularTimeTracking } from "./CircularTimeTracker";
+import { generateTimeSegments } from "../../store/utils";
+import { TrpcAttendanceSummary } from "../../types/attendance";
+import { HolidayModal } from "./HolidayModal";
+import toast from "solid-toast";
 
 // Update LeaveRequestModal to accept array of dates
 const LeaveRequestModal = (props: {
@@ -20,17 +31,17 @@ const LeaveRequestModal = (props: {
   onClose: () => void;
   onConfirm: (dates: Date[], reason: string) => void;
 }) => {
-  const [reason, setReason] = createSignal('');
+  const [reason, setReason] = createSignal("");
   const isReasonRequired = () => props.dates.length > 2;
 
   const handleSubmit = (e: Event) => {
     e.preventDefault();
     if (isReasonRequired() && !reason()) {
-      toast.error('Reason is required for leave requests longer than 2 days');
+      toast.error("Reason is required for leave requests longer than 2 days");
       return;
     }
     props.onConfirm(props.dates, reason());
-    setReason(''); // Reset the form
+    setReason(""); // Reset the form
   };
 
   if (!props.isOpen) return null;
@@ -42,16 +53,16 @@ const LeaveRequestModal = (props: {
         <div class="mb-4">
           <p class="font-medium">Selected Dates ({props.dates.length} days):</p>
           <div class="mt-2 max-h-40 overflow-auto rounded border p-2">
-            {props.dates.map(date => (
+            {props.dates.map((date) => (
               <div class="py-1">
                 <span class="font-medium text-blue-600 dark:text-blue-400">
-                  {date.toLocaleDateString('en-US', {weekday: 'long'})}
-                </span>{' '}
-                -{' '}
-                {date.toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric',
+                  {date.toLocaleDateString("en-US", { weekday: "long" })}
+                </span>{" "}
+                -{" "}
+                {date.toLocaleDateString("en-US", {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
                 })}
               </div>
             ))}
@@ -60,12 +71,12 @@ const LeaveRequestModal = (props: {
         <form onSubmit={handleSubmit}>
           <div class="mb-4">
             <label class="mb-2 block text-sm font-medium" for="reason">
-              Reason {isReasonRequired() ? '(required)' : '(optional)'}
+              Reason {isReasonRequired() ? "(required)" : "(optional)"}
             </label>
             <textarea
               id="reason"
               value={reason()}
-              onInput={e => setReason(e.currentTarget.value)}
+              onInput={(e) => setReason(e.currentTarget.value)}
               class="w-full rounded-lg border p-2.5 text-sm"
               placeholder="Enter reason for leave request"
             />
@@ -102,17 +113,24 @@ export const AttendanceWrapper = () => {
   const [currentTime, setCurrentTime] = createSignal(new Date());
 
   // Signal for attendance summary
-  const [summary, setSummary] = createSignal<TrpcAttendanceSummary | null>(null);
+  const [summary, setSummary] = createSignal<TrpcAttendanceSummary | null>(
+    null
+  );
 
   // Add a signal to store holiday highlights
-  const [holidayHighlights, setHolidayHighlights] = createSignal<Record<string, DateHighlight>>({});
+  const [holidayHighlights, setHolidayHighlights] = createSignal<
+    Record<string, DateHighlight>
+  >({});
 
   // Consolidate all date highlights
-  const [dateHighlights, setDateHighlights] = createSignal<Record<string, DateHighlight>>({});
+  const [dateHighlights, setDateHighlights] = createSignal<
+    Record<string, DateHighlight>
+  >({});
 
   // Add these signals inside the AttendanceWrapper component
   const [holidayModalOpen, setHolidayModalOpen] = createSignal(false);
-  const [selectedHolidayDate, setSelectedHolidayDate] = createSignal<Date | null>(null);
+  const [selectedHolidayDate, setSelectedHolidayDate] =
+    createSignal<Date | null>(null);
 
   // Simplified state for leave request
   const [leaveModalOpen, setLeaveModalOpen] = createSignal(false);
@@ -120,25 +138,28 @@ export const AttendanceWrapper = () => {
 
   // Function to format date as YYYY-MM-DD for highlight keys
   const formatDateToYYYYMMDD = (date: Date): string => {
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
-      date.getDate()
-    ).padStart(2, '0')}`;
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}-${String(date.getDate()).padStart(2, "0")}`;
   };
 
   // Function to update highlights based on summary and holidays
   const updateHighlights = () => {
-    const highlights: Record<string, DateHighlight> = {...holidayHighlights()};
+    const highlights: Record<string, DateHighlight> = {
+      ...holidayHighlights(),
+    };
     const currentSummary = user()?.attendanceSummary;
 
     if (currentSummary) {
       // Process detailed leave information first
       if (currentSummary.stats.leaveInfo) {
-        currentSummary.stats.leaveInfo.forEach(leaveInfo => {
+        currentSummary.stats.leaveInfo.forEach((leaveInfo) => {
           const dateString = formatDateToYYYYMMDD(leaveInfo.date);
 
           // Create descriptive text
-          let description = 'On Leave';
-          let descriptionDetails = '';
+          let description = "On Leave";
+          let descriptionDetails = "";
 
           // Add reason if available
           if (leaveInfo.reason) {
@@ -147,16 +168,19 @@ export const AttendanceWrapper = () => {
 
           // Add approval details if available
           if (leaveInfo.approved && leaveInfo.approvedDate) {
-            const approvalDate = leaveInfo.approvedDate.toLocaleDateString('en-US', {
-              year: 'numeric',
-              month: 'short',
-              day: 'numeric',
-            });
+            const approvalDate = leaveInfo.approvedDate.toLocaleDateString(
+              "en-US",
+              {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+              }
+            );
             descriptionDetails = `Approved on ${approvalDate}`;
           }
 
           highlights[dateString] = {
-            color: '#FFA726', // Orange for leaves
+            color: "#FFA726", // Orange for leaves
             description,
             descriptionDetails: descriptionDetails || undefined,
             isLeave: true,
@@ -164,22 +188,22 @@ export const AttendanceWrapper = () => {
         });
       } else {
         // Fallback to original implementation if leaveInfo is not available
-        currentSummary.stats.leaveDates.forEach(date => {
+        currentSummary.stats.leaveDates.forEach((date) => {
           const dateString = formatDateToYYYYMMDD(date);
           highlights[dateString] = {
-            color: '#FFA726', // Orange for leaves
-            description: 'On Leave',
+            color: "#FFA726", // Orange for leaves
+            description: "On Leave",
             isLeave: true,
           };
         });
       }
 
       // Add absent dates
-      currentSummary.stats.absentDates.forEach(date => {
+      currentSummary.stats.absentDates.forEach((date) => {
         const dateString = formatDateToYYYYMMDD(date);
         highlights[dateString] = {
-          color: '#F44336', // Red for absences
-          description: 'Absent',
+          color: "#F44336", // Red for absences
+          description: "Absent",
           isAbsence: true,
         };
       });
@@ -226,7 +250,7 @@ export const AttendanceWrapper = () => {
       const summaryData = await api.attendance.getAttendanceSummary.query({
         startDate: startOfMonth.toISOString(),
         endDate: endOfMonth.toISOString(),
-        unit: 'month',
+        unit: "month",
         userId: userId || undefined,
       });
 
@@ -239,7 +263,7 @@ export const AttendanceWrapper = () => {
         }
       }
     } catch (err) {
-      console.error('Failed to fetch attendance summary:', err);
+      console.error("Failed to fetch attendance summary:", err);
     }
   };
 
@@ -253,7 +277,7 @@ export const AttendanceWrapper = () => {
       // Format holidays for the calendar
       const highlights: Record<string, DateHighlight> = {};
 
-      holidays.forEach(holiday => {
+      holidays.forEach((holiday) => {
         // Get the effective date (either overriden or original)
         const effectiveDate = holiday.overridenDate || holiday.originalDate;
 
@@ -264,17 +288,20 @@ export const AttendanceWrapper = () => {
         const dateString = formatDateToYYYYMMDD(dateObj);
 
         // Create base description details
-        let details = holiday.description || '';
+        let details = holiday.description || "";
 
         // Add original date info if the holiday was shifted
         if (holiday.overridenDate) {
           const originalDate = new Date(holiday.originalDate);
-          const formattedOriginalDate = originalDate.toLocaleDateString('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-          });
+          const formattedOriginalDate = originalDate.toLocaleDateString(
+            "en-US",
+            {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            }
+          );
 
           // Add original date information to description details
           details = details
@@ -282,8 +309,13 @@ export const AttendanceWrapper = () => {
             : `Original date: ${formattedOriginalDate}`;
         }
 
+        // Add announcement status to tooltip details
+        if (holiday.announcementSent) {
+          details = `${details}\n\nAnnouncement sent`;
+        }
+
         highlights[dateString] = {
-          color: '#FF5722', // Distinctive color for holidays
+          color: "#FF5722", // Distinctive color for holidays
           description: holiday.name,
           // Store additional information that can be used in the tooltip
           descriptionDetails: details || undefined,
@@ -293,7 +325,7 @@ export const AttendanceWrapper = () => {
 
       setHolidayHighlights(highlights);
     } catch (err) {
-      console.error('Failed to fetch holidays:', err);
+      console.error("Failed to fetch holidays:", err);
     }
   };
 
@@ -303,11 +335,19 @@ export const AttendanceWrapper = () => {
 
     try {
       const promises: Promise<TrpcAttendance | TrpcUser[] | null>[] = [];
-      promises.push(api.attendance.getAttendance.query({date: theDate.toISOString()}));
+      promises.push(
+        api.attendance.getAttendance.query({ date: theDate.toISOString() })
+      );
       if (isAdmin()) {
-        promises.push(api.admin.getForEveryoneAttendance.query({date: theDate.toISOString()}));
+        promises.push(
+          api.admin.getForEveryoneAttendance.query({
+            date: theDate.toISOString(),
+          })
+        );
       }
-      const [currentUserAttendance, everyoneAttendance] = await Promise.all(promises);
+      const [currentUserAttendance, everyoneAttendance] = await Promise.all(
+        promises
+      );
 
       setAttendance(currentUserAttendance as TrpcAttendance | null);
 
@@ -318,7 +358,7 @@ export const AttendanceWrapper = () => {
       // Fetch attendance summary for the selected user or current user
       await fetchAttendanceSummary(theDate, selectedUser()?.dbID);
     } catch (err) {
-      console.error('Attendance fetch error:', err);
+      console.error("Attendance fetch error:", err);
     } finally {
       setLoadingAttendance(false);
     }
@@ -330,9 +370,13 @@ export const AttendanceWrapper = () => {
     const currentUser = user();
     const attendance = currentUser?.attendance;
 
-    if (isToday(currentDate) && attendance?.loggedInTime && !attendance.loggedOutTime) {
+    if (
+      isToday(currentDate) &&
+      attendance?.loggedInTime &&
+      !attendance.loggedOutTime
+    ) {
       const sub = api.attendance.attendanceChanged.subscribe(undefined, {
-        onData: updatedAttendance => {
+        onData: (updatedAttendance) => {
           if (updatedAttendance.data.userId === currentUser?.dbID) {
             setAttendance(updatedAttendance.data);
           }
@@ -363,7 +407,11 @@ export const AttendanceWrapper = () => {
   // Get the current user data for the circular time tracker
   const overviewUser = () => {
     if (selectedUser()) {
-      return getAdmin()?.allUsers.find(user => user.dbID === selectedUser()!.dbID) || getUser();
+      return (
+        getAdmin()?.allUsers.find(
+          (user) => user.dbID === selectedUser()!.dbID
+        ) || getUser()
+      );
     }
     return getUser();
   };
@@ -399,16 +447,16 @@ export const AttendanceWrapper = () => {
     try {
       // Call API to request leave with multiple dates
       await api.leaves.requestLeave.mutate({
-        dates: dates.map(date => date.toISOString()),
+        dates: dates.map((date) => date.toISOString()),
         reason: reason || undefined,
       });
 
       // Refresh calendar data
       await refreshCalendarData();
-      toast.success('Leave request submitted successfully');
+      toast.success("Leave request submitted successfully");
     } catch (error) {
-      console.error('Failed to request leave:', error);
-      toast.error('Failed to request leave. Please try again.');
+      console.error("Failed to request leave:", error);
+      toast.error("Failed to request leave. Please try again.");
     } finally {
       setLoadingAttendance(false);
     }
@@ -418,12 +466,12 @@ export const AttendanceWrapper = () => {
   const handleCancelLeave = async (date: Date) => {
     try {
       setLoadingAttendance(true);
-      await api.leaves.cancelLeave.mutate({date: date.toISOString()});
-      toast.success('Leave request cancelled successfully');
+      await api.leaves.cancelLeave.mutate({ date: date.toISOString() });
+      toast.success("Leave request cancelled successfully");
       refreshCalendarData();
     } catch (err) {
-      console.error('Failed to cancel leave', err);
-      toast.error('Failed to cancel leave request');
+      console.error("Failed to cancel leave", err);
+      toast.error("Failed to cancel leave request");
     }
   };
 
@@ -450,8 +498,8 @@ export const AttendanceWrapper = () => {
       await refreshCalendarData(date);
       toast.success(`Successfully converted to workday`);
     } catch (error) {
-      console.error('Failed to convert to workday:', error);
-      toast.error('Failed to convert to workday. Please try again.');
+      console.error("Failed to convert to workday:", error);
+      toast.error("Failed to convert to workday. Please try again.");
     } finally {
       setLoadingAttendance(false);
     }
@@ -460,7 +508,7 @@ export const AttendanceWrapper = () => {
   const handleShiftHoliday = async (originalDate: Date, newDate: Date) => {
     setLoadingAttendance(true);
     try {
-      console.log('Shift holiday from', originalDate, 'to', newDate);
+      console.log("Shift holiday from", originalDate, "to", newDate);
       // Call API to shift the holiday from original date to new date
       await api.holidays.shiftHoliday.mutate({
         originalDate: originalDate.toISOString(),
@@ -469,10 +517,10 @@ export const AttendanceWrapper = () => {
 
       // Refresh calendar data to show the shifted holiday
       await refreshCalendarData(newDate);
-      toast.success('Holiday shifted successfully');
+      toast.success("Holiday shifted successfully");
     } catch (error) {
-      console.error('Failed to shift holiday:', error);
-      toast.error('Failed to shift holiday. Please try again.');
+      console.error("Failed to shift holiday:", error);
+      toast.error("Failed to shift holiday. Please try again.");
     } finally {
       setLoadingAttendance(false);
     }
@@ -496,8 +544,8 @@ export const AttendanceWrapper = () => {
       await refreshCalendarData(selectedHolidayDate()!);
       toast.success(`Successfully created holiday: ${name}`);
     } catch (error) {
-      console.error('Failed to convert to holiday:', error);
-      toast.error('Failed to create holiday. Please try again.');
+      console.error("Failed to convert to holiday:", error);
+      toast.error("Failed to create holiday. Please try again.");
     } finally {
       setLoadingAttendance(false);
     }
@@ -508,7 +556,9 @@ export const AttendanceWrapper = () => {
       {/* Main responsive grid container */}
       <div
         class={`attendance-grid-container grid gap-6 ${
-          isAdmin() ? 'grid-cols-1 xl:grid-cols-2 2xl:grid-cols-2' : 'grid-cols-1 2xl:grid-cols-3'
+          isAdmin()
+            ? "grid-cols-1 xl:grid-cols-2 2xl:grid-cols-2"
+            : "grid-cols-1 2xl:grid-cols-3"
         }`}
       >
         {/* Calendar - now with context menu handlers */}
@@ -537,14 +587,20 @@ export const AttendanceWrapper = () => {
         {/* Employee List - only for admin, second in priority */}
         <Show when={isAdmin()}>
           <div class="max-h-[600px] overflow-auto rounded-lg bg-white p-6 shadow-lg dark:bg-neutral-900">
-            <EmployeeList onUserSelect={setSelectedUser} loading={loadingAttendance()} />
+            <EmployeeList
+              onUserSelect={setSelectedUser}
+              loading={loadingAttendance()}
+            />
           </div>
         </Show>
 
         {/* Overview - third in priority */}
         <div class="min-h-[500px] rounded-lg bg-white p-6 shadow-lg dark:bg-neutral-900">
           <Show when={user() && user()!.attendance}>
-            <AttendanceOverview loading={loadingAttendance()} selectedUser={selectedUser()} />
+            <AttendanceOverview
+              loading={loadingAttendance()}
+              selectedUser={selectedUser()}
+            />
           </Show>
         </div>
 
@@ -552,7 +608,11 @@ export const AttendanceWrapper = () => {
         <div class="flex min-h-[500px] items-center justify-center rounded-lg bg-white p-6 shadow-lg dark:bg-neutral-900">
           <Show
             when={!loadingAttendance() && overviewUser()?.attendance}
-            fallback={<div class="flex h-full items-center justify-center">Loading...</div>}
+            fallback={
+              <div class="flex h-full items-center justify-center">
+                Loading...
+              </div>
+            }
           >
             <CircularTimeTracking
               timeSegments={generateTimeSegments(overviewUser()!.attendance)}
