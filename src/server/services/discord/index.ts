@@ -11,9 +11,7 @@ import {
   logoutCommandBody,
   breakCommandBody,
   getNextHolidayAnnouncementCommandBody,
-  setNextHolidayAnnouncementCommandBody,
   requestLeaveCommandBody,
-  announceNextHolidayCommandBody,
 } from "./commands";
 
 import { config } from "dotenv";
@@ -170,9 +168,7 @@ async function registerCommands() {
     breakCommandBody,
     authCommandBody,
     getNextHolidayAnnouncementCommandBody,
-    setNextHolidayAnnouncementCommandBody,
     requestLeaveCommandBody,
-    announceNextHolidayCommandBody,
   ];
 
   try {
