@@ -381,12 +381,12 @@ export const getWeatherReport = async () => {
     
     Follow this format:
 
-    Dhaka, Bangladesh - May 9, 2025 ☀️
+    {City}, {Country}- {Date} {Emoji}
 
     {Weather report}
 
-    Sunrise: 5:19 AM
-    Sunset: 6:30 PM
+    Sunrise: {Time}
+    Sunset: {Time}
 
     Quote (Italized) 🤖
 
