@@ -492,7 +492,6 @@ export const AttendanceWrapper = () => {
       await api.holidays.convertToWorkday.mutate({
         date: date.toISOString(),
       });
-      console.log(date, date.toISOString());
 
       // Refetch holidays and attendance after change
       await refreshCalendarData(date);
@@ -508,7 +507,6 @@ export const AttendanceWrapper = () => {
   const handleShiftHoliday = async (originalDate: Date, newDate: Date) => {
     setLoadingAttendance(true);
     try {
-      console.log("Shift holiday from", originalDate, "to", newDate);
       // Call API to shift the holiday from original date to new date
       await api.holidays.shiftHoliday.mutate({
         originalDate: originalDate.toISOString(),

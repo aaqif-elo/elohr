@@ -39,8 +39,6 @@ export const getLeavesInDateRange = async (
     },
   });
 
-  console.log("getLeavesInDateRange", leaves);
-
   // Then filter for dates in the range (application-side filtering)
   return leaves.filter((leave) => {
     return leave.dates.some((date) => {
@@ -135,7 +133,6 @@ export const reviewLeaveRequest = async (
   approved: boolean,
   adminId: string
 ): Promise<Leave | null> => {
-  console.log("reviewLeaveRequest", leaveId, approved, adminId);
   return db.leave.update({
     where: { id: leaveId },
     data: {
@@ -212,7 +209,7 @@ export const getUsersOnLeave = async (
 
 /**
  * Store the Discord message ID associated with a leave request
- * 
+ *
  * @param leaveId The ID of the leave request
  * @param messageId The Discord message ID
  * @returns The updated leave request
@@ -237,13 +234,13 @@ export const updateLeaveWithMessageId = async (
 
 /**
  * Get leaves for a user on a specific date
- * 
+ *
  * @param userId The user ID
  * @param date The date to check
  * @returns Array of leave requests
  */
 export const getLeavesForUserOnDate = async (
-  userId: string, 
+  userId: string,
   date: Date
 ): Promise<Leave[]> => {
   return db.leave.findMany({

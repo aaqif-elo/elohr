@@ -69,10 +69,6 @@ export const handleAdminCommand = async (
 
       const content = `${nextHolidayAnnouncementObj} ${postFix}`;
 
-      console.log("content", content);
-      console.log("row", row);
-      console.log("Interaction", interaction);
-
       await interaction.editReply({
         content,
         components: [row],
