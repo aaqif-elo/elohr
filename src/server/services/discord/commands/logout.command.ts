@@ -20,7 +20,7 @@ const logoutCommand = new SlashCommandBuilder()
 export const logoutCommandHandler = async (
   userId: string,
   timestamp: number,
-  reportSendCallBack: (report: Buffer<ArrayBuffer> | string) => void
+  reportSendCallBack: (report: Buffer<ArrayBuffer>) => void
 ): Promise<string> => {
   try {
     const loginTime = await getLoginTime(userId);

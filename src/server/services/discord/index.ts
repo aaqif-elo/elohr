@@ -42,8 +42,8 @@ const ATTENDANCE_CHANNEL_ID = production
   : process.env.TEST_CHANNEL_ID;
 
 // Create Discord client
-export const discordClient = 
-  global._discordClientGlobal || 
+export const discordClient =
+  global._discordClientGlobal ||
   new Client({
     intents: [
       GatewayIntentBits.Guilds,

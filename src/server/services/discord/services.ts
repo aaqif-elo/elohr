@@ -5,6 +5,7 @@ import {
   ChannelType,
   ChatInputCommandInteraction,
   Client,
+  User,
 } from "discord.js";
 import {
   getDiscordIdsFromUserIds,
@@ -317,9 +318,7 @@ export const autoLogoutUsersWhoAreStillLoggedIn = async (
       );
       const fetchedUser = await discordClient.users.fetch(discordId);
       if (logoutReportAndTime.report instanceof Buffer) {
-        await fetchedUser.send({
-          files: [logoutReportAndTime.report],
-        });
+        await sendLogoutReport(fetchedUser, logoutReportAndTime.report);
       }
       return { discordId, userId, trackIsOnline: !wasOnBreak };
     } catch (err) {
@@ -650,5 +649,35 @@ export const deleteLeaveRequestMessage = async (
   } catch (error) {
     console.error("Error deleting leave request message:", error);
     return false;
+  }
+};
+
+export const sendLogoutReport = async (
+  user: User,
+  report: Buffer<ArrayBuffer>
+): Promise<void> => {
+  const loginUrl = await getLoginUrl(user.id);
+
+  if (!loginUrl) {
+    console.error("Error generating login link for user:", user.id);
+    return;
+  }
+
+  const hrLoginButton = new ButtonBuilder()
+    .setLabel("ELO HR Login")
+    .setStyle(ButtonStyle.Link)
+    .setURL(loginUrl)
+    .setEmoji("🌐");
+
+  try {
+    await user.send({
+      files: [report],
+      content: `Please log in to the Portal to view more details.`,
+      components: [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(hrLoginButton),
+      ],
+    });
+  } catch (error) {
+    console.error("Failed to send logout report:", error);
   }
 };

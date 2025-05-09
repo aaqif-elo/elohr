@@ -7,6 +7,7 @@ import {
 } from "../discord.enums";
 import { Client, ChatInputCommandInteraction, CacheType } from "discord.js";
 import { canBreakOrResume, getUserByDiscordId } from "../../../db";
+import { sendLogoutReport } from "../services";
 
 export const handleAttendanceCommand = async (
   interaction: ChatInputCommandInteraction<CacheType>,
@@ -24,18 +25,8 @@ export const handleAttendanceCommand = async (
   }
   switch (interaction.commandName) {
     case EAttendanceCommands.LOGOUT: {
-      const sendReport = (report: Buffer<ArrayBuffer> | string) => {
-        try {
-          if (typeof report === "string") {
-            interaction.user.send(report);
-          } else {
-            interaction.user.send({
-              files: [report],
-            });
-          }
-        } catch (err) {
-          console.error(err);
-        }
+      const sendReport = (report: Buffer<ArrayBuffer>) => {
+        sendLogoutReport(interaction.user, report);
       };
       const logoutMsg = await logoutCommandHandler(
         user.id,
