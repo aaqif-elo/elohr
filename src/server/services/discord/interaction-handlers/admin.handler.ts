@@ -30,6 +30,11 @@ export const handleAdminCommand = async (
 ) => {
   switch (interaction.commandName) {
     case EAdminCommands.GET_HOLIDAY_ANNOUNCEMENT: {
+      const response = await interaction.reply({
+        content: "⌛ Fetching holiday announcement...",
+        flags: "Ephemeral",
+        withResponse: true,
+      });
       const [nextHolidayAnnouncementObj, loginUrl] = await Promise.all([
         getUpcomingHolidayAnnouncementMsg(),
         getLoginUrl(interaction.user.id),
@@ -62,13 +67,15 @@ export const handleAdminCommand = async (
 
       const postFix = `\n\n**Note:** You can use the buttons below to interact with the holiday announcement within the next minute.`;
 
-      const content = `${nextHolidayAnnouncementObj} \n\n**Note:** You can use the buttons below to interact with the holiday announcement within the next minute.`;
+      const content = `${nextHolidayAnnouncementObj} ${postFix}`;
 
-      const response = await interaction.reply({
+      console.log("content", content);
+      console.log("row", row);
+      console.log("Interaction", interaction);
+
+      await interaction.editReply({
         content,
         components: [row],
-        flags: "Ephemeral",
-        withResponse: true,
       });
 
       try {
@@ -112,6 +119,7 @@ export const handleAdminCommand = async (
           }
         }
       } catch (error) {
+        console.error("Error handling button interaction:", error);
         const message = getErrorMessage(error);
         const timeErrorMessage = `Collector received no interactions before ending with reason: time`;
         if (message === timeErrorMessage) {
@@ -121,13 +129,13 @@ export const handleAdminCommand = async (
           });
           return;
         }
-        console.error("Error handling button interaction:", error);
 
         await interaction.editReply({
           content: "An error occurred while processing your request.",
           components: [],
         });
       }
+      break;
     }
     default: {
       await interaction.reply({
