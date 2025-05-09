@@ -1,4 +1,4 @@
-import { ONE_MINUTE_IN_MS } from "../../../db";
+import { getErrorMessage, ONE_MINUTE_IN_MS } from "../../../db";
 import { EAdminCommands } from "../discord.enums";
 import {
   getUpcomingHolidayAnnouncementMsg,
@@ -60,6 +60,8 @@ export const handleAdminCommand = async (
         loginButton
       );
 
+      const postFix = `\n\n**Note:** You can use the buttons below to interact with the holiday announcement within the next minute.`;
+
       const content = `${nextHolidayAnnouncementObj} \n\n**Note:** You can use the buttons below to interact with the holiday announcement within the next minute.`;
 
       const response = await interaction.reply({
@@ -77,10 +79,6 @@ export const handleAdminCommand = async (
           });
 
         if (!confirmation) {
-          await interaction.editReply({
-            content: "Confirmation not received within 1 minute, cancelling",
-            components: [],
-          });
           return;
         }
 
@@ -114,7 +112,17 @@ export const handleAdminCommand = async (
           }
         }
       } catch (error) {
+        const message = getErrorMessage(error);
+        const timeErrorMessage = `Collector received no interactions before ending with reason: time`;
+        if (message === timeErrorMessage) {
+          await interaction.editReply({
+            content: nextHolidayAnnouncementObj,
+            components: [],
+          });
+          return;
+        }
         console.error("Error handling button interaction:", error);
+
         await interaction.editReply({
           content: "An error occurred while processing your request.",
           components: [],
@@ -122,7 +130,7 @@ export const handleAdminCommand = async (
       }
     }
     default: {
-      interaction.reply({
+      await interaction.reply({
         content: `<@${interaction.user.id}> ❌ Invalid command!`,
         flags: "Ephemeral",
       });
