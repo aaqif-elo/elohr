@@ -5,8 +5,6 @@ import FullScreenLoader from "../components/FullScreenLoader";
 import UnauthenticatedHome from "../components/UnauthenticatedHome";
 import { api } from "../lib/api";
 import { LOCAL_STORAGE_KEY, loginWithStoredJWT } from "../lib/auth";
-import {setAttendance, setUser} from '../store';
-// import {prepareUrlAction, prepareUrlActionToken} from '~/lib/urlActionHandlers';
 
 export default function Home() {
   const [searchParams] = useSearchParams();
@@ -14,7 +12,6 @@ export default function Home() {
   const [actionMessage, setActionMessage] = createSignal("");
   const navigate = useNavigate();
 
-  // Unified action processing function
   const processAllUrlActions = async () => {
     const hasActionToken = typeof searchParams.actionToken === "string";
 
@@ -73,72 +70,52 @@ export default function Home() {
   };
 
   onMount(async () => {
-    // Anything inside onMount runs only in the browser, never on the server.
+    const token = searchParams.token;
 
-    // Case 1: Hash exists - process login first
-    if (typeof searchParams.hash === "string") {
-      console.log("Hash is", searchParams.hash);
+    if (typeof token === "string") {
       setLoggingIn(true);
-
-      try {
-        const loginPayload = await api.auth.loginWithHash.query(
-          searchParams.hash
-        );
-
-        if (loginPayload.jwt) {
-          localStorage.setItem(LOCAL_STORAGE_KEY, loginPayload.jwt);
-        }
-
-        const { user, attendance } = loginPayload.userWithAttendance;
-        setUser(user);
-        if (attendance) {
-          setAttendance(attendance);
-        }
+      const isValid = await api.auth.validateJWT.query(token);
+      if (!isValid) {
+        toast.error("Login failed: Invalid or expired token");
+        setLoggingIn(false);
+        return;
+      }
+      // validate + fetch user
+      const userWithAttendance = await loginWithStoredJWT(token);
+      if (userWithAttendance) {
+        localStorage.setItem(LOCAL_STORAGE_KEY, token);
 
         toast.success("Successfully logged in!");
-
-        // After login, process all URL actions at once
         await processAllUrlActions();
-      } catch (err) {
-        console.error(err);
-        toast.error(
-          `Login failed: ${
-            err instanceof Error ? err.message : "Unknown error"
-          }`
-        );
+      } else {
+        toast.error("Login failed: Invalid or expired token");
         setLoggingIn(false);
       }
-    }
-    // Case 2: No hash, but might have actions to process
-    else {
+    } else {
+      // your existing stored-JWT / actionToken / no-auth flow
       const storedAuthJwt = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (storedAuthJwt) {
         setLoggingIn(true);
-        const loggedIn = await loginWithStoredJWT(storedAuthJwt);
-
-        if (loggedIn) {
+        const ok = await loginWithStoredJWT(storedAuthJwt);
+        if (ok) {
           toast.success("Successfully logged in!");
           await processAllUrlActions();
         } else {
-          toast.error("Login failed: Your session has expired or is invalid");
+          toast.error("Login failed: Session expired or invalid");
           setLoggingIn(false);
         }
+      } else if (
+        searchParams.actionToken ||
+        Object.keys(searchParams).some((k) => k !== "token")
+      ) {
+        setLoggingIn(true);
+        await processAllUrlActions();
       } else {
-        // Check if there are URL actions requiring no auth
-        if (
-          searchParams.actionToken ||
-          Object.keys(searchParams).some((key) => key !== "hash")
-        ) {
-          setLoggingIn(true);
-          await processAllUrlActions();
-        } else {
-          // No stored token or actions, just hide the loader
-          setLoggingIn(false);
-        }
+        setLoggingIn(false);
       }
     }
   });
-  console.log("Logging in:", loggingIn());
+
   return (
     <main class="flex h-3/4 flex-col items-center justify-center">
       <Show

@@ -6,8 +6,21 @@ import {
   ChatInputCommandInteraction,
   Client,
 } from "discord.js";
-import { getNextHoliday, markUpcomingHolidaysAsAnnounced } from "../../db";
-import { getHashFromDiscordUserId } from "../../api/routers";
+import {
+  getDiscordIdsFromUserIds,
+  getLoggedInUsers,
+  getNextHoliday,
+  isOnBreak,
+  login,
+  logout,
+  markUpcomingHolidaysAsAnnounced,
+} from "../../db";
+
+import { generateJWTFromUserDiscordId } from "../../api/routers/auth";
+import { setNameStatus } from "./utils";
+
+import axios from "axios";
+import { GoogleGenAI } from "@google/genai";
 
 export const getHRLoginInteractionReplyPayload = async (
   interaction: ChatInputCommandInteraction,
@@ -15,37 +28,46 @@ export const getHRLoginInteractionReplyPayload = async (
 ) => {
   try {
     const discordId = interaction.user.id;
-    const authLink = getHashFromDiscordUserId(discordId);
+    // new: actually generate the signed JWT
+    const jwtResp = await generateJWTFromUserDiscordId(discordId);
+    if (!jwtResp?.jwt) {
+      await interaction.reply({
+        content: `❌ Error generating login link. Please try again later.`,
+        flags: "Ephemeral",
+      });
+      return;
+    }
+    const loginUrl = `${
+      process.env.NODE_ENV === "production"
+        ? process.env.FRONTEND_URL
+        : `http://localhost:${process.env.PORT}`
+    }/?token=${jwtResp.jwt}`;
+
     const loginButton = new ButtonBuilder()
       .setLabel("ELO HR Login")
       .setStyle(ButtonStyle.Link)
-      .setURL(authLink)
-      .setEmoji("🌐")
-      .setDisabled(false);
+      .setURL(loginUrl)
+      .setEmoji("🌐");
 
-    let message = `<@${discordId}> Please log in to the ELO HR Portal by clicking the button below `;
-    if (reason) {
-      message += ` to ${reason}`;
-    }
-    message += `:\n\n*This link will expire in 30 seconds*`;
+    let message = `<@${discordId}> Please log in to the ELO HR Portal`;
+    if (reason) message += ` to ${reason}`;
+    message += ` by clicking below:`;
 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
       loginButton
     );
 
-    interaction.reply({
+    await interaction.reply({
       content: message,
       components: [row],
       flags: "Ephemeral",
     });
-    return;
   } catch (error) {
     console.error("Error generating HR login link:", error);
-    interaction.reply({
-      content: `❌ Error generating HR login link. Please try again later.`,
+    await interaction.reply({
+      content: `❌ Error generating login link. Please try again later.`,
       flags: "Ephemeral",
     });
-    return;
   }
 };
 
@@ -225,5 +247,157 @@ export const announceHoliday = async (
   } catch (error) {
     console.error("Error announcing holiday:", error);
     return `❌ Failed to announce holiday. Error: ${error}`;
+  }
+};
+
+export const autoLogoutUsersWhoAreStillLoggedIn = async (
+  discordClient: Client<boolean>
+) => {
+  const attendanceChannelID =
+    process.env.NODE_ENV === "production"
+      ? process.env.ATTENDANCE_CHANNEL_ID
+      : process.env.TEST_CHANNEL_ID;
+  if (!attendanceChannelID) {
+    return;
+  }
+
+  const attendanceChannel =
+    discordClient.channels.cache.get(attendanceChannelID);
+
+  if (!attendanceChannel || attendanceChannel.type !== ChannelType.GuildText) {
+    return;
+  }
+
+  await attendanceChannel.send(`Auto-logout Initiated...`);
+  // Get the list of users (by mongo ID) who are currently logged in
+  const userIds = await getLoggedInUsers();
+  const discordIds = await getDiscordIdsFromUserIds(userIds);
+  if (!userIds.length) {
+    return;
+  }
+
+  const logoutPromises = userIds.map(async (userId) => {
+    // eslint-disable-next-line no-useless-catch
+    try {
+      const discordId = discordIds.find((d) => d.id === userId)?.discordId;
+
+      if (!discordId) {
+        return;
+      }
+      const wasOnBreak = await isOnBreak(userId);
+      // Call logout using the determined logoutTimestamp (either break start time or now)
+      const logoutReportAndTime = await logout(userId);
+
+      if (!logoutReportAndTime) {
+        return;
+      }
+
+      await setNameStatus(
+        discordClient,
+        process.env.STATUS_TAG_UNAVAILABLE || "O",
+        discordId
+      );
+      const fetchedUser = await discordClient.users.fetch(discordId);
+      if (logoutReportAndTime.report instanceof Buffer) {
+        await fetchedUser.send({
+          files: [logoutReportAndTime.report],
+        });
+      }
+      return { discordId, userId, trackIsOnline: !wasOnBreak };
+    } catch (err) {
+      throw err;
+    }
+  });
+
+  const logoutPayloads = await Promise.all(logoutPromises);
+
+  setTimeout(async () => {
+    const loginPromises = logoutPayloads.map(async (payload) => {
+      if (!payload) {
+        return;
+      }
+      const { discordId, userId, trackIsOnline } = payload;
+
+      if (!process.env.DISCORD_SERVER_ID) {
+        return;
+      }
+      // eslint-disable-next-line no-useless-catch
+      try {
+        if (!trackIsOnline) return;
+        const member = (
+          await (
+            await discordClient.guilds.fetch(process.env.DISCORD_SERVER_ID)
+          ).members.fetch()
+        ).get(discordId);
+
+        if (!member) {
+          return;
+        }
+
+        const isOnline =
+          member.voice.channel !== null &&
+          member.voice.channelId !== member.guild.afkChannelId;
+
+        if (isOnline) {
+          await login(userId, member.voice.channel.name);
+          await setNameStatus(
+            discordClient,
+            process.env.STATUS_TAG_AVAILABLE || "O",
+            discordId
+          );
+
+          return `<@${discordId}> automatically logged in.`;
+        }
+      } catch (err) {
+        throw err;
+      }
+    });
+
+    const loginMessages = (await Promise.all(loginPromises)).filter(
+      (msg) => msg !== undefined
+    );
+
+    if (loginMessages.length > 0) {
+      let loginAnnouncement = `Auto-login Initiated for users who are online...\n\n`;
+      loginMessages.forEach((msg) => (loginAnnouncement += `${msg}\n`));
+      attendanceChannel.send(loginAnnouncement);
+    }
+  }, 90000); // 90 seconds
+};
+
+export const getWeatherReport = async () => {
+  const weatherApiKey = process.env.OPEN_METEO_URL;
+  const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+  if (!weatherApiKey || !GEMINI_API_KEY) {
+    console.error("Weather API key or Gemini API key is missing.");
+    return;
+  }
+  try {
+    const weather = await axios.get(weatherApiKey);
+    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    const stringifiedWeather = JSON.stringify(weather.data);
+    const prompt = `Can you generate a weather report from this? Include a fitting emoji and maybe a quirky quote for the day which relates to software/web development/agile/tech etc. Let's keep it short and succinct. 
+    
+    Follow this format:
+
+    {City}, {Country}- {Date} {Emoji}
+
+    {Weather report}
+
+    Sunrise: {Time}
+    Sunset: {Time}
+
+    Quote (Italized) 🤖
+
+    Ensure that it is formatted to be displayed in Discord via discord.js`;
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash-lite",
+      contents: [`${stringifiedWeather} ${prompt}`],
+    });
+    return response.text;
+  } catch (error) {
+    console.error("Error fetching weather data:", error);
+    return;
   }
 };

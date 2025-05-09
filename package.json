@@ -2,7 +2,7 @@
   "name": "example-with-prisma",
   "type": "module",
   "scripts": {
-    "dev": "vinxi dev",
+    "dev": "nodemon",
     "build": "vinxi build",
     "start": "vinxi start",
     "generate": "prisma generate"
@@ -10,9 +10,11 @@
   "devDependencies": {
     "@types/event-source-polyfill": "^1.0.5",
     "@types/jsonwebtoken": "^9.0.9",
-    "@types/node": "^22.15.14"
+    "@types/node": "^22.15.14",
+    "nodemon": "^3.1.10"
   },
   "dependencies": {
+    "@google/genai": "^0.13.0",
     "@prisma/client": "^6.7.0",
     "@solidjs/meta": "^0.29.4",
     "@solidjs/router": "^0.15.3",
@@ -23,6 +25,7 @@
     "@typeschema/valibot": "^0.14.0",
     "axios": "^1.9.0",
     "cheerio": "^1.0.0",
+    "cron": "^4.3.0",
     "discord.js": "^14.19.3",
     "dotenv": "^16.5.0",
     "event-source-polyfill": "^1.0.31",
@@ -39,5 +42,12 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "nodemonConfig": {
+    "watch": [
+      "src/server"
+    ],
+    "ext": "ts,js,json",
+    "exec": "vinxi dev"
   }
 }

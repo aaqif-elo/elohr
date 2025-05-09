@@ -3,20 +3,22 @@ import {verifyAndDecodeToken} from '../middleware/auth.middlewares';
 
 export async function createContext({req}: FetchCreateContextFnOptions) {
   function getUserFromHeader() {
-    if (req.headers.get('Authorization')) {
-      const user = verifyAndDecodeToken(req.headers.get('Authorization'));
-      if (typeof user === 'string') {
-        return null;
-      }
+    const auth = req.headers.get('Authorization');
+    if (!auth) return null;
+    try {
+      const user = verifyAndDecodeToken(auth);
+      if (typeof user === 'string') return null;
       return user;
+    } catch {
+      // invalid or expired → treat as “not logged in”
+      return null;
     }
-    return null;
   }
 
   const user = getUserFromHeader();
   return {
     user,
-    req, // Include the request object so tokenProcedure can access headers
+    req,
   };
 }
 export type Context = Awaited<ReturnType<typeof createContext>>;

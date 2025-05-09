@@ -5,8 +5,6 @@ export const LOCAL_STORAGE_KEY = "authJWT";
 
 export const loginWithStoredJWT = async (storedAuthJwt: string) => {
   try {
-    console.log("Logging in with stored JWT:", storedAuthJwt);
-    console.log("api", api);
     const trpcUser = await api.auth.loginWithStoredJWT.query(storedAuthJwt);
     if (trpcUser) {
       const { user, attendance } = trpcUser;
