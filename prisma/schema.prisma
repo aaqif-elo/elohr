@@ -87,7 +87,7 @@ type ReviewedInfo {
 
 type AssociatedObject {
   type AssociatedObjectType
-  id   String @db.ObjectId
+  id   String               @db.ObjectId
 }
 
 model User {
@@ -165,21 +165,8 @@ model Holiday {
   isActive         Boolean     @default(true)
   announcementSent Boolean     @default(false)
 
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("holidays")
-}
-
-model ActionToken {
-  id               String            @id @default(auto()) @map("_id") @db.ObjectId
-  token            String            @unique
-  action           String
-  expiresAt        DateTime
-  used             Boolean           @default(false)
-  usedAt           DateTime?
-  messageId        String?           // Discord message ID
-  associatedObject AssociatedObject? // Reference to associated object
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
 }

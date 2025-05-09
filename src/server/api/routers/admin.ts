@@ -1,11 +1,10 @@
-import {adminOrTokenProcedure, adminProcedure, createTRPCRouter} from '../trpc';
-
-import {getAllEmployeesWithAttendance, getUserById} from '../../db';
-import {parseAsync, object, pipe, string, isoTimestamp} from 'valibot';
+import { adminProcedure, createTRPCRouter } from "../trpc";
+import { getAllEmployeesWithAttendance, getUserById } from "../../db";
+import { parseAsync, object, pipe, string, isoTimestamp } from "valibot";
 
 export const adminRouter = createTRPCRouter({
   getForEveryoneAttendance: adminProcedure
-    .input(data =>
+    .input((data) =>
       parseAsync(
         object({
           date: pipe(string(), isoTimestamp()),
@@ -13,7 +12,7 @@ export const adminRouter = createTRPCRouter({
         data
       )
     )
-    .query(async opts => {
+    .query(async (opts) => {
       const userId = opts.ctx.user.dbId;
       if (!userId || !opts.ctx.isAdmin) return null;
 
@@ -21,7 +20,7 @@ export const adminRouter = createTRPCRouter({
       let dateFilter: Date | undefined = undefined;
 
       const validatedDate = new Date(dateString);
-      if (validatedDate.toString() !== 'Invalid Date') {
+      if (validatedDate.toString() !== "Invalid Date") {
         dateFilter = validatedDate;
       }
 
@@ -30,8 +29,8 @@ export const adminRouter = createTRPCRouter({
       return getAllEmployeesWithAttendance(dateFilter);
     }),
   // Update the getUser endpoint to use the new procedure
-  getUser: adminOrTokenProcedure
-    .input(data =>
+  getUser: adminProcedure
+    .input((data) =>
       parseAsync(
         object({
           userId: string(),
@@ -39,7 +38,7 @@ export const adminRouter = createTRPCRouter({
         data
       )
     )
-    .query(async opts => {
+    .query(async (opts) => {
       // Allow access either through normal admin login or through token
       const user = await getUserById(opts.input.userId);
       return user;
