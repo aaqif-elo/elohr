@@ -53,6 +53,30 @@ export async function getUserById(userId: string) {
   return user;
 }
 
+export async function getDiscordIdsFromUserIds(
+  userIds: string[]
+): Promise<{ id: string; discordId: string }[]> {
+  const users = await db.user.findMany({
+    where: {
+      id: { in: userIds },
+      exEmployee: false,
+    },
+    select: {
+      id: true,
+      discordInfo: {
+        select: {
+          id: true,
+        },
+      },
+    },
+  });
+
+  return users.map((user) => ({
+    id: user.id,
+    discordId: user.discordInfo?.id || "",
+  }));
+}
+
 export async function getAllEmployeesWithAttendance(date: Date) {
   const { start, end } = getStartAndEndOfDay(date);
 
