@@ -1,6 +1,14 @@
 import { Leave } from "@prisma/client";
 import { db } from ".";
 
+const reviewedQuery = {
+  OR: [
+    { reviewed: null }, // This covers cases where reviewed is null
+    { reviewed: { isSet: false } }, // Use equals for missing fields
+    { reviewed: { isNot: { approved: false } } }, // Approved leaves
+  ],
+};
+
 /**
  * Get leaves within a date range for a specific user or all users
  *
@@ -19,13 +27,7 @@ export const getLeavesInDateRange = async (
     where: {
       // Filter by user if provided
       ...(userId ? { userId } : {}),
-      // reviewed: undefined,
-      // For status, include both pending leaves (reviewed is missing or null)
-      // and leaves that aren't explicitly cancelled
-      OR: [
-        { reviewed: null }, // This covers cases where reviewed is null
-        { NOT: { reviewed: { isSet: true } } }, // Use equals for missing fields
-      ],
+      ...reviewedQuery,
     },
     include: {
       user: {
@@ -36,6 +38,8 @@ export const getLeavesInDateRange = async (
       },
     },
   });
+
+  console.log("getLeavesInDateRange", leaves);
 
   // Then filter for dates in the range (application-side filtering)
   return leaves.filter((leave) => {
@@ -85,10 +89,7 @@ export const createLeaveRequest = async (
  * @param date The date of the leave to cancel
  * @returns The updated leave request marked as cancelled, or null if no matching leave found
  */
-export const cancelLeaveRequest = async (
-  userId: string,
-  date: Date
-): Promise<Leave | null> => {
+export const cancelLeaveRequest = async (userId: string, date: Date) => {
   // First, find the active leave request for this date
   const leaves = await db.leave.findMany({
     where: {
@@ -96,14 +97,7 @@ export const cancelLeaveRequest = async (
       dates: {
         has: date,
       },
-      // Only include pending or approved leaves, not cancelled
-      OR: [
-        { reviewed: null }, // Pending leaves
-        { NOT: { reviewed: { isSet: true } } }, // This covers cases where reviewed is null
-        { reviewed: { isNot: { approved: false } } }, // Approved leaves
-      ],
     },
-    take: 1,
   });
 
   // If no leave found, return null
@@ -111,23 +105,18 @@ export const cancelLeaveRequest = async (
     return null;
   }
 
-  // Cancel the found leave
-  return db.leave.update({
-    where: { id: leaves[0].id },
-    data: {
-      // Mark as not approved for cancellation
-      reviewed: {
-        approved: false,
-        by: userId, // Special marker for self-cancellation
-        date: new Date(),
+  // Cancel all matching leaves
+  return db.leave.updateMany({
+    where: {
+      id: {
+        in: leaves.map((leave) => leave.id),
       },
     },
-    include: {
-      user: {
-        select: {
-          name: true,
-          orgEmail: true,
-        },
+    data: {
+      reviewed: {
+        approved: false,
+        by: userId,
+        date: new Date(),
       },
     },
   });
@@ -146,6 +135,7 @@ export const reviewLeaveRequest = async (
   approved: boolean,
   adminId: string
 ): Promise<Leave | null> => {
+  console.log("reviewLeaveRequest", leaveId, approved, adminId);
   return db.leave.update({
     where: { id: leaveId },
     data: {
@@ -218,4 +208,50 @@ export const getUsersOnLeave = async (
 
   // Extract user IDs from the leave requests
   return leaves.map((leave) => leave.userId);
+};
+
+/**
+ * Store the Discord message ID associated with a leave request
+ * 
+ * @param leaveId The ID of the leave request
+ * @param messageId The Discord message ID
+ * @returns The updated leave request
+ */
+export const updateLeaveWithMessageId = async (
+  leaveId: string,
+  messageId: string
+): Promise<Leave | null> => {
+  return db.leave.update({
+    where: { id: leaveId },
+    data: { messageId },
+    include: {
+      user: {
+        select: {
+          name: true,
+          orgEmail: true,
+        },
+      },
+    },
+  });
+};
+
+/**
+ * Get leaves for a user on a specific date
+ * 
+ * @param userId The user ID
+ * @param date The date to check
+ * @returns Array of leave requests
+ */
+export const getLeavesForUserOnDate = async (
+  userId: string, 
+  date: Date
+): Promise<Leave[]> => {
+  return db.leave.findMany({
+    where: {
+      userId,
+      dates: {
+        has: date,
+      },
+    },
+  });
 };

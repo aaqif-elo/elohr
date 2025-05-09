@@ -136,6 +136,7 @@ model Leave {
   reason      String?
   requestDate DateTime
   reviewed    ReviewedInfo?
+  messageId   String?       // Add this field to store Discord message ID
 
   @@map("leaves")
 }
