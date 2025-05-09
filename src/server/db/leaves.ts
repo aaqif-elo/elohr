@@ -1,5 +1,5 @@
-import {Leave} from '@prisma/client';
-import {db} from '.';
+import { Leave } from "@prisma/client";
+import { db } from ".";
 
 /**
  * Get leaves within a date range for a specific user or all users
@@ -18,13 +18,13 @@ export const getLeavesInDateRange = async (
   const leaves = await db.leave.findMany({
     where: {
       // Filter by user if provided
-      ...(userId ? {userId} : {}),
+      ...(userId ? { userId } : {}),
       // reviewed: undefined,
       // For status, include both pending leaves (reviewed is missing or null)
       // and leaves that aren't explicitly cancelled
       OR: [
-        {reviewed: null}, // This covers cases where reviewed is null
-        {NOT: {reviewed: {isSet: true}}}, // Use equals for missing fields
+        { reviewed: null }, // This covers cases where reviewed is null
+        { NOT: { reviewed: { isSet: true } } }, // Use equals for missing fields
       ],
     },
     include: {
@@ -38,8 +38,8 @@ export const getLeavesInDateRange = async (
   });
 
   // Then filter for dates in the range (application-side filtering)
-  return leaves.filter(leave => {
-    return leave.dates.some(date => {
+  return leaves.filter((leave) => {
+    return leave.dates.some((date) => {
       const leaveDate = new Date(date);
       return leaveDate >= startDate && leaveDate <= endDate;
     });
@@ -85,7 +85,10 @@ export const createLeaveRequest = async (
  * @param date The date of the leave to cancel
  * @returns The updated leave request marked as cancelled, or null if no matching leave found
  */
-export const cancelLeaveRequest = async (userId: string, date: Date): Promise<Leave | null> => {
+export const cancelLeaveRequest = async (
+  userId: string,
+  date: Date
+): Promise<Leave | null> => {
   // First, find the active leave request for this date
   const leaves = await db.leave.findMany({
     where: {
@@ -95,9 +98,9 @@ export const cancelLeaveRequest = async (userId: string, date: Date): Promise<Le
       },
       // Only include pending or approved leaves, not cancelled
       OR: [
-        {reviewed: null}, // Pending leaves
-        {NOT: {reviewed: {isSet: true}}}, // This covers cases where reviewed is null
-        {reviewed: {isNot: {approved: false}}}, // Approved leaves
+        { reviewed: null }, // Pending leaves
+        { NOT: { reviewed: { isSet: true } } }, // This covers cases where reviewed is null
+        { reviewed: { isNot: { approved: false } } }, // Approved leaves
       ],
     },
     take: 1,
@@ -110,7 +113,7 @@ export const cancelLeaveRequest = async (userId: string, date: Date): Promise<Le
 
   // Cancel the found leave
   return db.leave.update({
-    where: {id: leaves[0].id},
+    where: { id: leaves[0].id },
     data: {
       // Mark as not approved for cancellation
       reviewed: {
@@ -144,7 +147,7 @@ export const reviewLeaveRequest = async (
   adminId: string
 ): Promise<Leave | null> => {
   return db.leave.update({
-    where: {id: leaveId},
+    where: { id: leaveId },
     data: {
       reviewed: {
         approved,
@@ -171,7 +174,7 @@ export const reviewLeaveRequest = async (
  */
 export const getLeaveById = async (leaveId: string): Promise<Leave | null> => {
   return db.leave.findUnique({
-    where: {id: leaveId},
+    where: { id: leaveId },
     include: {
       user: {
         select: {
@@ -181,4 +184,38 @@ export const getLeaveById = async (leaveId: string): Promise<Leave | null> => {
       },
     },
   });
+};
+
+/**
+ * Get all users on leave for a specific date
+ * @param date The date to check for leave requests (default is today)
+ * @returns Array of user Ids on leave
+ */
+export const getUsersOnLeave = async (
+  date: Date = new Date()
+): Promise<string[]> => {
+  const leaves = await db.leave.findMany({
+    where: {
+      dates: {
+        has: date,
+      },
+      // Only include pending or approved leaves, not cancelled
+      OR: [
+        { reviewed: null }, // Pending leaves
+        { NOT: { reviewed: { isSet: true } } }, // This covers cases where reviewed is null
+        { reviewed: { isNot: { approved: false } } }, // Approved leaves
+      ],
+    },
+    include: {
+      user: {
+        select: {
+          name: true,
+          orgEmail: true,
+        },
+      },
+    },
+  });
+
+  // Extract user IDs from the leave requests
+  return leaves.map((leave) => leave.userId);
 };
