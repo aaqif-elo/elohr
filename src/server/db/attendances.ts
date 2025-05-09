@@ -423,14 +423,20 @@ export const getLogoutTime = async (userId: string) => {
  * @returns An object containing the logout time and report, or null if not found
  */
 export const logout = async (userId: string) => {
-  const logoutTime = new Date();
+  let logoutTime = new Date();
   const attendance = await getLoggedInAttendance(userId);
   if (!attendance) {
     return null;
   }
 
   if ((await canBreak(userId)) !== true) {
-    await breakEnd(userId);
+    // Remove the last break if it was not ended
+    const lastBreak = attendance.breaks[attendance.breaks.length - 1];
+    if (lastBreak && !lastBreak.end) {
+      attendance.breaks.pop();
+      // Set the logout time to be the start of the last break
+      logoutTime = lastBreak.start;
+    }
   }
 
   // Close the final work segment if still open
@@ -592,4 +598,25 @@ export const switchProject = async (userId: string, project: string) => {
   });
   attendanceEvents.emit("attendanceUpdated", attendance);
   return true;
+};
+
+/**
+ * Get all users who are currently logged in
+ * @returns An array of user IDs
+ */
+export const getLoggedInUsers = async () => {
+  const attendances = await db.attendance.findMany({
+    where: {
+      login: getDateRangePayload(new Date()),
+      OR: [
+        {
+          logout: { isSet: false },
+        },
+        {
+          logout: null,
+        },
+      ],
+    },
+  });
+  return attendances.map((attendance) => attendance.userId);
 };
