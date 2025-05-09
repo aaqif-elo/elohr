@@ -22,27 +22,40 @@ import { setNameStatus } from "./utils";
 import axios from "axios";
 import { GoogleGenAI } from "@google/genai";
 
-export const getHRLoginInteractionReplyPayload = async (
-  interaction: ChatInputCommandInteraction,
-  reason?: string
-) => {
+export const getLoginUrl = async (discordId: string) => {
   try {
-    const discordId = interaction.user.id;
     // new: actually generate the signed JWT
     const jwtResp = await generateJWTFromUserDiscordId(discordId);
     if (!jwtResp?.jwt) {
-      await interaction.reply({
-        content: `❌ Error generating login link. Please try again later.`,
-        flags: "Ephemeral",
-      });
-      return;
+      return null;
     }
     const loginUrl = `${
       process.env.NODE_ENV === "production"
         ? process.env.FRONTEND_URL
         : `http://localhost:${process.env.PORT}`
     }/?token=${jwtResp.jwt}`;
+    return loginUrl;
+  } catch (error) {
+    console.error("Error generating login link:", error);
+    return null;
+  }
+};
 
+export const getHRLoginInteractionReplyPayload = async (
+  interaction: ChatInputCommandInteraction,
+  reason?: string
+) => {
+  try {
+    const discordId = interaction.user.id;
+
+    const loginUrl = await getLoginUrl(discordId);
+    if (!loginUrl) {
+      await interaction.reply({
+        content: `❌ Error generating login link. Please try again later.`,
+        flags: "Ephemeral",
+      });
+      return;
+    }
     const loginButton = new ButtonBuilder()
       .setLabel("ELO HR Login")
       .setStyle(ButtonStyle.Link)
