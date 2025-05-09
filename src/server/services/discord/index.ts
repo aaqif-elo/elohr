@@ -26,6 +26,7 @@ import {
 import { interactionHandler } from "./interaction-handlers";
 import { handleVoiceStateChange } from "./voice-channel-hook.service";
 import { setNameStatus } from "./utils";
+import { startCronJobs } from "./cron-jobs";
 config();
 // Environment variables
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -79,13 +80,20 @@ export const initializeDiscord = async () => {
 
     // Connect Discord client
     await discordClient.login(DISCORD_BOT_TOKEN);
-    console.log("Discord client connected successfully");
+    console.log("\t Connected...✅");
 
     // Register event handlers
     setupEventHandlers();
+    console.log("\t Event handlers registered...✅");
 
     // Register application commands
     await registerCommands();
+
+    console.log("\t Commands registered...✅");
+    // Start cron jobs (if any)
+    await startCronJobs(discordClient); // Uncomment if you have cron jobs to start
+
+    console.log("\t Cron jobs started...✅");
 
     return discordClient;
   } catch (error) {
