@@ -38,12 +38,18 @@ del "!PRISMA_CLIENT_FILE!.bak"
 
 echo === Copying required files ===
 copy pnpm-workspace.yaml .output\server\pnpm-workspace.yaml
-copy .env .output\.env
 xcopy /E /I node_modules\.prisma .output\server\node_modules\.prisma
 
 echo === Creating zip archive ===
 cd .output
-tar -cf ..\elohr.zip *
+if exist ..\elohr.zip del ..\elohr.zip
+where /q 7z
+if %ERRORLEVEL% EQU 0 (
+    7z a -tzip ..\elohr.zip *
+) else (
+    echo WARNING: 7-Zip not found, using fallback method
+    powershell -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::CreateFromDirectory('$(Get-Location)', '..\elohr.zip')"
+)
 cd ..
 
 echo === Build complete! ===
