@@ -484,7 +484,11 @@ export const logout = async (userId: string) => {
       time: logoutTime,
     };
   }
-  const attendanceImage = await getAttendanceStatsImage(token);
+
+  const attendanceImage = await getAttendanceStatsImage(
+    token,
+    jwtWithUser.userWithAttendance.user.isAdmin
+  );
 
   return {
     report: attendanceImage,
