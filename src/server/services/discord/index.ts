@@ -14,7 +14,6 @@ import {
   requestLeaveCommandBody,
 } from "./commands";
 
-import { config } from "dotenv";
 import {
   EAdminCommands,
   EAttendanceCommands,
@@ -25,7 +24,6 @@ import { interactionHandler } from "./interaction-handlers";
 import { handleVoiceStateChange } from "./voice-channel-hook.service";
 import { setNameStatus } from "./utils";
 import { startCronJobs } from "./cron-jobs";
-config();
 
 // Add this near the top of the file
 declare global {
@@ -133,13 +131,13 @@ function setupEventHandlers() {
 
     // Setup voice state update handler
     discordClient.on("voiceStateUpdate", (oldState, newState) => {
-      // if (production) {
-      handleVoiceStateChange(
-        oldState,
-        newState,
-        sendAttendanceChangeMessageAndSetStatus
-      );
-      // }
+      if (production) {
+        handleVoiceStateChange(
+          oldState,
+          newState,
+          sendAttendanceChangeMessageAndSetStatus
+        );
+      }
     });
   });
 
