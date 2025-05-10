@@ -1,27 +1,47 @@
+import { config } from "dotenv";
+config();
+
 import { defineConfig } from "@solidjs/start/config";
 import tailwindcss from "@tailwindcss/vite";
-import { initializeDiscord } from "./src/server/services/discord/index";
-
-if (!process.env.PORT) {
-  console.error("PORT is not set. Please set the PORT environment variable.");
-  process.exit(1);
-}
-
-initializeDiscord()
-  .then(() => {
-    console.log("Discord client initialized");
-  })
-  .catch((error) => {
-    console.error("Error initializing Discord client:", error);
-    process.exit(1);
-  });
 
 export default defineConfig({
   vite: {
-    ssr: { external: ["@prisma/client"] },
+    optimizeDeps: {
+      exclude: [
+        "mongodb",
+        "axios",
+        "cheerio",
+        "cron",
+        "discord.js",
+        "jsonwebtoken",
+        "valibot",
+        "puppeteer",
+        "@google/genai",
+      ],
+    },
+    ssr: {
+      external: [
+        "@prisma/client",
+        "mongodb",
+        "axios",
+        "cheerio",
+        "cron",
+        "discord.js",
+        "jsonwebtoken",
+        "valibot",
+        "puppeteer",
+        "@google/genai",
+      ],
+    },
     plugins: [tailwindcss()],
     server: {
       port: Number(process.env.PORT),
+    },
+    resolve: {
+      alias: {
+        ".prisma/client/index-browser":
+          "./node_modules/.prisma/client/index-browser.js",
+      },
     },
   },
 });
