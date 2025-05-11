@@ -5,6 +5,9 @@ import EventEmitter from "events";
 import { generateJWTFromUserId } from "../api/routers";
 import { getAttendanceStatsImage } from "../services/discord/utils";
 
+// Add this near the top after imports
+console.log("Loading attendances.ts module");
+
 // Global declaration
 declare global {
   var _attendanceEventsGlobal: AttendanceEventEmitter | undefined;
@@ -24,7 +27,7 @@ class AttendanceEventEmitter extends EventEmitter {
       value: IteratorResult<[Parameters<AttendanceEvents[K]>[0]]>
     ) => void)[] = [];
 
-    // Fix the listener signature - use exactly one parameter
+    // Create the event listener that will be attached
     const listener = (data: Parameters<AttendanceEvents[K]>[0]) => {
       if (queue.length > 0) {
         const resolve = queue.shift()!;
@@ -34,16 +37,19 @@ class AttendanceEventEmitter extends EventEmitter {
       }
     };
 
-    // Cast the listener to match the expected type
+    // Add the listener
     this.on(event, listener);
 
-    opts.signal?.addEventListener(
-      "abort",
-      () => {
-        this.off(event, listener);
-      },
-      { once: true }
-    );
+    // Explicit cleanup function to ensure listener removal
+    const cleanup = () => {
+      this.removeListener(event, listener);
+      console.log(`Removed listener for ${String(event)}, remaining: ${this.listenerCount(event)}`);
+    };
+
+    // Add the cleanup to the abort signal
+    if (opts.signal) {
+      opts.signal.addEventListener("abort", cleanup, { once: true });
+    }
 
     return {
       [Symbol.asyncIterator]() {
@@ -56,6 +62,7 @@ class AttendanceEventEmitter extends EventEmitter {
             }
 
             if (opts.signal?.aborted) {
+              cleanup(); // Ensure cleanup happens if signal is aborted
               return { value: undefined, done: true };
             }
 
@@ -67,18 +74,46 @@ class AttendanceEventEmitter extends EventEmitter {
                   const index = queue.indexOf(resolve);
                   if (index >= 0) queue.splice(index, 1);
                   resolve({ value: undefined, done: true });
+                  // We don't call cleanup here as it's already called by the abort event listener above
                 };
 
-                opts.signal.addEventListener("abort", abortHandler, {
-                  once: true,
-                });
+                opts.signal.addEventListener("abort", abortHandler, { once: true });
               }
             });
           },
+          // Add the return method to handle early terminations (like breaks in for-await loops)
+          return: async (): Promise<IteratorResult<[Parameters<AttendanceEvents[K]>[0]]>> => {
+            cleanup(); // Ensure cleanup happens for early termination
+            return { value: undefined, done: true };
+          }
         };
       },
     };
   }
+}
+
+// Add this near your AttendanceEventEmitter class
+
+// Map to track active subscriptions by userId
+export const activeSubscriptions = new Map<string, AbortController>();
+
+// Function to clean up an existing subscription
+export function cleanupExistingSubscription(userId: string): boolean {
+  if (activeSubscriptions.has(userId)) {
+    console.log(`Cleaning up existing subscription for user ${userId}`);
+    const controller = activeSubscriptions.get(userId)!;
+    controller.abort();
+    activeSubscriptions.delete(userId);
+    return true;
+  }
+  return false;
+}
+
+// Function to register a new subscription
+export function registerSubscription(userId: string, controller: AbortController): void {
+  activeSubscriptions.set(userId, controller);
+  console.log(`Registered subscription for user ${userId}`);
+  console.log(`Total active subscriptions: ${activeSubscriptions.size}`);
 }
 
 declare interface AttendanceEventEmitter {
@@ -103,8 +138,15 @@ declare interface AttendanceEventEmitter {
 // Then create your event emitter
 export const attendanceEvents =
   global._attendanceEventsGlobal || new AttendanceEventEmitter();
+
+if (!global._attendanceEventsGlobal) {
+  console.log("Creating new AttendanceEventEmitter instance");
+} else {
+  console.log("Reusing existing AttendanceEventEmitter instance");
+}
+
 global._attendanceEventsGlobal = attendanceEvents;
-attendanceEvents.setMaxListeners(10);
+attendanceEvents.setMaxListeners(0);
 
 console.log(
   "Initializing attendanceEvents singleton instance",
