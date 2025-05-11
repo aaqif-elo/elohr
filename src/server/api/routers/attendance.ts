@@ -7,6 +7,9 @@ import {
   countWorkingDays,
   getLeavesInDateRange,
   getHolidaysForDateRange,
+  cleanupExistingSubscription,
+  registerSubscription,
+  activeSubscriptions,
 } from "../../db";
 
 import {
@@ -47,22 +50,76 @@ export const attendanceRouter = createTRPCRouter({
       return getAttendanceForUser(userId, dateFilter);
     }),
   attendanceChanged: authProcedure.subscription(async function* (opts) {
-    function* maybeYield(attendance: Attendance) {
-      if (opts.ctx.user.dbId !== attendance.userId) {
-        return;
-      }
+    const userId = opts.ctx.user.dbId;
+    if (!userId) return;
 
-      yield tracked(opts.ctx.user.dbId, attendance);
+    // Create a dedicated abort controller for this subscription
+    const controller = new AbortController();
+
+    // Clean up any existing subscription for this user
+    const hadPrevious = cleanupExistingSubscription(userId);
+    if (hadPrevious) {
+      console.log(`Cleaned up previous subscription for user ${userId}`);
     }
 
-    for await (const [data] of attendanceEvents.toIterable(
-      "attendanceUpdated",
-      {
-        signal: opts.signal,
+    // Register the new subscription
+    registerSubscription(userId, controller);
+
+    // Log subscription start
+    console.log(`User ${userId} subscribing to attendance changes`);
+
+    // Create a function to filter events for this specific user
+    function* maybeYield(attendance: Attendance) {
+      if (userId !== attendance.userId) {
+        return;
       }
-    )) {
-      console.log("Received attendance data in subscription:", data);
-      yield* maybeYield(data);
+      yield tracked(userId, attendance);
+    }
+
+    // Create a cleanup function that will be called ONCE
+    let cleanupDone = false;
+    const performCleanup = () => {
+      if (cleanupDone) return;
+      cleanupDone = true;
+
+      console.log(`Final cleanup for user ${userId}`);
+      activeSubscriptions.delete(userId);
+    };
+
+    // Ensure cleanup is performed in all cases
+    if (opts.signal) {
+      opts.signal.addEventListener("abort", performCleanup, { once: true });
+      controller.signal.addEventListener("abort", performCleanup, {
+        once: true,
+      });
+
+      try {
+        // First log the current count for debugging
+        console.log(
+          `Current listener count: ${attendanceEvents.listenerCount(
+            "attendanceUpdated"
+          )}`
+        );
+
+        // Create the iterable with its own signal
+        for await (const [data] of attendanceEvents.toIterable(
+          "attendanceUpdated",
+          {
+            signal: AbortSignal.any([opts.signal, controller.signal]),
+          }
+        )) {
+          console.log(`Received attendance data for user: ${data.userId}`);
+          yield* maybeYield(data);
+        }
+      } finally {
+        console.log(`User ${userId} subscription ended`);
+        performCleanup();
+        console.log(
+          `Remaining listeners: ${attendanceEvents.listenerCount(
+            "attendanceUpdated"
+          )}`
+        );
+      }
     }
   }),
   getAttendanceSummary: authProcedure

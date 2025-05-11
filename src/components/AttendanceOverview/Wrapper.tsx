@@ -364,33 +364,54 @@ export const AttendanceWrapper = () => {
     }
   };
 
-  // Handle subscription to real-time updates
-  createEffect(() => {
-    const currentDate = selectedDate();
-    const currentUser = user();
-    const attendance = currentUser?.attendance;
-
-    if (
-      isToday(currentDate) &&
-      attendance?.loggedInTime &&
-      !attendance.loggedOutTime
-    ) {
-      const sub = api.attendance.attendanceChanged.subscribe(undefined, {
-        onData: (updatedAttendance) => {
-          if (updatedAttendance.data.userId === currentUser?.dbID) {
-            setAttendance(updatedAttendance.data);
-          }
-        },
-      });
-
-      // Cleanup subscription when conditions change or component unmounts
-      onCleanup(() => sub.unsubscribe());
-    }
-  });
-
   onMount(() => {
     fetchAttendance(selectedDate());
     fetchHolidays();
+  });
+
+  onMount(() => {
+    // Store subscription reference to ensure proper cleanup
+    let subscription: ReturnType<typeof api.attendance.attendanceChanged.subscribe> | null = null;
+    
+    const setupSubscription = () => {
+      // Cancel any existing subscription first
+      if (subscription) {
+        subscription.unsubscribe();
+      }
+      
+      // Create new subscription
+      subscription = api.attendance.attendanceChanged.subscribe(undefined, {
+        onData: (updated) => {
+          if (
+            isToday(selectedDate()) &&
+            updated.data.userId === getUser()?.dbID
+          ) {
+            setAttendance(updated.data);
+          }
+        },
+      });
+    };
+    
+    // Initial setup
+    setupSubscription();
+  
+    // Handle beforeunload event
+    const handleUnload = () => {
+      if (subscription) {
+        subscription.unsubscribe();
+        subscription = null;
+      }
+    };
+    
+    window.addEventListener("beforeunload", handleUnload);
+  
+    onCleanup(() => {
+      if (subscription) {
+        subscription.unsubscribe();
+        subscription = null;
+      }
+      window.removeEventListener("beforeunload", handleUnload);
+    });
   });
 
   const handleDateChange = (date: Date) => {
