@@ -10,6 +10,12 @@ export const getAttendanceStatsImage = async (
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
   const page = await browser.newPage();
+  page.emulateMediaFeatures([
+    {
+      name: "prefers-color-scheme",
+      value: "dark",
+    },
+  ]);
   // Set the viewport size
   await page.setViewport({ width: 1920, height: 1080 });
   // inject JWT into localStorage on every new document before any script runs
@@ -45,12 +51,14 @@ export const getAttendanceStatsImage = async (
     width: 1820,
     height: 625,
   };
+
   const adminClip = {
-    x: 275,
-    y: 25,
-    width: 1370,
-    height: 1220,
+    x: 175,
+    y: 0,
+    width: 1575,
+    height: 1275,
   };
+
   // Take a screenshot of the page
   const buffer = await page.screenshot({
     encoding: "binary",

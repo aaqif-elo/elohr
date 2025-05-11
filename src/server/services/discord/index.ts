@@ -22,8 +22,9 @@ import {
 } from "./discord.enums";
 import { interactionHandler } from "./interaction-handlers";
 import { handleVoiceStateChange } from "./voice-channel-hook.service";
-import { setNameStatus } from "./utils";
+import { getAttendanceStatsImage, setNameStatus } from "./utils";
 import { startCronJobs } from "./cron-jobs";
+import { writeFileSync } from "fs";
 
 // Add this near the top of the file
 declare global {
@@ -128,6 +129,18 @@ const sendAttendanceChangeMessageAndSetStatus = (
 function setupEventHandlers() {
   discordClient.on("ready", () => {
     console.log(`Logged in as ${discordClient.user?.tag}!`);
+    getAttendanceStatsImage(
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NDk0MjYzMDIsImRpc2NvcmRJZCI6IjMzMTc4MjQwNzY4MDI5NDkyMiIsImRiSWQiOiI1ZTIzZWJiODRkMzg5NjVkNTQwMjY3MTIiLCJyb2xlcyI6WyJBRE1JTiJdLCJpYXQiOjE3NDY4MzQzMDJ9.Y2fTXq8q7SeSj1bnUknFV66a9LLzd8LADRjpg8Ed0IU",
+      true
+    )
+      .then((buffer) => {
+        // Do something with the buffer, like saving it to a file
+        writeFileSync("attendance.png", buffer);
+        console.log("Image saved as attendance.png");
+      })
+      .catch((error) => {
+        console.error("Error generating image:", error);
+      });
 
     // Setup voice state update handler
     discordClient.on("voiceStateUpdate", (oldState, newState) => {
