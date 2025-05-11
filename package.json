@@ -3,7 +3,7 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon",
-    "build": "vinxi build",
+    "build": "scripts\\build.bat",
     "start": "vinxi start",
     "generate": "prisma generate"
   },

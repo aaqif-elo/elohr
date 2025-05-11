@@ -5,15 +5,20 @@ import {
   ChannelType,
   ChatInputCommandInteraction,
   Client,
+  User,
 } from "discord.js";
 import {
   getDiscordIdsFromUserIds,
+  getLeaveById,
   getLoggedInUsers,
   getNextHoliday,
+  getUserByDiscordId,
   isOnBreak,
   login,
   logout,
   markUpcomingHolidaysAsAnnounced,
+  ONE_DAY_IN_MS,
+  reviewLeaveRequest,
 } from "../../db";
 
 import { generateJWTFromUserDiscordId } from "../../api/routers/auth";
@@ -21,6 +26,26 @@ import { setNameStatus } from "./utils";
 
 import axios from "axios";
 import { GoogleGenAI } from "@google/genai";
+import { Leave } from "@prisma/client";
+
+export const getLoginUrl = async (discordId: string) => {
+  try {
+    // new: actually generate the signed JWT
+    const jwtResp = await generateJWTFromUserDiscordId(discordId);
+    if (!jwtResp?.jwt) {
+      return null;
+    }
+    const loginUrl = `${
+      process.env.NODE_ENV === "production"
+        ? process.env.FRONTEND_URL
+        : `http://localhost:${process.env.PORT}`
+    }/?token=${jwtResp.jwt}`;
+    return loginUrl;
+  } catch (error) {
+    console.error("Error generating login link:", error);
+    return null;
+  }
+};
 
 export const getHRLoginInteractionReplyPayload = async (
   interaction: ChatInputCommandInteraction,
@@ -28,21 +53,15 @@ export const getHRLoginInteractionReplyPayload = async (
 ) => {
   try {
     const discordId = interaction.user.id;
-    // new: actually generate the signed JWT
-    const jwtResp = await generateJWTFromUserDiscordId(discordId);
-    if (!jwtResp?.jwt) {
+
+    const loginUrl = await getLoginUrl(discordId);
+    if (!loginUrl) {
       await interaction.reply({
         content: `❌ Error generating login link. Please try again later.`,
         flags: "Ephemeral",
       });
       return;
     }
-    const loginUrl = `${
-      process.env.NODE_ENV === "production"
-        ? process.env.FRONTEND_URL
-        : `http://localhost:${process.env.PORT}`
-    }/?token=${jwtResp.jwt}`;
-
     const loginButton = new ButtonBuilder()
       .setLabel("ELO HR Login")
       .setStyle(ButtonStyle.Link)
@@ -299,9 +318,7 @@ export const autoLogoutUsersWhoAreStillLoggedIn = async (
       );
       const fetchedUser = await discordClient.users.fetch(discordId);
       if (logoutReportAndTime.report instanceof Buffer) {
-        await fetchedUser.send({
-          files: [logoutReportAndTime.report],
-        });
+        await sendLogoutReport(fetchedUser, logoutReportAndTime.report);
       }
       return { discordId, userId, trackIsOnline: !wasOnBreak };
     } catch (err) {
@@ -399,5 +416,268 @@ export const getWeatherReport = async () => {
   } catch (error) {
     console.error("Error fetching weather data:", error);
     return;
+  }
+};
+
+// Update LEAVE_BUTTON_IDS enum
+enum LEAVE_BUTTON_IDS {
+  APPROVE = "approve",
+  REJECT = "reject",
+}
+
+/**
+ * Sends a leave request notification to the admin channel
+ *
+ * @param leave The created leave request
+ * @param discordId The Discord ID of the requesting user
+ * @returns Object with success status and message ID if successful
+ */
+export const sendLeaveRequestNotification = async (
+  discordClient: Client<boolean>,
+  leave: Leave,
+  discordId: string
+): Promise<{ success: boolean; messageId?: string }> => {
+  try {
+    const adminChannelID = process.env.ADMIN_CHANNEL_ID;
+
+    if (!adminChannelID) {
+      console.error("ADMIN_CHANNEL_ID not defined");
+      return { success: false };
+    }
+
+    const channel = await discordClient.channels.fetch(adminChannelID);
+
+    if (!channel || channel.type !== ChannelType.GuildText) {
+      console.error("Admin channel not found or not a text channel");
+      return { success: false };
+    }
+
+    // Format dates for display
+    const formattedDates = leave.dates.map((date: Date) => {
+      return date.toLocaleDateString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+    });
+
+    // Create description based on number of dates
+    let datesDescription = "";
+    if (formattedDates.length === 1) {
+      datesDescription = `on ${formattedDates[0]}`;
+    } else {
+      datesDescription = `from ${formattedDates[0]} to ${
+        formattedDates[formattedDates.length - 1]
+      } (${formattedDates.length} days)`;
+    }
+
+    console.log("leave", leave);
+    console.log("approve id", `${LEAVE_BUTTON_IDS.APPROVE}-${leave.id}`);
+    console.log("reject id", `${LEAVE_BUTTON_IDS.REJECT}-${leave.id}`);
+
+    // Create buttons
+    const approveButton = new ButtonBuilder()
+      .setLabel("Approve")
+      .setStyle(ButtonStyle.Success)
+      .setCustomId(`${LEAVE_BUTTON_IDS.APPROVE}-${leave.id}`)
+      .setEmoji("✅");
+
+    const rejectButton = new ButtonBuilder()
+      .setLabel("Reject")
+      .setStyle(ButtonStyle.Danger)
+      .setCustomId(`${LEAVE_BUTTON_IDS.REJECT}-${leave.id}`)
+      .setEmoji("❌");
+
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      approveButton,
+      rejectButton
+    );
+
+    // Create the message content
+    const reason = leave.reason ? `\n\n**Reason**: ${leave.reason}` : "";
+    const expiryTime = new Date(Date.now() + ONE_DAY_IN_MS);
+    const formattedExpiryTime = expiryTime.toLocaleString("en-US");
+
+    const content = `**Leave Request**\n<@${discordId}> has requested leave ${datesDescription}.${reason}\n\n*This request will expire at ${formattedExpiryTime}.*`;
+
+    // Send the message
+    const message = await channel.send({
+      content,
+      components: [row],
+    });
+
+    // Set up collector for button interactions
+    const collector = message.createMessageComponentCollector({
+      time: ONE_DAY_IN_MS,
+    });
+
+    collector.on("collect", async (interaction) => {
+      console.log("interaction", interaction.customId);
+      const [action, leaveId] = interaction.customId.split("-");
+      console.log("action", action);
+      console.log("leaveId", leaveId);
+      // Verify the leave exists and is still pending
+      const updatedLeave = await getLeaveById(leaveId);
+      console.log("updatedLeave", updatedLeave);
+      if (!updatedLeave || updatedLeave.reviewed) {
+        await interaction.reply({
+          content:
+            "This leave request has already been processed or doesn't exist.",
+          ephemeral: true,
+        });
+        return;
+      }
+
+      const adminDiscordId = interaction.user.id;
+      const adminId = (await getUserByDiscordId(adminDiscordId))?.id;
+
+      if (!adminId) {
+        await interaction.reply({
+          content: "Your Discord ID is not linked to any user.",
+          ephemeral: true,
+        });
+        return;
+      }
+
+      if (action === LEAVE_BUTTON_IDS.APPROVE) {
+        // Approve the leave
+        await reviewLeaveRequest(leaveId, true, adminId);
+
+        // Send confirmation to attendance channel
+        const attendanceChannelID = process.env.ATTENDANCE_CHANNEL_ID;
+        if (attendanceChannelID) {
+          const attendanceChannel = await discordClient.channels.fetch(
+            attendanceChannelID
+          );
+          if (
+            attendanceChannel &&
+            attendanceChannel.type === ChannelType.GuildText
+          ) {
+            await attendanceChannel.send({
+              content: `<@${discordId}> will be on leave ${datesDescription}.`,
+            });
+          }
+        }
+
+        // Update the original message
+        await interaction.update({
+          content: `**Leave Request APPROVED**\n<@${discordId}>'s leave request ${datesDescription} has been approved by <@${adminDiscordId}>.${reason}`,
+          components: [],
+        });
+      } else if (action === LEAVE_BUTTON_IDS.REJECT) {
+        // Reject the leave
+        await reviewLeaveRequest(leaveId, false, adminId);
+
+        // Send rejection message to user
+        try {
+          const user = await discordClient.users.fetch(discordId);
+          await user.send({
+            content: `Your leave request ${datesDescription} has been denied.`,
+          });
+        } catch (error) {
+          console.error("Failed to send DM to user:", error);
+        }
+
+        // Update the original message
+        await interaction.update({
+          content: `**Leave Request REJECTED**\n<@${discordId}>'s leave request ${datesDescription} has been rejected by <@${adminDiscordId}>.${reason}`,
+          components: [],
+        });
+      }
+    });
+
+    collector.on("end", async (collected) => {
+      if (collected.size === 0) {
+        // No interaction occurred, update the message
+        try {
+          await message.edit({
+            content: `**Leave Request EXPIRED**\n<@${discordId}>'s leave request ${datesDescription} has expired without action.${reason}`,
+            components: [],
+          });
+        } catch (error) {
+          console.error("Failed to update expired message:", error);
+        }
+      }
+    });
+
+    return { success: true, messageId: message.id };
+  } catch (error) {
+    console.error("Error sending leave request notification:", error);
+    return { success: false };
+  }
+};
+
+/**
+ * Delete a Discord message from the admin channel
+ *
+ * @param discordClient Discord client instance
+ * @param messageId The message ID to delete
+ * @returns Boolean indicating success of operation
+ */
+export const deleteLeaveRequestMessage = async (
+  discordClient: Client<boolean>,
+  messageId: string
+): Promise<boolean> => {
+  try {
+    const adminChannelID = process.env.ADMIN_CHANNEL_ID;
+
+    if (!adminChannelID) {
+      console.error("ADMIN_CHANNEL_ID not defined");
+      return false;
+    }
+
+    const channel = await discordClient.channels.fetch(adminChannelID);
+
+    if (!channel || channel.type !== ChannelType.GuildText) {
+      console.error("Admin channel not found or not a text channel");
+      return false;
+    }
+
+    try {
+      const message = await channel.messages.fetch(messageId);
+      if (message) {
+        await message.delete();
+        return true;
+      }
+    } catch (error) {
+      // Message might not exist anymore, which is fine
+      console.log("Message not found, might be already deleted:", error);
+    }
+
+    return false;
+  } catch (error) {
+    console.error("Error deleting leave request message:", error);
+    return false;
+  }
+};
+
+export const sendLogoutReport = async (
+  user: User,
+  report: Buffer<ArrayBuffer>
+): Promise<void> => {
+  const loginUrl = await getLoginUrl(user.id);
+
+  if (!loginUrl) {
+    console.error("Error generating login link for user:", user.id);
+    return;
+  }
+
+  const hrLoginButton = new ButtonBuilder()
+    .setLabel("ELO HR Login")
+    .setStyle(ButtonStyle.Link)
+    .setURL(loginUrl)
+    .setEmoji("🌐");
+
+  try {
+    await user.send({
+      files: [report],
+      content: `Please log in to the Portal to view more details.`,
+      components: [
+        new ActionRowBuilder<ButtonBuilder>().addComponents(hrLoginButton),
+      ],
+    });
+  } catch (error) {
+    console.error("Failed to send logout report:", error);
   }
 };

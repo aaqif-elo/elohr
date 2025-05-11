@@ -7,9 +7,7 @@ export enum EAttendanceCommands {
 }
 
 export enum EAdminCommands {
-  GET_HOLIDAY_ANNOUNCEMENT = "get-holiday-announcement",
-  OVERRIDE_HOLIDAY_ANNOUNCEMENT = "override-holiday-announcement",
-  ANNOUNCE_NEXT_HOLIDAY = "announce-next-holiday",
+  GET_HOLIDAY_ANNOUNCEMENT = "next-holiday",
 }
 
 export enum ELeaveCommands {

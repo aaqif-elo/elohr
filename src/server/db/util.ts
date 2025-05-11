@@ -48,5 +48,16 @@ export function getEndOfDay(date: Date): Date {
   );
 }
 
-export const ONE_DAY_IN_MS = 24 * 60 * 60 * 1000;
+export const ONE_MINUTE_IN_MS = 60 * 1000;
+export const ONE_DAY_IN_MS = 24 * 60 * ONE_MINUTE_IN_MS;
 export const ONE_MONTH_IN_MS = 30 * ONE_DAY_IN_MS;
+
+export const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) {
+    return error.message;
+  } else if (typeof error === "string") {
+    return error;
+  } else {
+    return "An unknown error occurred";
+  }
+};

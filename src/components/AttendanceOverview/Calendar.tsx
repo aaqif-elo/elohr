@@ -1007,6 +1007,9 @@ export function HRCalendar(props: HRCalendarProps) {
                   dayInfo.month,
                   dayInfo.year
                 );
+                const isAnnounced = highlight?.descriptionDetails
+                  ?.toLowerCase()
+                  ?.includes("announce");
                 const showMenuIcon = createMemo(() => {
                   return (
                     !isWeekendDay &&
@@ -1048,8 +1051,9 @@ export function HRCalendar(props: HRCalendarProps) {
                       holiday: highlight?.isHoliday,
                       absence: highlight?.isAbsence,
                       leave: highlight?.isLeave,
-                      // Use a function to directly check category inside the classList directive
-                      // This ensures reactivity when hoveredCategory changes
+                      past: !isFutureOrToday,
+                      announced: isAnnounced,
+                      // Other existing classes...
                       "hover-highlight": matchesHoveredCategory(
                         dayInfo.day,
                         dayInfo.month,
@@ -1084,6 +1088,16 @@ export function HRCalendar(props: HRCalendarProps) {
                     onMouseOut={hideTooltip}
                   >
                     {dayInfo.day}
+
+                    {/* Add announcement indicator for holidays */}
+                    {isAnnounced && highlight?.isHoliday && (
+                      <div
+                        class="announcement-indicator"
+                        title="Holiday announced to team"
+                      >
+                        📢
+                      </div>
+                    )}
 
                     {/* Menu icon for non-weekend future/today dates */}
                     {showMenuIcon() && (

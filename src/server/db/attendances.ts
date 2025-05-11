@@ -1,4 +1,11 @@
-// At the top of the file, add this to access the global object:
+import { Attendance } from "@prisma/client";
+import { db, ONE_DAY_IN_MS } from ".";
+import { getStartOfDay, getEndOfDay } from "./util";
+import EventEmitter from "events";
+import { generateJWTFromUserId } from "../api/routers";
+import { getAttendanceStatsImage } from "../services/discord/utils";
+
+// Global declaration
 declare global {
   var _attendanceEventsGlobal: AttendanceEventEmitter | undefined;
 }
@@ -93,10 +100,9 @@ declare interface AttendanceEventEmitter {
   ): boolean;
 }
 
-// Then replace your event emitter export with:
+// Then create your event emitter
 export const attendanceEvents =
   global._attendanceEventsGlobal || new AttendanceEventEmitter();
-// Store in global scope to ensure it's a singleton
 global._attendanceEventsGlobal = attendanceEvents;
 attendanceEvents.setMaxListeners(10);
 
@@ -104,13 +110,6 @@ console.log(
   "Initializing attendanceEvents singleton instance",
   attendanceEvents
 );
-
-import { Attendance } from "@prisma/client";
-import { db, ONE_DAY_IN_MS } from ".";
-import { getStartOfDay, getEndOfDay } from "./util";
-import EventEmitter from "events";
-import { generateJWTFromUserId } from "../api/routers";
-import { getAttendanceStatsImage } from "../services/discord/utils";
 
 /**
  * Returns today's start (00:00:00.000) and end (23:59:59.999) timestamps.
@@ -485,7 +484,11 @@ export const logout = async (userId: string) => {
       time: logoutTime,
     };
   }
-  const attendanceImage = await getAttendanceStatsImage(token);
+
+  const attendanceImage = await getAttendanceStatsImage(
+    token,
+    jwtWithUser.userWithAttendance.user.isAdmin
+  );
 
   return {
     report: attendanceImage,

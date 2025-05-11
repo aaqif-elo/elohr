@@ -1,6 +1,23 @@
 // @refresh reload
+import { config } from "dotenv";
+config();
 import { createHandler, StartServer } from "@solidjs/start/server";
+console.log("Starting the server...");
+import { initializeDiscord } from "./server/services/discord/index";
 
+if (!process.env.PORT) {
+  console.error("PORT is not set. Please set the PORT environment variable.");
+  process.exit(1);
+}
+
+initializeDiscord()
+  .then(() => {
+    console.log("Discord client initialized");
+  })
+  .catch((error) => {
+    console.error("Error initializing Discord client:", error);
+    process.exit(1);
+  });
 export default createHandler(() => (
   <StartServer
     document={({ assets, children, scripts }) => (
@@ -19,3 +36,4 @@ export default createHandler(() => (
     )}
   />
 ));
+console.log("Server started successfully.");

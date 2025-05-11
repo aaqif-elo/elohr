@@ -2,7 +2,6 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import type { Context } from "./context";
 import { customJwtPayload } from "./routers";
 import { UserRoleTypes } from "@prisma/client";
-import { verifyActionToken } from "../db/actionTokens";
 
 // export const t = initTRPC.context<Context>().create({
 const t = initTRPC.context<Context>().create({
@@ -83,87 +82,3 @@ export const adminProcedure = t.procedure.use(async function isAuthed(opts) {
     },
   });
 });
-
-// Add this union procedure
-export const adminOrTokenProcedure = t.procedure.use(
-  async function isAdminOrToken(opts) {
-    // Try token authentication first
-    const tokenHeader = opts.ctx.req?.headers.get("X-Action-Token");
-
-    if (tokenHeader) {
-      // Verify the token is valid
-      const result = await verifyActionToken(tokenHeader, opts.ctx.user);
-
-      if (typeof result === "string") {
-        throw new TRPCError({
-          code: "UNAUTHORIZED",
-          message: result,
-        });
-      }
-
-      // Check for synthetic user
-      if ("payload" in result && result.syntheticUser) {
-        if (
-          !result.payload.userRole ||
-          (Array.isArray(result.payload.userRole) &&
-            !result.payload.userRole.includes(UserRoleTypes.ADMIN)) ||
-          result.payload.userRole !== UserRoleTypes.ADMIN
-        ) {
-          throw new TRPCError({
-            code: "UNAUTHORIZED",
-            message: "Not an admin token",
-          });
-        }
-
-        return opts.next({
-          ctx: {
-            ...opts.ctx,
-            actionToken: result.payload,
-            syntheticUser: result.syntheticUser,
-            isAdmin: true,
-          },
-        });
-      } else {
-        // Standard token without synthetic user
-        const payload = "payload" in result ? result.payload : result;
-
-        if (
-          !payload.userRole ||
-          (Array.isArray(payload.userRole) &&
-            !payload.userRole.includes(UserRoleTypes.ADMIN)) ||
-          payload.userRole !== UserRoleTypes.ADMIN
-        ) {
-          throw new TRPCError({
-            code: "UNAUTHORIZED",
-            message: "Not an admin token",
-          });
-        }
-
-        return opts.next({
-          ctx: {
-            ...opts.ctx,
-            actionToken: payload,
-            isAdmin: true,
-          },
-        });
-      }
-    }
-
-    // Fall back to regular admin authentication
-    const user = validateUser(opts.ctx.user);
-
-    if (!isAdmin(user)) {
-      throw new TRPCError({
-        code: "UNAUTHORIZED",
-        message: "Admin privileges required",
-      });
-    }
-
-    return opts.next({
-      ctx: {
-        user: user,
-        isAdmin: true,
-      },
-    });
-  }
-);

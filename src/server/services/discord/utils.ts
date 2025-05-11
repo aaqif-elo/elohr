@@ -1,34 +1,61 @@
 import { Client, GuildMember } from "discord.js";
 import { launch } from "puppeteer";
 
-export const getAttendanceStatsImage = async (token: string) => {
+export const getAttendanceStatsImage = async (
+  token: string,
+  isAdmin = false
+) => {
   const browser = await launch({
     headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   });
   const page = await browser.newPage();
   // Set the viewport size
-  await page.setViewport({ width: 1300, height: 700 });
+  await page.setViewport({ width: 1920, height: 1080 });
   // inject JWT into localStorage on every new document before any script runs
   await page.evaluateOnNewDocument((token: string) => {
     window.localStorage.setItem("authJWT", token);
   }, token);
-  await page.goto("http://localhost:2500/home", { waitUntil: "networkidle0" });
 
-  await page.waitForSelector("#app");
-  // Set local storage with the JWT
-  await page.evaluate((token) => {
-    localStorage.setItem("authJWT", token);
-  }, token);
-  // Navigate to the page that uses the JWT
+  await page.goto("http://localhost:2500/home", {
+    waitUntil: ["domcontentloaded", "load"],
+  });
 
-  // Wait for the page to load
-  await page.waitForSelector("#app");
+  // Wait for content to be present - these are specific to your app's structure
+  try {
+    // Wait for the attendance data to be loaded - adjust these selectors based on your actual DOM
+
+    await page.waitForFunction(
+      () => {
+        // Check if we're past the login screen and showing actual attendance data
+        const attendanceElements = document.querySelectorAll("svg circle");
+        const timeDisplay = document.querySelector("svg text");
+        return attendanceElements.length > 0 && timeDisplay !== null;
+      },
+      { timeout: 10000 }
+    );
+  } catch (error) {
+    console.error("Timeout waiting for attendance data:", error);
+    // Continue anyway and take whatever is on screen
+  }
+
+  const employeeClip = {
+    x: 50,
+    y: 245,
+    width: 1820,
+    height: 625,
+  };
+  const adminClip = {
+    x: 275,
+    y: 25,
+    width: 1370,
+    height: 1220,
+  };
   // Take a screenshot of the page
   const buffer = await page.screenshot({
     encoding: "binary",
     type: "png",
-    fullPage: true,
+    clip: isAdmin ? adminClip : employeeClip,
   });
   await browser.close();
   return Buffer.from(buffer);
