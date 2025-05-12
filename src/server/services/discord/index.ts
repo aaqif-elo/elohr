@@ -24,8 +24,6 @@ import { interactionHandler } from "./interaction-handlers";
 import { handleVoiceStateChange } from "./voice-channel-hook.service";
 import { getAttendanceStatsImage, setNameStatus } from "./utils";
 import { startCronJobs } from "./cron-jobs";
-import { writeFileSync } from "fs";
-
 // Add this near the top of the file
 declare global {
   var _discordClientGlobal: Client | undefined;
