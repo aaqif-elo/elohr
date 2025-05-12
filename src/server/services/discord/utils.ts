@@ -1,14 +1,19 @@
 import { Client, GuildMember } from "discord.js";
-import { launch } from "puppeteer";
+import { platform } from "os";
+import { launch, LaunchOptions } from "puppeteer";
 
 export const getAttendanceStatsImage = async (
   token: string,
   isAdmin = false
 ) => {
-  const browser = await launch({
+  const browserConfig: LaunchOptions = {
     headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  });
+  };
+  if (platform() === "linux") {
+    browserConfig["executablePath"] = "/usr/bin/chromium-browser";
+  }
+  const browser = await launch(browserConfig);
   const page = await browser.newPage();
   page.emulateMediaFeatures([
     {
