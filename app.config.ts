@@ -1,8 +1,8 @@
-import { config } from "dotenv";
-config();
-
 import { defineConfig } from "@solidjs/start/config";
 import tailwindcss from "@tailwindcss/vite";
+
+import { config } from "dotenv";
+config();
 
 export default defineConfig({
   vite: {
