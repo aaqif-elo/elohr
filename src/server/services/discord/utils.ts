@@ -63,6 +63,8 @@ async function getAttendanceStatsImageInternal(token: string, isAdmin = false) {
     headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   };
+  // On Linux, Puppeteer requires the path to the Chromium executable to be explicitly set.
+  // The default location for Chromium on many Linux distributions is /usr/bin/chromium-browser.
   if (platform() === "linux") {
     browserConfig["executablePath"] = "/usr/bin/chromium-browser";
   }
