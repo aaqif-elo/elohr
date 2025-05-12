@@ -1,15 +1,28 @@
 import { Client, GuildMember } from "discord.js";
-import { launch } from "puppeteer";
+import { platform } from "os";
+import { launch, LaunchOptions } from "puppeteer";
 
 export const getAttendanceStatsImage = async (
   token: string,
   isAdmin = false
 ) => {
-  const browser = await launch({
+  const browserConfig: LaunchOptions = {
     headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  });
+  };
+  // On Linux, Puppeteer requires the path to the Chromium executable to be explicitly set.
+  // The default location for Chromium on many Linux distributions is /usr/bin/chromium-browser.
+  if (platform() === "linux") {
+    browserConfig["executablePath"] = "/usr/bin/chromium-browser";
+  }
+  const browser = await launch(browserConfig);
   const page = await browser.newPage();
+  page.emulateMediaFeatures([
+    {
+      name: "prefers-color-scheme",
+      value: "dark",
+    },
+  ]);
   // Set the viewport size
   await page.setViewport({ width: 1920, height: 1080 });
   // inject JWT into localStorage on every new document before any script runs
@@ -45,12 +58,14 @@ export const getAttendanceStatsImage = async (
     width: 1820,
     height: 625,
   };
+
   const adminClip = {
-    x: 275,
-    y: 25,
-    width: 1370,
-    height: 1220,
+    x: 175,
+    y: 0,
+    width: 1575,
+    height: 1275,
   };
+
   // Take a screenshot of the page
   const buffer = await page.screenshot({
     encoding: "binary",
