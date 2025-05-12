@@ -25,13 +25,11 @@ export const handleAttendanceCommand = async (
   }
   switch (interaction.commandName) {
     case EAttendanceCommands.LOGOUT: {
-      const sendReport = (report: Buffer<ArrayBuffer>) => {
-        sendLogoutReport(interaction.user, report);
-      };
       const logoutMsg = await logoutCommandHandler(
         user.id,
         interaction.createdTimestamp,
-        sendReport
+        (textReportOrBuffer, imageReportPromise) =>
+          sendLogoutReport(interaction.user, textReportOrBuffer, imageReportPromise)
       );
       if (logoutMsg !== ``) {
         interaction.reply({

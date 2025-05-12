@@ -3,7 +3,10 @@ import { db, ONE_DAY_IN_MS } from ".";
 import { getStartOfDay, getEndOfDay } from "./util";
 import EventEmitter from "events";
 import { generateJWTFromUserId } from "../api/routers";
-import { getAttendanceStatsImage } from "../services/discord/utils";
+import {
+  generateTextAttendanceReport,
+  queueAttendanceStatsImage,
+} from "../services/discord/utils";
 
 // Add this near the top after imports
 console.log("Loading attendances.ts module");
@@ -43,7 +46,11 @@ class AttendanceEventEmitter extends EventEmitter {
     // Explicit cleanup function to ensure listener removal
     const cleanup = () => {
       this.removeListener(event, listener);
-      console.log(`Removed listener for ${String(event)}, remaining: ${this.listenerCount(event)}`);
+      console.log(
+        `Removed listener for ${String(event)}, remaining: ${this.listenerCount(
+          event
+        )}`
+      );
     };
 
     // Add the cleanup to the abort signal
@@ -77,15 +84,19 @@ class AttendanceEventEmitter extends EventEmitter {
                   // We don't call cleanup here as it's already called by the abort event listener above
                 };
 
-                opts.signal.addEventListener("abort", abortHandler, { once: true });
+                opts.signal.addEventListener("abort", abortHandler, {
+                  once: true,
+                });
               }
             });
           },
           // Add the return method to handle early terminations (like breaks in for-await loops)
-          return: async (): Promise<IteratorResult<[Parameters<AttendanceEvents[K]>[0]]>> => {
+          return: async (): Promise<
+            IteratorResult<[Parameters<AttendanceEvents[K]>[0]]>
+          > => {
             cleanup(); // Ensure cleanup happens for early termination
             return { value: undefined, done: true };
-          }
+          },
         };
       },
     };
@@ -110,7 +121,10 @@ export function cleanupExistingSubscription(userId: string): boolean {
 }
 
 // Function to register a new subscription
-export function registerSubscription(userId: string, controller: AbortController): void {
+export function registerSubscription(
+  userId: string,
+  controller: AbortController
+): void {
   activeSubscriptions.set(userId, controller);
   console.log(`Registered subscription for user ${userId}`);
   console.log(`Total active subscriptions: ${activeSubscriptions.size}`);
@@ -504,7 +518,7 @@ export const logout = async (userId: string) => {
   attendance.totalWork = totalWorkTime;
   attendance.totalTime = totalTime;
 
-  await db.attendance.update({
+  const updatedAttendance = await db.attendance.update({
     where: {
       id: attendance.id,
     },
@@ -515,26 +529,14 @@ export const logout = async (userId: string) => {
       totalTime: attendance.totalTime,
     },
   });
-  attendanceEvents.emit("attendanceUpdated", attendance);
-  const jwtWithUser = await generateJWTFromUserId(userId);
 
-  const token = jwtWithUser?.jwt;
+  attendanceEvents.emit("attendanceUpdated", updatedAttendance);
 
-  if (!token) {
-    return {
-      report: null,
-      time: logoutTime,
-    };
-  }
-
-  const attendanceImage = await getAttendanceStatsImage(
-    token,
-    jwtWithUser.userWithAttendance.user.isAdmin
-  );
-
+  // Return the updated attendance data with a text report
   return {
-    report: attendanceImage,
+    attendance: updatedAttendance,
     time: logoutTime,
+    textReport: generateTextAttendanceReport(updatedAttendance),
   };
 };
 
@@ -664,4 +666,22 @@ export const getLoggedInUsers = async () => {
     },
   });
   return attendances.map((attendance) => attendance.userId);
+};
+
+/**
+ * Generate an attendance image report for a user
+ * @param userId The user's ID
+ * @returns A promise for the image generation
+ */
+export const generateAttendanceImageReport = async (userId: string) => {
+  const jwtWithUser = await generateJWTFromUserId(userId);
+  if (!jwtWithUser?.jwt) {
+    return null;
+  }
+
+  // Return the promise for the image generation
+  return queueAttendanceStatsImage(
+    jwtWithUser.jwt,
+    jwtWithUser.userWithAttendance.user.isAdmin
+  );
 };
