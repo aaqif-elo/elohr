@@ -22,7 +22,7 @@ import {
 } from "./discord.enums";
 import { interactionHandler } from "./interaction-handlers";
 import { handleVoiceStateChange } from "./voice-channel-hook.service";
-import { getAttendanceStatsImage, setNameStatus } from "./utils";
+import { setNameStatus } from "./utils";
 import { startCronJobs } from "./cron-jobs";
 // Add this near the top of the file
 declare global {

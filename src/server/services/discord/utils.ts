@@ -2,10 +2,63 @@ import { Client, GuildMember } from "discord.js";
 import { platform } from "os";
 import { launch, LaunchOptions } from "puppeteer";
 
-export const getAttendanceStatsImage = async (
-  token: string,
-  isAdmin = false
-) => {
+// Queue system for attendance image reports
+let isProcessingImageQueue = false;
+const imageReportQueue: Array<{
+  token: string;
+  isAdmin: boolean;
+  resolve: (buffer: Buffer | null) => void;
+}> = [];
+
+// Generate a text attendance report from attendance data
+export function generateTextAttendanceReport(attendance: any): string {
+  if (!attendance) return "No attendance data found";
+  
+  const loginTime = new Date(attendance.login).toLocaleTimeString();
+  const logoutTime = attendance.logout ? new Date(attendance.logout).toLocaleTimeString() : "N/A";
+  const totalWorkHours = (attendance.totalWork || 0) / (1000 * 60 * 60);
+  const totalBreakMinutes = (attendance.totalBreak || 0) / (1000 * 60);
+  
+  return `**Attendance Summary**
+Login time: ${loginTime}
+Logout time: ${logoutTime}
+Total work: ${totalWorkHours.toFixed(2)} hours
+Total breaks: ${totalBreakMinutes.toFixed(0)} minutes`;
+}
+
+// Process one image report at a time from the queue
+async function processImageReportQueue() {
+  if (isProcessingImageQueue || imageReportQueue.length === 0) return;
+  
+  isProcessingImageQueue = true;
+  const {token, isAdmin, resolve} = imageReportQueue.shift()!;
+  
+  try {
+    const buffer = await getAttendanceStatsImageInternal(token, isAdmin);
+    resolve(buffer);
+  } catch (error) {
+    console.error("Error generating image report:", error);
+    resolve(null);
+  } finally {
+    isProcessingImageQueue = false;
+    // Process next item in queue
+    setTimeout(processImageReportQueue, 100);
+  }
+}
+
+// Queue an attendance image report generation and return a promise
+export function queueAttendanceStatsImage(token: string, isAdmin = false): Promise<Buffer | null> {
+  return new Promise((resolve) => {
+    imageReportQueue.push({token, isAdmin, resolve});
+    // Start processing if not already running
+    if (!isProcessingImageQueue) {
+      processImageReportQueue();
+    }
+  });
+}
+
+// Internal function that actually generates the image
+async function getAttendanceStatsImageInternal(token: string, isAdmin = false) {
   const browserConfig: LaunchOptions = {
     headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
@@ -34,10 +87,8 @@ export const getAttendanceStatsImage = async (
     waitUntil: ["domcontentloaded", "load"],
   });
 
-  // Wait for content to be present - these are specific to your app's structure
+  // Wait for content to be present
   try {
-    // Wait for the attendance data to be loaded - adjust these selectors based on your actual DOM
-
     await page.waitForFunction(
       () => {
         // Check if we're past the login screen and showing actual attendance data
@@ -74,7 +125,10 @@ export const getAttendanceStatsImage = async (
   });
   await browser.close();
   return Buffer.from(buffer);
-};
+}
+
+// Public function that now just queues the generation task
+export const getAttendanceStatsImage = queueAttendanceStatsImage;
 
 // Checks if the nickname contains any of the status tags
 function hasStatus(nickname: string | null): boolean {

@@ -1,6 +1,7 @@
 import {
   RESTPostAPIChatInputApplicationCommandsJSONBody,
   SlashCommandBuilder,
+  User,
 } from "discord.js";
 import { EAttendanceCommands } from "../discord.enums";
 import {
@@ -9,6 +10,7 @@ import {
   getLogoutTime,
   logout,
   hasActiveLoginSessionFromYesterday,
+  generateAttendanceImageReport,
 } from "../../../db";
 
 const logoutCommand = new SlashCommandBuilder()
@@ -20,7 +22,10 @@ const logoutCommand = new SlashCommandBuilder()
 export const logoutCommandHandler = async (
   userId: string,
   timestamp: number,
-  reportSendCallBack: (report: Buffer<ArrayBuffer>) => void
+  reportSendCallBack: (
+    textReportOrBuffer: string | Buffer<ArrayBuffer>,
+    imageReportPromise?: Promise<Buffer | null>
+  ) => Promise<void>
 ): Promise<string> => {
   try {
     const loginTime = await getLoginTime(userId);
@@ -43,9 +48,12 @@ export const logoutCommandHandler = async (
 
     const logoutInfo = await logout(userId);
     if (logoutInfo) {
-      if (logoutInfo.report) {
-        reportSendCallBack(logoutInfo.report);
-      }
+      // Start the async image report generation process
+      const imageReportPromise = generateAttendanceImageReport(userId);
+
+      // Send the text report immediately and pass the image promise
+      reportSendCallBack(logoutInfo.textReport, imageReportPromise);
+
       return `✅ Successfully logged out at ${logoutInfo.time}!`;
     } else {
       return ``;
