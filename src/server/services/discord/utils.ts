@@ -7,6 +7,7 @@ let isProcessingImageQueue = false;
 const imageReportQueue: Array<{
   token: string;
   isAdmin: boolean;
+  date?: Date;
   resolve: (buffer: Buffer | null) => void;
 }> = [];
 
@@ -31,10 +32,10 @@ async function processImageReportQueue() {
   if (isProcessingImageQueue || imageReportQueue.length === 0) return;
   
   isProcessingImageQueue = true;
-  const {token, isAdmin, resolve} = imageReportQueue.shift()!;
+  const {token, isAdmin, date, resolve} = imageReportQueue.shift()!;
   
   try {
-    const buffer = await getAttendanceStatsImageInternal(token, isAdmin);
+    const buffer = await getAttendanceStatsImageInternal(token, isAdmin, date);
     resolve(buffer);
   } catch (error) {
     console.error("Error generating image report:", error);
@@ -47,9 +48,9 @@ async function processImageReportQueue() {
 }
 
 // Queue an attendance image report generation and return a promise
-export function queueAttendanceStatsImage(token: string, isAdmin = false): Promise<Buffer | null> {
+export function queueAttendanceStatsImage(token: string, isAdmin = false, date?: Date): Promise<Buffer | null> {
   return new Promise((resolve) => {
-    imageReportQueue.push({token, isAdmin, resolve});
+    imageReportQueue.push({token, isAdmin, date, resolve});
     // Start processing if not already running
     if (!isProcessingImageQueue) {
       processImageReportQueue();
@@ -58,7 +59,7 @@ export function queueAttendanceStatsImage(token: string, isAdmin = false): Promi
 }
 
 // Internal function that actually generates the image
-async function getAttendanceStatsImageInternal(token: string, isAdmin = false) {
+async function getAttendanceStatsImageInternal(token: string, isAdmin = false, date?: Date) {
   const browserConfig: LaunchOptions = {
     headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
@@ -83,7 +84,14 @@ async function getAttendanceStatsImageInternal(token: string, isAdmin = false) {
     window.localStorage.setItem("authJWT", token);
   }, token);
 
-  await page.goto("http://localhost:2500/home", {
+  // Add date parameter to URL if provided
+  let url = "http://localhost:2500/home";
+  if (date) {
+    const dateString = date.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+    url += `?date=${dateString}`;
+  }
+  
+  await page.goto(url, {
     waitUntil: ["domcontentloaded", "load"],
   });
 
