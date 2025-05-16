@@ -295,7 +295,7 @@ export const autoLogoutUsersWhoAreStillLoggedIn = async (
   if (!userIds.length) {
     return;
   }
-
+  const today = new Date(); // Capture current date
   const logoutPromises = userIds.map(async (userId) => {
     try {
       const discordId = discordIds.find((d) => d.id === userId)?.discordId;
@@ -319,8 +319,9 @@ export const autoLogoutUsersWhoAreStillLoggedIn = async (
 
       const fetchedUser = await discordClient.users.fetch(discordId);
 
-      // Send text report immediately
-      const imageReportPromise = generateAttendanceImageReport(userId);
+      // Send text report immediately with date parameter for the report
+
+      const imageReportPromise = generateAttendanceImageReport(userId, today);
       await sendLogoutReport(
         fetchedUser,
         logoutInfo.textReport,
@@ -336,8 +337,59 @@ export const autoLogoutUsersWhoAreStillLoggedIn = async (
 
   const logoutPayloads = await Promise.all(logoutPromises);
 
-  // Rest of the function for auto login remains the same
-  // ...
+  // Set up auto-login after 90 seconds (at 12:01 AM)
+  setTimeout(async () => {
+    const loginPromises = logoutPayloads.map(async (payload) => {
+      if (!payload) {
+        return;
+      }
+      const { discordId, userId, trackIsOnline } = payload;
+
+      if (!process.env.DISCORD_SERVER_ID) {
+        return;
+      }
+      // eslint-disable-next-line no-useless-catch
+      try {
+        if (!trackIsOnline) return;
+        const member = (
+          await (
+            await discordClient.guilds.fetch(process.env.DISCORD_SERVER_ID)
+          ).members.fetch()
+        ).get(discordId);
+
+        if (!member) {
+          return;
+        }
+
+        const isOnline =
+          member.voice.channel !== null &&
+          member.voice.channelId !== member.guild.afkChannelId;
+
+        if (isOnline) {
+          await login(userId, member.voice.channel.name);
+          await setNameStatus(
+            discordClient,
+            process.env.STATUS_TAG_AVAILABLE || "O",
+            discordId
+          );
+
+          return `<@${discordId}> automatically logged in.`;
+        }
+      } catch (err) {
+        throw err;
+      }
+    });
+
+    const loginMessages = (await Promise.all(loginPromises)).filter(
+      (msg) => msg !== undefined
+    );
+
+    if (loginMessages.length > 0) {
+      let loginAnnouncement = `Auto-login Initiated for users who are online...\n\n`;
+      loginMessages.forEach((msg) => (loginAnnouncement += `${msg}\n`));
+      attendanceChannel.send(loginAnnouncement);
+    }
+  }, 90000); // 90 seconds
 };
 
 export const getWeatherReport = async () => {
