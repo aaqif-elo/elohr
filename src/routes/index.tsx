@@ -9,7 +9,6 @@ import { LOCAL_STORAGE_KEY, loginWithStoredJWT } from "../lib/auth";
 export default function Home() {
   const [searchParams] = useSearchParams();
   const [loggingIn, setLoggingIn] = createSignal(false);
-  const [actionMessage, setActionMessage] = createSignal("");
   const navigate = useNavigate();
 
   onMount(async () => {
@@ -58,7 +57,7 @@ export default function Home() {
       <Show
         when={!loggingIn()}
         fallback={
-          <FullScreenLoader loaderText={actionMessage() || "Logging in..."} />
+          <FullScreenLoader loaderText={"Logging in..."} />
         }
       >
         <UnauthenticatedHome />
