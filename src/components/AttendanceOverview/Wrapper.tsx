@@ -149,7 +149,42 @@ export const AttendanceWrapper = (props: { date: Date }) => {
     };
     const currentSummary = user()?.attendanceSummary;
 
+    // Extract worked dates for checking against holidays and weekends
+    const workedDates: Date[] = currentSummary?.stats.workedDates || [];
+    const workedDateStrings = workedDates.map((date) =>
+      formatDateToYYYYMMDD(date)
+    );
+
     if (currentSummary) {
+      // Update holiday colors if they were worked days
+      Object.keys(highlights).forEach((dateString) => {
+        const highlight = highlights[dateString];
+        if (highlight.isHoliday && workedDateStrings.includes(dateString)) {
+          // Change color to green for worked holidays
+          highlights[dateString] = {
+            ...highlight,
+            color: "#4CAF50", // Green for worked holidays
+            description: `${highlight.description} (Working)`,
+          };
+        }
+      });
+
+      // Add weekend highlights if they are worked days
+      workedDates.forEach((date) => {
+        const day = date.getDay();
+        // Check if it's a weekend (Friday=5, Saturday=6 based on weekendDays prop)
+        if (day === 5 || day === 6) {
+          const dateString = formatDateToYYYYMMDD(date);
+          // Skip if this date already has a highlight (like a holiday)
+          if (!highlights[dateString]) {
+            highlights[dateString] = {
+              color: "#4CAF50", // Green for worked weekends
+              description: "Working on Weekend",
+            };
+          }
+        }
+      });
+
       // Process detailed leave information first
       if (currentSummary.stats.leaveInfo) {
         currentSummary.stats.leaveInfo.forEach((leaveInfo) => {
