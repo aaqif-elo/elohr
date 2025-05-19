@@ -382,10 +382,7 @@ export const AttendanceWrapper = (props: { date: Date }) => {
       // Create new subscription
       subscription = api.attendance.attendanceChanged.subscribe(undefined, {
         onData: (updated) => {
-          if (
-            isToday(props.date) &&
-            updated.data.userId === getUser()?.dbID
-          ) {
+          if (isToday(props.date) && updated.data.userId === getUser()?.dbID) {
             setAttendance(updated.data);
           }
         },
@@ -422,12 +419,8 @@ export const AttendanceWrapper = (props: { date: Date }) => {
     const dateString = `${date.getFullYear()}-${toTwoDigits(
       date.getMonth() + 1
     )}-${toTwoDigits(date.getDate())}`;
-    
-    window.history.pushState(
-      {},
-      "",
-      `?date=${dateString}`
-    );
+
+    window.history.pushState({}, "", `?date=${dateString}`);
     // Reload the page to reflect the new date
     window.location.reload();
   };
