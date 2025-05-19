@@ -10,24 +10,24 @@ interface SegmentSummary {
   averageDuration: number;
 }
 
-// Example: Soft, pastel-ish blues for Light Theme
+// Replace the current color palettes with these more diverse ones
 const LIGHT_COLORS = [
   'rgb(191, 219, 254)', // blue-200
-  'rgb(219, 234, 254)', // blue-100
-  'rgb(147, 197, 253)', // blue-300
+  'rgb(253, 186, 116)', // orange-200
   'rgb(167, 243, 208)', // emerald-200
-  'rgb(186, 230, 253)', // sky-200
-  'rgb(207, 250, 254)', // cyan-100
+  'rgb(254, 202, 202)', // red-200
+  'rgb(216, 180, 254)', // purple-200
+  'rgb(252, 211, 77)',  // yellow-300
 ];
 
-// Example: Deeper, more saturated blues/teals for Dark Theme
+// More distinct dark theme colors
 const DARK_COLORS = [
-  'rgb(59, 130, 246)', // blue-500
-  'rgb(37, 99, 235)', // blue-600
-  'rgb(29, 78, 216)', // blue-700
-  'rgb(30, 64, 175)', // indigo-700
-  'rgb(20, 83, 45)', // emerald-900-ish
-  'rgb(2, 132, 199)', // cyan-600
+  'rgb(59, 130, 246)',  // blue-500
+  'rgb(249, 115, 22)',  // orange-500
+  'rgb(16, 185, 129)',  // emerald-500
+  'rgb(239, 68, 68)',   // red-500
+  'rgb(168, 85, 247)',  // purple-500
+  'rgb(245, 158, 11)',  // amber-500
 ];
 
 /**
