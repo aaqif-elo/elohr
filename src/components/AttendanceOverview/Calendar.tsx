@@ -139,7 +139,7 @@ export function HRCalendar(props: HRCalendarProps) {
   const [selectedLeaveDates, setSelectedLeaveDates] = createSignal<Date[]>([]);
 
   // Add these new state variables near your other state definitions
-  const [longPressTimer, setLongPressTimer] = createSignal<number | null>(null);
+  const [longPressTimer, setLongPressTimer] = createSignal<NodeJS.Timeout | null>(null);
   const [longPressActive, setLongPressActive] = createSignal<boolean>(false);
 
   // Check if user is admin
@@ -824,7 +824,7 @@ export function HRCalendar(props: HRCalendarProps) {
       );
     }, 700);
     
-    setLongPressTimer(timer as unknown as number);
+    setLongPressTimer(timer);
   }
 
   function handleTouchEnd() {

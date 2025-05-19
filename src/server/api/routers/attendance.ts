@@ -161,12 +161,11 @@ export const attendanceRouter = createTRPCRouter({
       const totalWorkDays = countWorkingDays(startDate, endDate, holidayDates);
 
       // Calculate days worked (with actual dates)
-      const workedDates = attendances.map(
-        (a) =>
-          new Date(a.login.setHours(23, 59, 59, 999))
-            .toISOString()
-            .split("T")[0]
-      );
+      const workedDates = attendances.map((a) => {
+        const d = new Date(a.login);
+        d.setHours(23, 59, 59, 999);
+        return d.toISOString().split("T")[0];
+      });
       const uniqueWorkedDates = [...new Set(workedDates)].map((dateStr) =>
         new Date(dateStr).toISOString()
       );

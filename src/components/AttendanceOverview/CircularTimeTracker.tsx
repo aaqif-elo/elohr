@@ -1,4 +1,4 @@
-import {createSignal, For, Show} from 'solid-js';
+import {createSignal, For, Show, onMount, onCleanup} from 'solid-js';
 import type {Component} from 'solid-js';
 import {getSystemTheme} from './utils';
 import {TimeSegment} from '../../store/utils';
@@ -63,6 +63,16 @@ export const CircularTimeTracking: Component<{
 }> = props => {
   const [activeSegment, setActiveSegment] = createSignal<number | null>(null);
   const [activeLegendItem, setActiveLegendItem] = createSignal<string | null>(null);
+  const [windowWidth, setWindowWidth] = createSignal(window.innerWidth);
+
+  // Set up resize event listener
+  onMount(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    
+    // Clean up event listener on component unmount
+    onCleanup(() => window.removeEventListener('resize', handleResize));
+  });
 
   // Angle calculation for a 24-hour clock
   // Each hour = 15° => hour * 15°, minutes => minute * 0.25°, etc.
@@ -251,7 +261,7 @@ export const CircularTimeTracking: Component<{
           </For>
 
           {/* Optionally hide minute labels on very small screens */}
-          <Show when={window.innerWidth > 400}>
+          <Show when={windowWidth() > 400}>
             <For each={[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]}>
               {minute => {
                 const angle = (minute * 6 - 90) * (Math.PI / 180);

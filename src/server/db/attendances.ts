@@ -671,6 +671,7 @@ export const getLoggedInUsers = async () => {
 /**
  * Generate an attendance image report for a user
  * @param userId The user's ID
+ * @param date Optional Date for which to generate the report.
  * @returns A promise for the image generation
  */
 export const generateAttendanceImageReport = async (userId: string, date?: Date) => {
