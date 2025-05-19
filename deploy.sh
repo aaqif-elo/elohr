@@ -3,10 +3,10 @@
 echo "Starting Deployment..."
 
 echo "Stopping elohr..."
-# pm2 stop elohr
+pm2 stop elohr
 
 echo "Removing old files..."
-rm -r nitro.json public/ server/
+sudo rm -r nitro.json public/ server/
 
 echo "Unzipping elohr.zip..."
 unzip elohr.zip -d .
@@ -55,7 +55,7 @@ sudo apt autoremove -y
 sudo apt clean
 
 echo "Starting elohr..."
-# pm2 restart elohr --time
+pm2 restart elohr --time
 
 echo "Removing elohr.zip..."
-# rm elohr.zip
+rm elohr.zip
