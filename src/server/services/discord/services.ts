@@ -565,7 +565,7 @@ export const sendLeaveRequestNotification = async (
             attendanceChannel.type === ChannelType.GuildText
           ) {
             await attendanceChannel.send({
-              content: `<@${discordId}> will be on leave ${datesDescription}.`,
+              content: `@everyone <@${discordId}> will be on leave ${datesDescription}.`,
             });
           }
         }
