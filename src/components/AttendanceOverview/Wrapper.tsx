@@ -16,7 +16,7 @@ import {
   TrpcUserWithAttendance,
 } from "../../store/utils";
 import { UserRoleTypes } from "@prisma/client";
-import { HRCalendar, DateHighlight } from "./Calendar";
+import { HRCalendar, DateHighlight, Legends } from "./Calendar";
 import EmployeeList from "./EmployeeList";
 import { CircularTimeTracking } from "./CircularTimeTracker";
 import { generateTimeSegments } from "../../store/utils";
@@ -163,7 +163,7 @@ export const AttendanceWrapper = (props: { date: Date }) => {
           // Change color to green for worked holidays
           highlights[dateString] = {
             ...highlight,
-            color: "#4CAF50", // Green for worked holidays
+            color: Legends.workedHolidaysOrWeekends,
             description: `${highlight.description} (Working)`,
           };
         }
@@ -178,7 +178,7 @@ export const AttendanceWrapper = (props: { date: Date }) => {
           // Skip if this date already has a highlight (like a holiday)
           if (!highlights[dateString]) {
             highlights[dateString] = {
-              color: "#4CAF50", // Green for worked weekends
+              color: Legends.workedHolidaysOrWeekends,
               description: "Working on Weekend",
             };
           }
@@ -213,7 +213,7 @@ export const AttendanceWrapper = (props: { date: Date }) => {
           }
 
           highlights[dateString] = {
-            color: "#FFA726", // Orange for leaves
+            color: Legends.leaves,
             description,
             descriptionDetails: descriptionDetails || undefined,
             isLeave: true,
@@ -224,7 +224,7 @@ export const AttendanceWrapper = (props: { date: Date }) => {
         currentSummary.stats.leaveDates.forEach((date) => {
           const dateString = formatDateToYYYYMMDD(date);
           highlights[dateString] = {
-            color: "#FFA726", // Orange for leaves
+            color: Legends.leaves,
             description: "On Leave",
             isLeave: true,
           };
@@ -235,7 +235,7 @@ export const AttendanceWrapper = (props: { date: Date }) => {
       currentSummary.stats.absentDates.forEach((date) => {
         const dateString = formatDateToYYYYMMDD(date);
         highlights[dateString] = {
-          color: "#E53935", // Changed from #F44336 to a more vivid red for absences
+          color: Legends.absences,
           description: "Absent",
           isAbsence: true,
         };
@@ -348,7 +348,7 @@ export const AttendanceWrapper = (props: { date: Date }) => {
         }
 
         highlights[dateString] = {
-          color: "#9C27B0", // Changed from #FF5722 to purple for holidays
+          color: Legends.holidays,
           description: holiday.name,
           // Store additional information that can be used in the tooltip
           descriptionDetails: details || undefined,
