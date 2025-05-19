@@ -235,7 +235,7 @@ export const AttendanceWrapper = (props: { date: Date }) => {
       currentSummary.stats.absentDates.forEach((date) => {
         const dateString = formatDateToYYYYMMDD(date);
         highlights[dateString] = {
-          color: "#F44336", // Red for absences
+          color: "#E53935", // Changed from #F44336 to a more vivid red for absences
           description: "Absent",
           isAbsence: true,
         };
@@ -348,7 +348,7 @@ export const AttendanceWrapper = (props: { date: Date }) => {
         }
 
         highlights[dateString] = {
-          color: "#FF5722", // Distinctive color for holidays
+          color: "#9C27B0", // Changed from #FF5722 to purple for holidays
           description: holiday.name,
           // Store additional information that can be used in the tooltip
           descriptionDetails: details || undefined,
