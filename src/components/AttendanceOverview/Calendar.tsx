@@ -138,6 +138,10 @@ export function HRCalendar(props: HRCalendarProps) {
   const [leaveSelectionMode, setLeaveSelectionMode] = createSignal(false);
   const [selectedLeaveDates, setSelectedLeaveDates] = createSignal<Date[]>([]);
 
+  // Add these new state variables near your other state definitions
+  const [longPressTimer, setLongPressTimer] = createSignal<number | null>(null);
+  const [longPressActive, setLongPressActive] = createSignal<boolean>(false);
+
   // Check if user is admin
   const isUserAdmin = () => {
     const user = getUser();
@@ -244,10 +248,14 @@ export function HRCalendar(props: HRCalendarProps) {
   }
 
   // Open menu dropdown
-  function openMenu(e: MouseEvent, day: number, month: number, year: number) {
-    e.stopPropagation();
+  function openMenu(e: MouseEvent | { clientX: number; clientY: number }, day: number, month: number, year: number) {
+    // Check if stopPropagation exists before calling it
+    if ('stopPropagation' in e && typeof e.stopPropagation === 'function') {
+      e.stopPropagation();
+    }
+    
     const date = new Date(year, month, day);
-
+  
     // Check if menu is already open for this date
     const currentMenu = menuOpen();
     if (
@@ -795,6 +803,51 @@ export function HRCalendar(props: HRCalendarProps) {
     }
   }
 
+  // Add these helper functions for detecting long press
+  function handleTouchStart(e: TouchEvent, dayInfo: any) {
+    if (props.loading || shiftHolidayMode() || leaveSelectionMode()) return;
+    
+    // Clear any existing timer
+    if (longPressTimer()) {
+      clearTimeout(longPressTimer()!);
+    }
+    
+    // Set new timer for long press (700ms is a good duration)
+    const timer = setTimeout(() => {
+      setLongPressActive(true);
+      // Open menu at the touch position
+      openMenu(
+        { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY } as MouseEvent,
+        dayInfo.day,
+        dayInfo.month,
+        dayInfo.year
+      );
+    }, 700);
+    
+    setLongPressTimer(timer as unknown as number);
+  }
+
+  function handleTouchEnd() {
+    // Clear timer if touch ends before long press is triggered
+    if (longPressTimer()) {
+      clearTimeout(longPressTimer()!);
+      setLongPressTimer(null);
+    }
+    
+    // Reset long press state after a brief delay to allow menu to process click
+    if (longPressActive()) {
+      setTimeout(() => {
+        setLongPressActive(false);
+      }, 300);
+    }
+  }
+
+  // Modify your day click handler to prevent normal clicks from firing during long press
+  function handleDayClick(dayInfo: any) {
+    if (props.loading || longPressActive()) return;
+    handleSelectDate(dayInfo.day, dayInfo.month, dayInfo.year);
+  }
+
   // Add this helper function inside the HRCalendar component
   function StatItem(props: {
     category: string;
@@ -1071,10 +1124,11 @@ export function HRCalendar(props: HRCalendarProps) {
                         : undefined,
                       "border-color": highlight ? highlight.color : undefined,
                     }}
-                    onClick={() =>
-                      !props.loading &&
-                      handleSelectDate(dayInfo.day, dayInfo.month, dayInfo.year)
-                    }
+                    onClick={() => !props.loading && !longPressActive() && 
+                      handleSelectDate(dayInfo.day, dayInfo.month, dayInfo.year)}
+                    onTouchStart={(e) => handleTouchStart(e, dayInfo)}
+                    onTouchEnd={handleTouchEnd}
+                    onTouchCancel={handleTouchEnd}
                     onMouseOver={(e) => handleDayMouseOver(e, dayInfo)}
                     onMouseOut={hideTooltip}
                   >

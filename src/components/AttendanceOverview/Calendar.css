@@ -407,6 +407,11 @@
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
     gap: 12px;
   }
+
+  /* First, hide the day-menu-icon completely on mobile screens */
+  .day-menu-icon {
+    display: none;
+  }
 }
 
 /* Shift holiday mode styles */
