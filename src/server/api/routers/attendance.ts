@@ -148,6 +148,7 @@ export const attendanceRouter = createTRPCRouter({
         startDate,
         endDate
       );
+
       const leaves = await getLeavesInDateRange(startDate, endDate, userId);
       const holidays = await getHolidaysForDateRange(startDate, endDate);
 
@@ -161,7 +162,10 @@ export const attendanceRouter = createTRPCRouter({
 
       // Calculate days worked (with actual dates)
       const workedDates = attendances.map(
-        (a) => new Date(a.login).toISOString().split("T")[0]
+        (a) =>
+          new Date(a.login.setHours(23, 59, 59, 999))
+            .toISOString()
+            .split("T")[0]
       );
       const uniqueWorkedDates = [...new Set(workedDates)].map((dateStr) =>
         new Date(dateStr).toISOString()
@@ -198,6 +202,8 @@ export const attendanceRouter = createTRPCRouter({
       today.setHours(0, 0, 0, 0); // Reset time to start of day for accurate comparison
 
       while (currentDay <= endDate) {
+        currentDay.setHours(23, 59, 59, 999); // Set to end of day for accurate comparison
+
         const currentDateStr = currentDay.toISOString().split("T")[0];
         const isWeekend = [5, 6].includes(currentDay.getDay());
         const isHoliday = holidayDates.some(
