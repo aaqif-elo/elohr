@@ -186,8 +186,8 @@ export const CircularTimeTracking: Component<{
   };
 
   return (
-    <div class="relative">
-      <div class="h-[500px] w-[500px]">
+    <div class="relative w-full max-w-full overflow-x-hidden px-2 sm:px-0">
+      <div class="w-full max-w-[500px] aspect-square mx-auto">
         <svg viewBox="0 0 300 300" class="h-full w-full">
           {/* Clock face circle */}
           <circle
@@ -250,29 +250,31 @@ export const CircularTimeTracking: Component<{
             }}
           </For>
 
-          {/* Optionally label multiples of 5 minutes around the inner dial */}
-          <For each={[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]}>
-            {minute => {
-              const angle = (minute * 6 - 90) * (Math.PI / 180);
-              // Position the text a bit closer to the center or slightly offset
-              const x = 150 + 55 * Math.cos(angle);
-              const y = 150 + 55 * Math.sin(angle);
+          {/* Optionally hide minute labels on very small screens */}
+          <Show when={window.innerWidth > 400}>
+            <For each={[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]}>
+              {minute => {
+                const angle = (minute * 6 - 90) * (Math.PI / 180);
+                const x = 150 + 55 * Math.cos(angle);
+                const y = 150 + 55 * Math.sin(angle);
 
-              return (
-                <text
-                  x={x}
-                  y={y}
-                  text-anchor="middle"
-                  dominant-baseline="middle"
-                  class="fill-gray-500 text-xs font-light dark:fill-gray-400"
-                  pointer-events="none"
-                  style="user-select: none; cursor: default;"
-                >
-                  {minute}
-                </text>
-              );
-            }}
-          </For>
+                return (
+                  <text
+                    x={x}
+                    y={y}
+                    text-anchor="middle"
+                    dominant-baseline="middle"
+                    class="fill-gray-500 text-xs font-light dark:fill-gray-400"
+                    pointer-events="none"
+                    style="user-select: none; cursor: default;"
+                  >
+                    {minute}
+                  </text>
+                );
+              }}
+            </For>
+          </Show>
+
           {/* Time segments */}
           <For each={props.timeSegments}>
             {segment => {
@@ -401,34 +403,34 @@ export const CircularTimeTracking: Component<{
             })}
           </text>
         </svg>
-
-        {/* Hover details */}
-        <Show when={activeSegment()}>
-          <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform rounded-lg bg-white p-4 shadow-lg dark:bg-neutral-800">
-            {(() => {
-              const segment = props.timeSegments.find(s => s.id === activeSegment());
-              if (!segment) return null;
-
-              const effectiveEnd = getEffectiveEndTime(segment, props.currentTime);
-
-              return (
-                <div class="text-sm">
-                  <p class="font-bold">{segment.type === 'work' ? 'Work Period' : 'Break'}</p>
-                  <p>
-                    {formatTime(segment.start)} -{' '}
-                    {!segment.end ? 'Ongoing' : formatTime(effectiveEnd)}
-                  </p>
-                  {segment.channel && <p>Channel: {segment.channel}</p>}
-                  <p>Duration: {getDuration(segment)}</p>
-                </div>
-              );
-            })()}
-          </div>
-        </Show>
       </div>
 
+      {/* Hover details */}
+      <Show when={activeSegment()}>
+        <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform rounded-lg bg-white p-3 sm:p-4 shadow-lg dark:bg-neutral-800 max-w-[90%] sm:max-w-none">
+          {(() => {
+            const segment = props.timeSegments.find(s => s.id === activeSegment());
+            if (!segment) return null;
+
+            const effectiveEnd = getEffectiveEndTime(segment, props.currentTime);
+
+            return (
+              <div class="text-sm">
+                <p class="font-bold">{segment.type === 'work' ? 'Work Period' : 'Break'}</p>
+                <p>
+                  {formatTime(segment.start)} -{' '}
+                  {!segment.end ? 'Ongoing' : formatTime(effectiveEnd)}
+                </p>
+                {segment.channel && <p>Channel: {segment.channel}</p>}
+                <p>Duration: {getDuration(segment)}</p>
+              </div>
+            );
+          })()}
+        </div>
+      </Show>
+
       {/* Enhanced Legend with Hover Summaries */}
-      <div class="mt-4 flex max-w-[500px] flex-wrap gap-4">
+      <div class="mt-4 flex flex-wrap gap-2 sm:gap-4 max-w-full">
         {/* Break type legend item */}
         <div
           class="relative mb-2 flex cursor-pointer items-center gap-2"
@@ -439,7 +441,7 @@ export const CircularTimeTracking: Component<{
           <span class="text-sm">Break</span>
 
           <Show when={activeLegendItem() === 'break'}>
-            <div class="absolute bottom-full left-0 mb-2 w-64 rounded-lg bg-white p-4 shadow-lg dark:bg-neutral-800">
+            <div class="absolute bottom-full left-0 mb-2 w-64 max-w-[90vw] sm:max-w-[300px] rounded-lg bg-white p-3 sm:p-4 shadow-lg dark:bg-neutral-800">
               {(() => {
                 const segments = getSegmentsForLegendItem('break');
                 const summary = calculateSegmentSummary(segments);
@@ -471,7 +473,7 @@ export const CircularTimeTracking: Component<{
               <span class="text-sm">{channel}</span>
 
               <Show when={activeLegendItem() === channel}>
-                <div class="absolute bottom-full left-0 mb-2 w-64 rounded-lg bg-white p-4 shadow-lg dark:bg-neutral-800">
+                <div class="absolute bottom-full left-0 mb-2 w-64 max-w-[90vw] sm:max-w-[300px] rounded-lg bg-white p-3 sm:p-4 shadow-lg dark:bg-neutral-800">
                   {(() => {
                     const segments = getSegmentsForLegendItem(channel);
                     const summary = calculateSegmentSummary(segments);
