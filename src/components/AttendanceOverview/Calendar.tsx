@@ -24,8 +24,18 @@ type MenuAction = {
   action: (date: Date) => void | Promise<void>;
 };
 
+
+
+export enum Legends {
+  workedHolidaysOrWeekends = "#4CAF50", // Green for worked holidays
+  leaves = "#FFA726", // Orange for leaves
+  absences = "#E53935", // Red for absences
+  holidays = "#9C27B0", // Purple for holidays
+  others = "#9e9e9e", // Grey for other dates
+}
+
 export type DateHighlight = {
-  color: string;
+  color: Legends;
   description: string;
   descriptionDetails?: string; // Added field for detailed description
   isHoliday?: boolean; // Added isHoliday flag to identify holidays
@@ -127,6 +137,10 @@ export function HRCalendar(props: HRCalendarProps) {
   // Add new state for leave selection
   const [leaveSelectionMode, setLeaveSelectionMode] = createSignal(false);
   const [selectedLeaveDates, setSelectedLeaveDates] = createSignal<Date[]>([]);
+
+  // Add these new state variables near your other state definitions
+  const [longPressTimer, setLongPressTimer] = createSignal<NodeJS.Timeout | null>(null);
+  const [longPressActive, setLongPressActive] = createSignal<boolean>(false);
 
   // Check if user is admin
   const isUserAdmin = () => {
@@ -234,10 +248,14 @@ export function HRCalendar(props: HRCalendarProps) {
   }
 
   // Open menu dropdown
-  function openMenu(e: MouseEvent, day: number, month: number, year: number) {
-    e.stopPropagation();
+  function openMenu(e: MouseEvent | { clientX: number; clientY: number }, day: number, month: number, year: number) {
+    // Check if stopPropagation exists before calling it
+    if ('stopPropagation' in e && typeof e.stopPropagation === 'function') {
+      e.stopPropagation();
+    }
+    
     const date = new Date(year, month, day);
-
+  
     // Check if menu is already open for this date
     const currentMenu = menuOpen();
     if (
@@ -785,6 +803,79 @@ export function HRCalendar(props: HRCalendarProps) {
     }
   }
 
+  // Add these helper functions for detecting long press
+  function handleTouchStart(e: TouchEvent, dayInfo: any) {
+    if (props.loading || shiftHolidayMode() || leaveSelectionMode()) return;
+    
+    // Clear any existing timer
+    if (longPressTimer()) {
+      clearTimeout(longPressTimer()!);
+    }
+    
+    // Set new timer for long press (700ms is a good duration)
+    const timer = setTimeout(() => {
+      setLongPressActive(true);
+      // Open menu at the touch position
+      openMenu(
+        { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY } as MouseEvent,
+        dayInfo.day,
+        dayInfo.month,
+        dayInfo.year
+      );
+    }, 700);
+    
+    setLongPressTimer(timer);
+  }
+
+  function handleTouchEnd() {
+    // Clear timer if touch ends before long press is triggered
+    if (longPressTimer()) {
+      clearTimeout(longPressTimer()!);
+      setLongPressTimer(null);
+    }
+    
+    // Reset long press state after a brief delay to allow menu to process click
+    if (longPressActive()) {
+      setTimeout(() => {
+        setLongPressActive(false);
+      }, 300);
+    }
+  }
+
+  // Modify your day click handler to prevent normal clicks from firing during long press
+  function handleDayClick(dayInfo: any) {
+    if (props.loading || longPressActive()) return;
+    handleSelectDate(dayInfo.day, dayInfo.month, dayInfo.year);
+  }
+
+  // Add this helper function inside the HRCalendar component
+  function StatItem(props: {
+    category: string;
+    label: string;
+    value: number;
+    color: string;
+  }) {
+    return (
+      <div
+        class="stat-item"
+        classList={{
+          "hover-highlight": hoveredCategory() === props.category,
+          dimmed:
+            hoveredCategory() !== null &&
+            hoveredCategory() !== props.category,
+        }}
+        onMouseEnter={() => handleStatHover(props.category)}
+        onMouseLeave={handleStatLeave}
+        style={{ "border-left-color": props.color }}
+      >
+        <div class="stat-content">
+          <div class="stat-label">{props.label}</div>
+          <div class="stat-value">{props.value}</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       class={`hr-calendar ${theme() === "dark" ? "dark-mode" : "light-mode"}`}
@@ -824,87 +915,40 @@ export function HRCalendar(props: HRCalendarProps) {
         <div class="hr-calendar-stats">
           <h3>Month Statistics</h3>
           <div class="stats-grid">
-            {/* Working Days Total */}
-            <div
-              class="stat-item"
-              classList={{
-                "hover-highlight": hoveredCategory() === "workingDays",
-                dimmed:
-                  hoveredCategory() !== null &&
-                  hoveredCategory() !== "workingDays",
-              }}
-              onMouseEnter={() => handleStatHover("workingDays")}
-              onMouseLeave={handleStatLeave}
-            >
-              <div class="stat-label">Working Days (Total)</div>
-              <div class="stat-value">{calculatedStats().totalWorkingDays}</div>
-            </div>
-
-            {/* Working Days Till Now */}
-            <div
-              class="stat-item"
-              classList={{
-                "hover-highlight": hoveredCategory() === "workingDaysTillNow",
-                dimmed:
-                  hoveredCategory() !== null &&
-                  hoveredCategory() !== "workingDaysTillNow",
-              }}
-              onMouseEnter={() => handleStatHover("workingDaysTillNow")}
-              onMouseLeave={handleStatLeave}
-            >
-              <div class="stat-label">Working Days (Till Now)</div>
-              <div class="stat-value">
-                {calculatedStats().workingDaysTillNow}
-              </div>
-            </div>
-
-            {/* Holidays */}
-            <div
-              class="stat-item"
-              classList={{
-                "hover-highlight": hoveredCategory() === "holidays",
-                dimmed:
-                  hoveredCategory() !== null &&
-                  hoveredCategory() !== "holidays",
-              }}
-              onMouseEnter={() => handleStatHover("holidays")}
-              onMouseLeave={handleStatLeave}
-            >
-              <div class="stat-label">Holidays</div>
-              <div class="stat-value">{calculatedStats().holidays}</div>
-            </div>
-
-            {/* Absences */}
-            <div
-              class="stat-item"
-              classList={{
-                "hover-highlight": hoveredCategory() === "absences",
-                dimmed:
-                  hoveredCategory() !== null &&
-                  hoveredCategory() !== "absences",
-              }}
-              onMouseEnter={() => handleStatHover("absences")}
-              onMouseLeave={handleStatLeave}
-            >
-              <div class="stat-label">Absences</div>
-              <div class="stat-value">{props.monthStats?.absences || 0}</div>
-            </div>
-
-            {/* Leaves Taken */}
-            <div
-              class="stat-item"
-              classList={{
-                "hover-highlight": hoveredCategory() === "leavesTaken",
-                dimmed:
-                  hoveredCategory() !== null &&
-                  hoveredCategory() !== "leavesTaken",
-              }}
-              onMouseEnter={() => handleStatHover("leavesTaken")}
-              onMouseLeave={handleStatLeave}
-            >
-              <div class="stat-label">Leaves Taken</div>
-              <div class="stat-value">{props.monthStats?.leavesTaken || 0}</div>
-            </div>
+            <StatItem 
+              category="workingDays"
+              label="Working Days (Total)"
+              value={calculatedStats().totalWorkingDays}
+              color={Legends.others}
+            />
+            
+            <StatItem 
+              category="workingDaysTillNow"
+              label="Working Days (Till Now)"
+              value={calculatedStats().workingDaysTillNow}
+              color={Legends.workedHolidaysOrWeekends}
+            />
+            
+            <StatItem 
+              category="holidays"
+              label="Holidays"
+              value={calculatedStats().holidays}
+              color={Legends.holidays}
+            />
+            
+            <StatItem 
+              category="absences"
+              label="Absences"
+              value={props.monthStats?.absences || 0}
+              color={Legends.absences}
+            />
+            
+            <StatItem 
+              category="leavesTaken"
+              label="Leaves Taken"
+              value={props.monthStats?.leavesTaken || 0}
+              color={Legends.leaves}
+            />
           </div>
 
           {/* Add shift mode indicator in stats panel */}
@@ -1080,10 +1124,11 @@ export function HRCalendar(props: HRCalendarProps) {
                         : undefined,
                       "border-color": highlight ? highlight.color : undefined,
                     }}
-                    onClick={() =>
-                      !props.loading &&
-                      handleSelectDate(dayInfo.day, dayInfo.month, dayInfo.year)
-                    }
+                    onClick={() => !props.loading && !longPressActive() && 
+                      handleSelectDate(dayInfo.day, dayInfo.month, dayInfo.year)}
+                    onTouchStart={(e) => handleTouchStart(e, dayInfo)}
+                    onTouchEnd={handleTouchEnd}
+                    onTouchCancel={handleTouchEnd}
                     onMouseOver={(e) => handleDayMouseOver(e, dayInfo)}
                     onMouseOut={hideTooltip}
                   >

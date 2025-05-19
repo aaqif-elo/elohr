@@ -14,7 +14,7 @@ import {
 
 enum CRON_TIMES {
   WEEKDAYS_AT_10_40_AM = "0 40 10 * * 0-4",
-  EVERYDAY_AT_11_55_PM = "0 55 23 * * *",
+  EVERYDAY_AT_11_59_PM = "0 59 23 * * *",
   WEDNESDAYS_AT_5_30_PM = "0 30 17 * * 3",
   WEEKDAYS_AT_6_00_PM = "0 0 18 * * 0-4",
 }
@@ -26,7 +26,7 @@ const scrumReminderJob = (callback: () => void) =>
   new CronJob(CRON_TIMES.WEEKDAYS_AT_10_40_AM, callback);
 
 const autoLogoutPeopleOnABreakJob = (callback: () => void) =>
-  new CronJob(CRON_TIMES.EVERYDAY_AT_11_55_PM, callback);
+  new CronJob(CRON_TIMES.EVERYDAY_AT_11_59_PM, callback);
 
 const weeklyFormSubmissionReminderJob = (callback: () => void) =>
   new CronJob(CRON_TIMES.WEDNESDAYS_AT_5_30_PM, callback);

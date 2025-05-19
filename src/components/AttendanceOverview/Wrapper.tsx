@@ -16,7 +16,7 @@ import {
   TrpcUserWithAttendance,
 } from "../../store/utils";
 import { UserRoleTypes } from "@prisma/client";
-import { HRCalendar, DateHighlight } from "./Calendar";
+import { HRCalendar, DateHighlight, Legends } from "./Calendar";
 import EmployeeList from "./EmployeeList";
 import { CircularTimeTracking } from "./CircularTimeTracker";
 import { generateTimeSegments } from "../../store/utils";
@@ -103,12 +103,10 @@ const LeaveRequestModal = (props: {
   );
 };
 
-export const AttendanceWrapper = () => {
+export const AttendanceWrapper = (props: { date: Date }) => {
   const user = () => getUser();
   const isAdmin = () => user()?.roles.includes(UserRoleTypes.ADMIN);
-
   // Signal for currently-selected date
-  const [selectedDate, setSelectedDate] = createSignal(new Date());
   const [selectedUser, setSelectedUser] = createSignal<UserState | null>(null);
   const [currentTime, setCurrentTime] = createSignal(new Date());
 
@@ -151,7 +149,42 @@ export const AttendanceWrapper = () => {
     };
     const currentSummary = user()?.attendanceSummary;
 
+    // Extract worked dates for checking against holidays and weekends
+    const workedDates: Date[] = currentSummary?.stats.workedDates || [];
+    const workedDateStrings = workedDates.map((date) =>
+      formatDateToYYYYMMDD(date)
+    );
+
     if (currentSummary) {
+      // Update holiday colors if they were worked days
+      Object.keys(highlights).forEach((dateString) => {
+        const highlight = highlights[dateString];
+        if (highlight.isHoliday && workedDateStrings.includes(dateString)) {
+          // Change color to green for worked holidays
+          highlights[dateString] = {
+            ...highlight,
+            color: Legends.workedHolidaysOrWeekends,
+            description: `${highlight.description} (Working)`,
+          };
+        }
+      });
+
+      // Add weekend highlights if they are worked days
+      workedDates.forEach((date) => {
+        const day = date.getDay();
+        // Check if it's a weekend (Friday=5, Saturday=6 based on weekendDays prop)
+        if (day === 5 || day === 6) {
+          const dateString = formatDateToYYYYMMDD(date);
+          // Skip if this date already has a highlight (like a holiday)
+          if (!highlights[dateString]) {
+            highlights[dateString] = {
+              color: Legends.workedHolidaysOrWeekends,
+              description: "Working on Weekend",
+            };
+          }
+        }
+      });
+
       // Process detailed leave information first
       if (currentSummary.stats.leaveInfo) {
         currentSummary.stats.leaveInfo.forEach((leaveInfo) => {
@@ -180,7 +213,7 @@ export const AttendanceWrapper = () => {
           }
 
           highlights[dateString] = {
-            color: "#FFA726", // Orange for leaves
+            color: Legends.leaves,
             description,
             descriptionDetails: descriptionDetails || undefined,
             isLeave: true,
@@ -191,7 +224,7 @@ export const AttendanceWrapper = () => {
         currentSummary.stats.leaveDates.forEach((date) => {
           const dateString = formatDateToYYYYMMDD(date);
           highlights[dateString] = {
-            color: "#FFA726", // Orange for leaves
+            color: Legends.leaves,
             description: "On Leave",
             isLeave: true,
           };
@@ -202,7 +235,7 @@ export const AttendanceWrapper = () => {
       currentSummary.stats.absentDates.forEach((date) => {
         const dateString = formatDateToYYYYMMDD(date);
         highlights[dateString] = {
-          color: "#F44336", // Red for absences
+          color: Legends.absences,
           description: "Absent",
           isAbsence: true,
         };
@@ -271,7 +304,7 @@ export const AttendanceWrapper = () => {
   const fetchHolidays = async (year?: string) => {
     try {
       const holidays = await api.holidays.getHolidaysForYear.query({
-        year: year || selectedDate().getFullYear().toString(),
+        year: year || props.date.getFullYear().toString(),
       });
 
       // Format holidays for the calendar
@@ -315,7 +348,7 @@ export const AttendanceWrapper = () => {
         }
 
         highlights[dateString] = {
-          color: "#FF5722", // Distinctive color for holidays
+          color: Legends.holidays,
           description: holiday.name,
           // Store additional information that can be used in the tooltip
           descriptionDetails: details || undefined,
@@ -365,36 +398,35 @@ export const AttendanceWrapper = () => {
   };
 
   onMount(() => {
-    fetchAttendance(selectedDate());
+    fetchAttendance(props.date);
     fetchHolidays();
   });
 
   onMount(() => {
     // Store subscription reference to ensure proper cleanup
-    let subscription: ReturnType<typeof api.attendance.attendanceChanged.subscribe> | null = null;
-    
+    let subscription: ReturnType<
+      typeof api.attendance.attendanceChanged.subscribe
+    > | null = null;
+
     const setupSubscription = () => {
       // Cancel any existing subscription first
       if (subscription) {
         subscription.unsubscribe();
       }
-      
+
       // Create new subscription
       subscription = api.attendance.attendanceChanged.subscribe(undefined, {
         onData: (updated) => {
-          if (
-            isToday(selectedDate()) &&
-            updated.data.userId === getUser()?.dbID
-          ) {
+          if (isToday(props.date) && updated.data.userId === getUser()?.dbID) {
             setAttendance(updated.data);
           }
         },
       });
     };
-    
+
     // Initial setup
     setupSubscription();
-  
+
     // Handle beforeunload event
     const handleUnload = () => {
       if (subscription) {
@@ -402,9 +434,9 @@ export const AttendanceWrapper = () => {
         subscription = null;
       }
     };
-    
+
     window.addEventListener("beforeunload", handleUnload);
-  
+
     onCleanup(() => {
       if (subscription) {
         subscription.unsubscribe();
@@ -414,15 +446,18 @@ export const AttendanceWrapper = () => {
     });
   });
 
-  const handleDateChange = (date: Date) => {
-    const currentYear = selectedDate().getFullYear();
-    setSelectedDate(date);
-    fetchAttendance(date);
+  const toTwoDigits = (num: number) => {
+    return num < 10 ? `0${num}` : num.toString();
+  };
 
-    // If year changes, fetch holidays for the new year
-    if (date.getFullYear() !== currentYear) {
-      fetchHolidays(date.getFullYear().toString());
-    }
+  const handleDateChange = (date: Date) => {
+    const dateString = `${date.getFullYear()}-${toTwoDigits(
+      date.getMonth() + 1
+    )}-${toTwoDigits(date.getDate())}`;
+
+    window.history.pushState({}, "", `?date=${dateString}`);
+    // Reload the page to reflect the new date
+    window.location.reload();
   };
 
   // Get the current user data for the circular time tracker
@@ -441,13 +476,13 @@ export const AttendanceWrapper = () => {
   createEffect(() => {
     const user = selectedUser();
     if (user) {
-      fetchAttendanceSummary(selectedDate(), user.dbID);
+      fetchAttendanceSummary(props.date, user.dbID);
     }
   });
 
   // Function to refresh calendar data - used after operations
   const refreshCalendarData = async (date?: Date) => {
-    const targetDate = date || selectedDate();
+    const targetDate = date || props.date;
     await Promise.all([
       fetchHolidays(targetDate.getFullYear().toString()),
       fetchAttendance(targetDate),
@@ -583,6 +618,7 @@ export const AttendanceWrapper = () => {
         {/* Calendar - now with context menu handlers */}
         <div class="min-h-[500px] rounded-lg bg-white p-6 shadow-lg dark:bg-neutral-900">
           <HRCalendar
+            initialDate={props.date}
             weekendDays={[5, 6]}
             onSelect={handleDateChange}
             loading={loadingAttendance()}

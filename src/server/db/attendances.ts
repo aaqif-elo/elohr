@@ -671,17 +671,19 @@ export const getLoggedInUsers = async () => {
 /**
  * Generate an attendance image report for a user
  * @param userId The user's ID
+ * @param date Optional Date for which to generate the report.
  * @returns A promise for the image generation
  */
-export const generateAttendanceImageReport = async (userId: string) => {
+export const generateAttendanceImageReport = async (userId: string, date?: Date) => {
   const jwtWithUser = await generateJWTFromUserId(userId);
   if (!jwtWithUser?.jwt) {
     return null;
   }
 
-  // Return the promise for the image generation
+  // Pass date parameter to queueAttendanceStatsImage
   return queueAttendanceStatsImage(
     jwtWithUser.jwt,
-    jwtWithUser.userWithAttendance.user.isAdmin
+    jwtWithUser.userWithAttendance.user.isAdmin,
+    date
   );
 };
