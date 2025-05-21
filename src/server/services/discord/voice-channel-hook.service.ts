@@ -22,7 +22,34 @@ const ATTENDANCE_DELAY_IN_SECONDS = parseInt(
   process.env.VOICE_CHANNEL_ATTENDANCE_DELAY_IN_SECONDS
 );
 
-const attendanceChangesToDo: Record<string, NodeJS.Timeout> = {};
+const pendingTimeouts: Record<string, NodeJS.Timeout> = {};
+const userActionQueues: Record<string, Array<() => Promise<void>>> = {};
+const userActionInProgress: Record<string, boolean> = {};
+
+const processNextAction = async (userId: string) => {
+  if (userActionInProgress[userId] || !userActionQueues[userId] || userActionQueues[userId].length === 0) {
+    return;
+  }
+
+  userActionInProgress[userId] = true;
+  const actionToExecute = userActionQueues[userId].shift();
+
+  if (actionToExecute) {
+    try {
+      await actionToExecute();
+    } catch (error) {
+      console.error(`Error executing action for user ${userId}:`, error);
+      // Consider more specific error handling or user notification if needed
+    } finally {
+      userActionInProgress[userId] = false;
+      // Attempt to process the next action in the queue for this user
+      processNextAction(userId);
+    }
+  } else {
+    // Queue was empty, ensure flag is reset
+    userActionInProgress[userId] = false;
+  }
+};
 
 const addAttendanceChange = async (attendanceChangePayload: {
   attendanceChangeCommand: EAttendanceCommands;
@@ -33,133 +60,145 @@ const addAttendanceChange = async (attendanceChangePayload: {
   const {
     attendanceChangeCommand,
     user,
-    attendanceChangeCallBack: addAttendanceChangeCallBack,
+    attendanceChangeCallBack: notifyDiscordUserCallback,
     currentVoiceChannelName,
   } = attendanceChangePayload;
-  const attendanceChangeCallBack = (
-    attendanceChangeCommand: EAttendanceCommands,
-    callBack: (msg: string, userDiscordId: string) => void
-  ) => {
+
+  const actionLogic = async () => {
     switch (attendanceChangeCommand) {
       case EAttendanceCommands.LOGIN: {
         if (!currentVoiceChannelName) {
-          callBack(
+          notifyDiscordUserCallback(
             `Error logging in, you are not in a voice channel.`,
             user.discordInfo.id
           );
         } else {
-          login(user.id, currentVoiceChannelName).then((loginResponse) => {
+          try {
+            const loginResponse = await login(user.id, currentVoiceChannelName);
             if (typeof loginResponse === "string") {
-              callBack(
+              notifyDiscordUserCallback(
                 `${process.env.STATUS_TAG_ERROR} ${loginResponse}`,
                 user.discordInfo.id
               );
               return;
             }
-            getGuildMember(user.discordInfo.id).then((member) => {
-              if (
-                member.user.avatar &&
-                member.user.avatar !== user.discordInfo.avatar
-              ) {
-                updateUserAvatar(user.id, member.user.avatar);
-              }
-            });
-            callBack(
+            // Asynchronously update avatar, non-blocking for login message
+            getGuildMember(user.discordInfo.id)
+              .then((member) => {
+                if (
+                  member?.user.avatar &&
+                  member.user.avatar !== user.discordInfo.avatar
+                ) {
+                  updateUserAvatar(user.id, member.user.avatar).catch(err => console.error("Error updating avatar:", err));
+                }
+              })
+              .catch(err => console.error("Error getting guild member for avatar update:", err));
+
+            notifyDiscordUserCallback(
               `${
                 process.env.STATUS_TAG_AVAILABLE
               } Successfully logged in at ${loginResponse.login.toLocaleTimeString()}...`,
               user.discordInfo.id
             );
-          });
+          } catch (error) {
+            console.error("Error during login action:", error);
+            notifyDiscordUserCallback(
+              `${process.env.STATUS_TAG_ERROR} An error occurred during login.`,
+              user.discordInfo.id
+            );
+          }
         }
         break;
       }
       case EAttendanceCommands.BREAK: {
-        breakStart(user.id).then((breakStartResponse) => {
-          callBack(
+        try {
+          const breakStartResponse = await breakStart(user.id);
+          notifyDiscordUserCallback(
             `${
               process.env.STATUS_TAG_BREAK
             } break started at ${breakStartResponse?.toLocaleTimeString()}...`,
             user.discordInfo.id
           );
-        });
+        } catch (error) {
+          console.error("Error during break start action:", error);
+          notifyDiscordUserCallback(
+            `${process.env.STATUS_TAG_ERROR} An error occurred starting break.`,
+            user.discordInfo.id
+          );
+        }
         break;
       }
       case EAttendanceCommands.RESUME: {
         if (!currentVoiceChannelName) {
-          callBack(
+          notifyDiscordUserCallback(
             `Error ending break, you are not in a voice channel.`,
             user.discordInfo.id
           );
         } else {
-          breakEnd(user.id, currentVoiceChannelName).then(
-            (breakEndResponse) => {
-              let response = `Error ending break!`;
-              if (breakEndResponse) {
-                response = `${process.env.STATUS_TAG_AVAILABLE} ${breakEndResponse}...`;
-              }
-              callBack(response, user.discordInfo.id);
+          try {
+            const breakEndResponse = await breakEnd(user.id, currentVoiceChannelName);
+            let response = `${process.env.STATUS_TAG_ERROR} Error ending break!`;
+            if (breakEndResponse) {
+              response = `${process.env.STATUS_TAG_AVAILABLE} ${breakEndResponse}...`;
             }
-          );
+            notifyDiscordUserCallback(response, user.discordInfo.id);
+          } catch (error) {
+            console.error("Error during break end action:", error);
+            notifyDiscordUserCallback(
+              `${process.env.STATUS_TAG_ERROR} An error occurred ending break.`,
+              user.discordInfo.id
+            );
+          }
         }
         break;
       }
-
       case EAttendanceCommands.SWITCH: {
         if (!currentVoiceChannelName) {
-          callBack(
+          notifyDiscordUserCallback(
             `Error switching voice channels, you are not in a voice channel.`,
             user.discordInfo.id
           );
         } else {
-          isOnBreak(user.id).then((canResume) => {
-            if (canResume) {
-              breakEnd(user.id, currentVoiceChannelName)
-                .then((breakEndResponse) => {
-                  callBack(
-                    `${process.env.STATUS_TAG_AVAILABLE} ${
-                      breakEndResponse as string
-                    }`,
-                    user.discordInfo.id
-                  );
-                })
-                .catch((err) => {
-                  console.error("Error ending break:", err);
-                  callBack(
-                    `Error ending break: ${err.message}`,
-                    user.discordInfo.id
-                  );
-                });
+          try {
+            const userIsOnBreak = await isOnBreak(user.id);
+            if (userIsOnBreak) {
+              const breakEndResponse = await breakEnd(user.id, currentVoiceChannelName);
+              notifyDiscordUserCallback(
+                `${process.env.STATUS_TAG_AVAILABLE} ${
+                  breakEndResponse as string // Ensure breakEndResponse is handled as string
+                }`,
+                user.discordInfo.id
+              );
             } else {
-              switchProject(user.id, currentVoiceChannelName)
-                .then((_) => {
-                  callBack(
-                    `${process.env.STATUS_TAG_SWITCH} active project switched to ${currentVoiceChannelName}`,
-                    user.discordInfo.id
-                  );
-                })
-                .catch((err) => {
-                  console.error("Error switching project:", err);
-                  callBack(
-                    `Error switching project: ${err.message}`,
-                    user.discordInfo.id
-                  );
-                });
+              await switchProject(user.id, currentVoiceChannelName);
+              notifyDiscordUserCallback(
+                `${process.env.STATUS_TAG_SWITCH} active project switched to ${currentVoiceChannelName}`,
+                user.discordInfo.id
+              );
             }
-          });
+          } catch (err: any) {
+            console.error("Error during switch action:", err);
+            notifyDiscordUserCallback(
+              `${process.env.STATUS_TAG_ERROR} Error during switch: ${err.message}`,
+              user.discordInfo.id
+            );
+          }
         }
+        break;
       }
       default:
         break;
     }
   };
 
-  attendanceChangesToDo[user.id] = setTimeout(() => {
-    delete attendanceChangesToDo[user.id];
-    attendanceChangeCallBack(
-      attendanceChangeCommand,
-      addAttendanceChangeCallBack
-    );
+  pendingTimeouts[user.id] = setTimeout(() => {
+    delete pendingTimeouts[user.id]; // This specific timeout has fired
+
+    if (!userActionQueues[user.id]) {
+      userActionQueues[user.id] = [];
+    }
+    userActionQueues[user.id].push(actionLogic);
+    processNextAction(user.id);
   }, ATTENDANCE_DELAY_IN_SECONDS * 1000);
 };
 
@@ -178,6 +217,15 @@ export const handleVoiceStateChange = async (
   )
     return;
 
+  const user = await getUserByDiscordId(postTransitionState.id);
+  if (!user) return;
+
+  // Clear any existing timeout for this user first
+  if (pendingTimeouts[user.id] !== undefined) {
+    clearTimeout(pendingTimeouts[user.id]);
+    delete pendingTimeouts[user.id];
+  }
+
   const isAFK =
     postTransitionState.guild.afkChannel.id === postTransitionState.channelId;
   const isNotInVoiceChannel = postTransitionState.channelId === null;
@@ -189,62 +237,41 @@ export const handleVoiceStateChange = async (
     wasInNonAFKVoiceChannel && (isAFK || isNotInVoiceChannel);
   const comingOnline =
     !wasInNonAFKVoiceChannel && !isAFK && !isNotInVoiceChannel;
-  if (goingOffline || comingOnline) {
-    const user = await getUserByDiscordId(postTransitionState.id);
-    if (!user) return;
-    // Clear any pending attendance change calls
-    if (attendanceChangesToDo[user.id] !== undefined) {
-      clearTimeout(attendanceChangesToDo[user.id]);
+
+  let attendanceCommand: EAttendanceCommands | null = null;
+  let voiceChannelName: string | undefined = undefined;
+
+  if (goingOffline) {
+    const canWork =
+      (await canBreak(user.id)) === true &&
+      (await canBreakOrResume(user.id)) === true;
+    if (canWork) {
+      attendanceCommand = EAttendanceCommands.BREAK;
     }
-
-    // Joining a channel from offline/afk
-    if (comingOnline) {
-      const canResume = await isOnBreak(user.id);
-      if (canResume) {
-        return addAttendanceChange({
-          attendanceChangeCommand: EAttendanceCommands.RESUME,
-          user,
-          attendanceChangeCallBack,
-          currentVoiceChannelName: postTransitionState.channel?.name,
-        });
-      }
-
+  } else if (comingOnline) {
+    voiceChannelName = postTransitionState.channel?.name;
+    const canResume = await isOnBreak(user.id);
+    if (canResume) {
+      attendanceCommand = EAttendanceCommands.RESUME;
+    } else {
       const canLogin = (await getLoginTime(user.id)) === null;
       if (canLogin) {
-        return addAttendanceChange({
-          attendanceChangeCommand: EAttendanceCommands.LOGIN,
-          user,
-          attendanceChangeCallBack,
-          currentVoiceChannelName: postTransitionState.channel?.name,
-        });
-      }
-    }
-
-    // Moving from an active voice channel to AFK or disconnecting from a voice channel
-    else {
-      const canWork =
-        (await canBreak(user.id)) === true &&
-        (await canBreakOrResume(user.id)) === true;
-      if (canWork) {
-        return addAttendanceChange({
-          attendanceChangeCommand: EAttendanceCommands.BREAK,
-          user,
-          attendanceChangeCallBack,
-        });
+        attendanceCommand = EAttendanceCommands.LOGIN;
       }
     }
   } else if (postTransitionState.channel?.name) {
-    const user = await getUserByDiscordId(postTransitionState.id);
-    if (!user) return;
-    // Clear any pending attendance change calls
-    if (attendanceChangesToDo[user.id] !== undefined) {
-      clearTimeout(attendanceChangesToDo[user.id]);
-    }
-    return addAttendanceChange({
-      attendanceChangeCommand: EAttendanceCommands.SWITCH,
+    // This condition implies switching between non-AFK channels,
+    // as it's not goingOffline and not comingOnline, but is in a new channel.
+    attendanceCommand = EAttendanceCommands.SWITCH;
+    voiceChannelName = postTransitionState.channel?.name;
+  }
+
+  if (attendanceCommand) {
+    addAttendanceChange({
+      attendanceChangeCommand: attendanceCommand,
       user,
       attendanceChangeCallBack,
-      currentVoiceChannelName: postTransitionState.channel?.name,
+      currentVoiceChannelName: voiceChannelName,
     });
   }
 };
