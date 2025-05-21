@@ -532,9 +532,11 @@ export const AttendanceWrapper = (props: { date: Date }) => {
   };
 
   const handleConvertToHoliday = async (date: Date) => {
+    const dateToUse = new Date(date);
+    dateToUse.setHours(date.getHours() - date.getTimezoneOffset() / 60);
     setLoadingAttendance(true);
     try {
-      setSelectedHolidayDate(date);
+      setSelectedHolidayDate(dateToUse);
       setHolidayModalOpen(true);
     } finally {
       setLoadingAttendance(false);
@@ -544,9 +546,11 @@ export const AttendanceWrapper = (props: { date: Date }) => {
   const handleConvertToWorkday = async (date: Date) => {
     setLoadingAttendance(true);
     try {
+      const dateToUse = new Date(date);
+      dateToUse.setHours(date.getHours() - date.getTimezoneOffset() / 60);
       // Call API to convert back to workday
       await api.holidays.convertToWorkday.mutate({
-        date: date.toISOString(),
+        date: dateToUse.toISOString(),
       });
 
       // Refetch holidays and attendance after change
@@ -563,10 +567,16 @@ export const AttendanceWrapper = (props: { date: Date }) => {
   const handleShiftHoliday = async (originalDate: Date, newDate: Date) => {
     setLoadingAttendance(true);
     try {
+      const originalDateToUse = new Date(originalDate);
+      originalDateToUse.setHours(
+        originalDate.getHours() - originalDate.getTimezoneOffset() / 60
+      );
+      const newDateToUse = new Date(newDate);
+      newDateToUse.setHours(newDate.getHours() - newDate.getTimezoneOffset() / 60);
       // Call API to shift the holiday from original date to new date
       await api.holidays.shiftHoliday.mutate({
-        originalDate: originalDate.toISOString(),
-        newDate: newDate.toISOString(),
+        originalDate: originalDateToUse.toISOString(),
+        newDate: newDateToUse.toISOString(),
       });
 
       // Refresh calendar data to show the shifted holiday
