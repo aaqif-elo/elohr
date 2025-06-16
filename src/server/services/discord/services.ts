@@ -427,40 +427,63 @@ export const autoLogoutUsersWhoAreStillLoggedIn = async (
 };
 
 export const getWeatherReport = async () => {
-  const weatherApiKey = process.env.OPEN_METEO_URL;
+  const openMeteoApiUrl = process.env.OPEN_METEO_URL;
   const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-  if (!weatherApiKey || !GEMINI_API_KEY) {
+  if (!openMeteoApiUrl || !GEMINI_API_KEY) {
     console.error("Weather API key or Gemini API key is missing.");
     return;
   }
-  try {
-    const weather = await axios.get(weatherApiKey);
-    const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-    const stringifiedWeather = JSON.stringify(weather.data);
-    const prompt = `Can you generate a weather report from this? Include a fitting emoji and maybe a quirky quote for the day which relates to software/web development/agile/tech etc. Let's keep it short and succinct. 
-    
-    Follow this format:
 
-    {City}, {Country}- {Date} {Emoji}
+  const maxRetries = 3;
+  const timeoutMs = 10000; // 10 seconds
 
-    {Weather report}
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`Attempting weather API call (${attempt}/${maxRetries})...`);
+      
+      const weather = await axios.get(openMeteoApiUrl, {
+        timeout: timeoutMs,
+        headers: {
+          'User-Agent': 'YourApp/1.0'
+        }
+      });
 
-    Sunrise: {Time}
-    Sunset: {Time}
+      const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+      const stringifiedWeather = JSON.stringify(weather.data);
+      const prompt = `Can you generate a weather report from this? Include a fitting emoji and maybe a quirky quote for the day which relates to software/web development/agile/tech etc. Let's keep it short and succinct. 
+      
+      Follow this format:
 
-    Quote (Italized) 🤖
+      {City}, {Country}- {Date} {Emoji}
 
-    Ensure that it is formatted in markdown to be displayed in Discord via discord.js. Don't include anything else except what's in the format.`;
+      {Weather report}
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: [`${stringifiedWeather} ${prompt}`],
-    });
-    return response.text;
-  } catch (error) {
-    console.error("Error fetching weather data:", error);
-    return;
+      Sunrise: {Time}
+      Sunset: {Time}
+
+      Quote (Italized) 🤖
+
+      Ensure that it is formatted in markdown to be displayed in Discord via discord.js. Don't include anything else except what's in the format.`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        contents: [`${stringifiedWeather} ${prompt}`],
+      });
+      return response.text;
+    } catch (error) {
+      console.error(`Weather API attempt ${attempt} failed:`, error instanceof Error ? error.message : String(error));
+      
+      if (attempt === maxRetries) {
+        console.error("All weather API attempts failed:", error);
+        return "⚠️ Weather service temporarily unavailable. Please try again later.";
+      }
+      
+      // Wait before retrying (exponential backoff)
+      const delay = Math.pow(2, attempt) * 1000;
+      console.log(`Retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
   }
 };
 
