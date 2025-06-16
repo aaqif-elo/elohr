@@ -108,7 +108,10 @@ export const startCronJobs = async (discordClient: Client<boolean>) => {
       generalChannelID
     )) as TextChannel;
     const weatherReport = await getWeatherReport();
-
+    if (!weatherReport) {
+      console.error("Weather report is not available");
+      return;
+    }
     generalChannel.send({
       content: `@everyone\n${weatherReport}${
         usersOnLeave.length > 0 ? `\n\n${usersOnLeaveAnnouncement}` : ``
