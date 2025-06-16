@@ -524,6 +524,8 @@ export const logout = async (userId: string) => {
     },
     data: {
       logout: attendance.logout,
+      workSegments: attendance.workSegments,
+      breaks: attendance.breaks,
       totalBreak: attendance.totalBreak,
       totalWork: attendance.totalWork,
       totalTime: attendance.totalTime,
