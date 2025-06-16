@@ -2,6 +2,38 @@
 
 All notable changes to this project are documented below.
 
+## v1.1.0 [2025-06-16]
+
+### Added
+
+- Queue system for user actions to ensure sequential processing during attendance management.
+- Retry logic with exponential backoff for weather report API calls.
+- Timeout mechanism for weather API requests to improve reliability.
+- Weather report availability check in cron job before sending to Discord.
+- Work segments and breaks data to logout response for enhanced attendance details.
+
+### Changed
+
+- Enhanced holiday announcement message formatting with improved date handling and dynamic "from"/"on" usage.
+- Updated date handling in holiday conversion functions to account for timezone offsets.
+- Improved error handling during action execution with appropriate logging.
+- Weather report function now uses more descriptive variable names for API URL.
+- Enhanced error logging for weather API calls with clearer feedback on attempts.
+- Refactored attendance change logic to utilize async/await for better readability.
+- Cleared existing timeouts for users when handling voice state changes.
+- Updated `longPressTimer` type to `NodeJS.Timeout` for better type safety in Calendar component.
+- Added window resize handling in CircularTimeTracking component for improved responsiveness.
+- Refactored `workedDates` calculation for clarity and efficiency in attendance router.
+- Enhanced `generateAttendanceImageReport` function with optional date parameter for flexibility.
+- Updated deployment script with improved command execution and proper permissions handling.
+
+### Fixed
+
+- Prevented potential runtime errors when weather report is not available in cron jobs.
+- Improved sequential processing of attendance management actions to avoid conflicts.
+
+---
+
 ## v1.0.0 [2025-05-19]
 
 ### Added
