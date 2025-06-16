@@ -128,7 +128,7 @@ const dayName = (date: Date): string => {
  * @param currentDate Optional reference date to determine if holiday starts tomorrow (defaults to current date)
  * @returns Formatted announcement message
  */
-export const getNextHolidayAnnouncementMsg = (
+const getNextHolidayAnnouncementMsg = (
   nextHoliday: {
     startDate: string | Date;
     endDate: string | Date;
@@ -137,36 +137,70 @@ export const getNextHolidayAnnouncementMsg = (
   currentDate: Date = new Date()
 ): string => {
   let message = `@everyone The office will be closed`;
-  const TWENTY_FOUR_HOURS = 1000 * 60 * 60 * 24;
-  const startDate = new Date(nextHoliday.startDate);
-  const endDate = new Date(nextHoliday.endDate);
-  const startsTomorrow =
-    startDate.getTime() - currentDate.getTime() <= TWENTY_FOUR_HOURS;
-  const singleHoliday =
-    String(nextHoliday.endDate) === String(nextHoliday.startDate);
 
-  if (startsTomorrow) {
-    if (singleHoliday) {
-      message += ` tomorrow`;
-    } else {
-      message += ` from tomorrow`;
-    }
+  const startDateObj = new Date(nextHoliday.startDate);
+  const endDateObj = new Date(nextHoliday.endDate);
+
+  const todayNormalized = new Date(currentDate);
+  todayNormalized.setHours(0, 0, 0, 0);
+
+  const tomorrowNormalized = new Date(todayNormalized);
+  tomorrowNormalized.setDate(todayNormalized.getDate() + 1);
+
+  const holidayStartDateNormalized = new Date(startDateObj);
+  holidayStartDateNormalized.setHours(0, 0, 0, 0);
+
+  const startsTomorrow =
+    holidayStartDateNormalized.getTime() === tomorrowNormalized.getTime();
+
+  // Check if the effective closure period is a single calendar day
+  const isEffectivelySingleDayClosure =
+    startDateObj.toDateString() === endDateObj.toDateString();
+
+  const startDayOfWeek = startDateObj.getDay(); // 0 for Sunday, 4 for Thursday
+  const numHolidaysInChain = nextHoliday.holidays.length;
+
+  let useFromLogic: boolean;
+
+  // Determine if "from" logic (e.g., "from Date1 to Date2") should be used
+  if (startDayOfWeek === 0 || startDayOfWeek === 4) {
+    // Holiday starts on a Sunday or Thursday
+    // Use "from" if there are multiple holidays in the chain, otherwise use "on"
+    useFromLogic = numHolidaysInChain > 1;
   } else {
-    if (singleHoliday) {
-      message += ` on`;
-    } else {
-      message += ` from`;
-    }
+    // Holiday starts on any other day
+    // Use "from" if the closure period spans multiple days, otherwise use "on"
+    useFromLogic = !isEffectivelySingleDayClosure;
   }
 
-  message += ` ${dayName(startDate)} (${monthName(
-    startDate
-  )} ${startDate.getDate()})`;
-  if (!singleHoliday) {
+  let prefix = "";
+  if (startsTomorrow) {
+    if (useFromLogic) {
+      prefix = " from tomorrow";
+    } else {
+      prefix = " tomorrow"; // Implies "on tomorrow"
+    }
+  } else {
+    if (useFromLogic) {
+      prefix = " from";
+    } else {
+      prefix = " on";
+    }
+  }
+  message += prefix;
+
+  message += ` ${dayName(startDateObj)} (${monthName(
+    startDateObj
+  )} ${startDateObj.getDate()})`;
+
+  // Add "to endDate" only if the closure period is not a single day
+  // This is implicitly handled if useFromLogic was true,
+  // but explicitly checking isEffectivelySingleDayClosure is clearer for this part.
+  if (!isEffectivelySingleDayClosure) {
     message += ` to`;
-    message += ` ${dayName(endDate)} (${monthName(
-      endDate
-    )} ${endDate.getDate()})`;
+    message += ` ${dayName(endDateObj)} (${monthName(
+      endDateObj
+    )} ${endDateObj.getDate()})`;
   }
 
   message += ` for`;
@@ -184,7 +218,7 @@ export const getNextHolidayAnnouncementMsg = (
     }
   }
 
-  const officeReopenDate = new Date(endDate);
+  const officeReopenDate = new Date(endDateObj);
   officeReopenDate.setDate(officeReopenDate.getDate() + 1);
   message += `.\n\nThe office will reopen on ${dayName(
     officeReopenDate
@@ -288,13 +322,13 @@ export const autoLogoutUsersWhoAreStillLoggedIn = async (
     return;
   }
 
-  await attendanceChannel.send(`Auto-logout Initiated...`);
   // Get the list of users (by mongo ID) who are currently logged in
   const userIds = await getLoggedInUsers();
   const discordIds = await getDiscordIdsFromUserIds(userIds);
   if (!userIds.length) {
     return;
   }
+  await attendanceChannel.send(`Auto-logout Initiated...`);
   const today = new Date(); // Capture current date
   const logoutPromises = userIds.map(async (userId) => {
     try {
