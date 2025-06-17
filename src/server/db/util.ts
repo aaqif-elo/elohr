@@ -19,6 +19,11 @@ export function normalizeDate(date: Date): Date {
   );
 }
 
+/**
+ * Calculates the start of the day in the local timezone.
+ * Note: This function intentionally uses local timezone values (date.getFullYear(), etc.)
+ * to preserve the local date context. It does not normalize to UTC.
+ */
 export function getStartOfDay(date: Date): Date {
   return new Date(
     date.getFullYear(),
