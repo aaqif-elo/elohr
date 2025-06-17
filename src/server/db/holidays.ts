@@ -310,7 +310,7 @@ export async function getHolidays(
 export async function convertToHoliday(
   date: Date,
   name: string,
-  type: HolidayType = HolidayType.ELO,
+  type: HolidayType = HolidayType.INTERNAL,
   description?: string
 ) {
   const normalizedDate = normalizeDate(date);

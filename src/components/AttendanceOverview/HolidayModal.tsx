@@ -1,3 +1,4 @@
+import { HolidayType } from '@prisma/client';
 import {createSignal, Show} from 'solid-js';
 
 type HolidayModalProps = {
@@ -8,13 +9,13 @@ type HolidayModalProps = {
 };
 
 export function HolidayModal(props: HolidayModalProps) {
-  const [name, setName] = createSignal('Elo Holiday');
+  const [name, setName] = createSignal<string>(HolidayType.INTERNAL);
   const [description, setDescription] = createSignal('');
 
   const handleConfirm = () => {
     props.onConfirm(name(), description());
     // Reset form values
-    setName('Elo Holiday');
+    setName(HolidayType.INTERNAL);
     setDescription('');
   };
 

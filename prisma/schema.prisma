@@ -32,8 +32,8 @@ enum ContractType {
 }
 
 enum HolidayType {
-  NATIONAL @map("National Holiday")
-  ELO      @map("Elo Holiday")
+  NATIONAL      @map("National Holiday")
+  INTERNAL      @map("Internal Holiday")
 }
 
 enum AssociatedObjectType {

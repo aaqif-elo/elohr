@@ -43,7 +43,7 @@ export const holidaysRouter = createTRPCRouter({
       const description = opts.input.description;
 
       // Parse holiday type or use CUSTOM as default
-      let type: HolidayType = HolidayType.ELO;
+      let type: HolidayType = HolidayType.INTERNAL;
       if (
         opts.input.type &&
         Object.values(HolidayType).includes(opts.input.type as HolidayType)
