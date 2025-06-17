@@ -41,17 +41,19 @@ Elohr is a comprehensive SolidStart application for managing employee leave requ
 
 ## Prerequisites
 
-Before running this project, make sure you have:
+### Development Environment (Windows)
 
-- **Node.js v22** (LTS) - The deployment script specifically installs and uses Node.js 22
+- **Node.js v22** (LTS)
 - **pnpm v10.10** - Specific version required for package management
-- **MongoDB** - Database (based on the MongoDB dependency in package.json)
+- **MongoDB** - Database connection
 - **Discord Bot Token** - For Discord integration
-- **Chrome/Chromium browser** - Required for Puppeteer (image generation)
-- **PM2** - For process management in production
-- **Required environment variables** (see `.env` example)
+- **Required environment variables** (see `.env.example`)
 
-### Additional System Dependencies (Linux/Production)
+### Production Environment (Ubuntu/Linux)
+
+- **Ubuntu/Linux server** - The deployment script is designed for Ubuntu
+- **PM2** - For process management in production
+- **Chrome/Chromium browser** - Required for Puppeteer (image generation)
 
 The following system packages are automatically installed by the deployment script:
 
@@ -59,39 +61,9 @@ The following system packages are automatically installed by the deployment scri
 - `chromium-browser` - Browser engine for report generation
 - Various graphics and system libraries for headless browser operation
 
-## Setup
-
-1. **Clone the repository**
-
-   ```bash
-   git clone <repository-url>
-   cd elohr
-   ```
-
-2. **Install dependencies**
-
-   ```bash
-   pnpm install
-   ```
-
-3. **Environment Configuration**
-   - Copy `.env.example` to `.env`
-   - Configure your database connection
-   - Add Discord bot token and other required variables
-
-4. **Database Setup**
-
-   ```bash
-   pnpm prisma generate
-   pnpm prisma db push
-   ```
-
-5. **Discord Bot Setup**
-   - Create a Discord application and bot
-   - Add the bot to your server with required permissions
-   - Configure voice channel and role settings
-
 ## Development
+
+> **Note**: The development environment is currently set up for Windows.
 
 Start the development server:
 
@@ -99,63 +71,70 @@ Start the development server:
 pnpm run dev
 ```
 
-The application will be available at `http://localhost:3000`
+The application will be available at `http://localhost:2500`
 
 ### Additional Development Commands
 
 ```bash
-# Run database migrations
-pnpm prisma migrate dev
+# Generate Prisma client
+pnpm run generate
 
-# View database in Prisma Studio
-pnpm prisma studio
-
-# Run type checking
-pnpm run typecheck
-
-# Run linting
-pnpm run lint
+# Build for production (Windows)
+pnpm run build
 ```
 
 ## Building & Deployment
 
-Build the production version:
+### Building (Windows)
+
+Build the production version on your Windows development machine:
 
 ```bash
 pnpm run build
 ```
 
-Preview the production build locally:
+This creates a `elohr.zip` file containing the built application.
 
-```bash
-pnpm run preview
-```
+### Production Deployment (Ubuntu)
 
-### Production Deployment
+> **Note**: Deployment is designed for Ubuntu/Linux servers.
 
-The project includes deployment scripts for production environments:
+The deployment process involves:
 
-```bash
-# Deploy using the included script
-./deploy.sh
-```
+1. **Build on Windows**: Run `pnpm run build` to generate `elohr.zip`
+2. **Transfer files**: Copy the following files to your Ubuntu server:
+   - `elohr.zip` (generated build)
+   - `deploy.sh` (deployment script)
+   - `.env` (production environment variables)
+3. **Deploy**: Run the deployment script on the server:
+   ```bash
+   chmod +x deploy.sh
+   ./deploy.sh
+   ```
 
-The deployment script handles:
+The deployment script automatically handles:
+- Stopping the previous PM2 process
+- Removing old files
+- Extracting the new build
+- Installing Node.js v22 and pnpm v10.10 if needed
+- Installing system dependencies for Puppeteer
+- Installing Chrome/Chromium browser
+- Installing npm dependencies
+- Starting the application with PM2
 
-- Node.js and pnpm setup
-- Dependency installation
-- Database migrations
-- PM2 process management
-- Environment configuration
+### Environment Setup
 
-### Platform Deployment
+1. **Development (.env for Windows)**
+   ```bash
+   cp .env.example .env
+   # Configure for development environment
+   ```
 
-Deploy your build according to your platform:
-
-- **Node.js**: Use PM2 or similar process manager
-- **Vercel**: Connect your repository for automatic deployments
-- **Netlify**: Configure build settings for SolidStart
-- **VPS/Server**: Use the included deployment script
+2. **Production (.env for Ubuntu)**
+   - Configure production values
+   - Ensure `NODE_ENV='production'`
+   - Set correct `FRONTEND_URL`
+   - Configure production database connection
 
 ## Key Components
 
@@ -189,9 +168,8 @@ Key environment variables include:
 Feel free to open issues and submit pull requests. Please:
 
 1. Follow the existing code style and formatting
-2. Add tests for new features
-3. Update documentation for significant changes
-4. Follow the changelog format for tracking changes
+2. Update documentation for significant changes
+3. Follow the changelog format for tracking changes
 
 ## Changelog
 
