@@ -264,7 +264,7 @@ export const announceHoliday = async (
     // Send the announcement
     const generalChannelID =
       process.env.NODE_ENV === "production"
-        ? process.env.GENERAL_CHANNEL_ID
+        ? process.env.ANNOUNCEMENTS_CHANNEL_ID
         : process.env.TEST_CHANNEL_ID;
 
     if (!generalChannelID) {

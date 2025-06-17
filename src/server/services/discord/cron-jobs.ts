@@ -33,10 +33,10 @@ const weeklyFormSubmissionReminderJob = (callback: () => void) =>
 
 const production = process.env.NODE_ENV === "production";
 const generalChannelID = production
-  ? process.env.GENERAL_CHANNEL_ID
+  ? process.env.ANNOUNCEMENTS_CHANNEL_ID
   : process.env.TEST_CHANNEL_ID;
 
-if (!generalChannelID) throw new Error("GENERAL_CHANNEL_ID is not defined");
+if (!generalChannelID) throw new Error("ANNOUNCEMENTS_CHANNEL_ID is not defined");
 
 // Helper function to check if two dates are the same day
 function isSameDay(date1: Date | string, date2: Date | string): boolean {
