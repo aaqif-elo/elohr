@@ -106,6 +106,9 @@ async function getAttendanceStatsImageInternal(token: string, isAdmin = false, d
       },
       { timeout: 10000 }
     );
+
+    // Wait for an additional 5 seconds to ensure all data is loaded
+    await new Promise((resolve) => setTimeout(resolve, 5000));
   } catch (error) {
     console.error("Timeout waiting for attendance data:", error);
     // Continue anyway and take whatever is on screen
