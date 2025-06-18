@@ -172,7 +172,7 @@ export const setAdmin = (allUsers: TrpcUserWithAttendance[]) => {
 export const getAdmin = () => state.admin;
 export const getUser = () => state.user;
 export const getAvatarUrl = (discordID: string, discordAvatarId: string) =>
-  `https://cdn.discordapp.com/avatars/${discordID}/${discordAvatarId}.png`;
+  `https://cdn.discordapp.com/avatars/${discordID}/${discordAvatarId}`;
 
 export const setAttendanceSummary = (summary: TrpcAttendanceSummary) => {
   if (!state.user) return;
