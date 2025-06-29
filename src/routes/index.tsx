@@ -11,6 +11,12 @@ export default function Home() {
   const [loggingIn, setLoggingIn] = createSignal(false);
   const navigate = useNavigate();
 
+  const handleFailedLogin = (message?: string) => {
+    toast.error(message || "Login failed: Invalid or expired token");
+    setLoggingIn(false);
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
+  };
+
   onMount(async () => {
     const token = searchParams.token;
 
@@ -18,8 +24,7 @@ export default function Home() {
       setLoggingIn(true);
       const isValid = await api.auth.validateJWT.query(token);
       if (!isValid) {
-        toast.error("Login failed: Invalid or expired token");
-        setLoggingIn(false);
+        handleFailedLogin();
         return;
       }
       // validate + fetch user
@@ -30,8 +35,7 @@ export default function Home() {
         toast.success("Successfully logged in!");
         navigate("/home");
       } else {
-        toast.error("Login failed: Invalid or expired token");
-        setLoggingIn(false);
+        handleFailedLogin();
       }
     } else {
       // your existing stored-JWT / actionToken / no-auth flow
@@ -43,8 +47,7 @@ export default function Home() {
           toast.success("Successfully logged in!");
           navigate("/home");
         } else {
-          toast.error("Login failed: Session expired or invalid");
-          setLoggingIn(false);
+          handleFailedLogin();
         }
       } else {
         setLoggingIn(false);
@@ -56,9 +59,7 @@ export default function Home() {
     <main class="flex h-3/4 flex-col items-center justify-center">
       <Show
         when={!loggingIn()}
-        fallback={
-          <FullScreenLoader loaderText={"Logging in..."} />
-        }
+        fallback={<FullScreenLoader loaderText={"Logging in..."} />}
       >
         <UnauthenticatedHome />
       </Show>

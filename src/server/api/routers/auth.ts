@@ -5,6 +5,7 @@ import { getUserByDiscordId, getUserById, ONE_MONTH_IN_MS } from "../../db";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import { UserRoleTypes } from "@prisma/client";
 
+const { JsonWebTokenError } = jwt;
 export interface customJwtPayload extends JwtPayload {
   discordId: string;
   dbId: string;
@@ -86,6 +87,11 @@ const getUserDiscordIdFromValidJWT = (jwt?: string | null) => {
 
     return userId;
   } catch (e) {
+    if (e instanceof JsonWebTokenError) {
+      if (e.name === "TokenExpiredError") {
+        return null; // Token has expired
+      }
+    }
     console.error("Error verifying JWT:", e);
     return null;
   }
