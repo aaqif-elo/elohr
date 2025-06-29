@@ -5,11 +5,20 @@ export default function Home() {
   const [searchParams] = useSearchParams();
   const dateParam = searchParams.date;
   let selectedDate = new Date();
-  console.log("Date param:", dateParam);
   if (typeof dateParam === "string") {
-    const date = new Date(dateParam);
-    if (!isNaN(date.getTime())) {
-      selectedDate = date;
+    // Expect the string in the format "YYYY-MM-DD"
+    const parts = dateParam.split("-");
+    if (parts.length === 3) {
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1; // Months are zero-indexed in JavaScript
+      const day = parseInt(parts[2], 10);
+      // Validate parsed parts before creating a date
+      if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+        // Using new Date(y, m, d) creates a date in the local timezone at midnight.
+        selectedDate.setFullYear(year, month, day);
+      } else {
+        console.error("Invalid date components in param:", dateParam);
+      }
     } else {
       console.error("Invalid date format:", dateParam);
     }

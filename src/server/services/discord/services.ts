@@ -435,23 +435,24 @@ export const getWeatherReport = async () => {
     return;
   }
 
-  const maxRetries = 3;
+  const maxRetries = 10;
   const timeoutMs = 10000; // 10 seconds
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`Attempting weather API call (${attempt}/${maxRetries})...`);
-      
+
       const weather = await axios.get(openMeteoApiUrl, {
         timeout: timeoutMs,
         headers: {
-          'User-Agent': 'YourApp/1.0'
-        }
+          "User-Agent": "EloHR/1.0",
+        },
+        family: 4, // Force IPv4 to avoid IPv6 issues
       });
 
       const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
       const stringifiedWeather = JSON.stringify(weather.data);
-      const prompt = `Can you generate a weather report from this? Include a fitting emoji and maybe a quirky quote for the day which relates to software/web development/agile/tech etc. Let's keep it short and succinct. 
+      const prompt = `Can you generate a weather report from this? Include a fitting emoji and a quirky quote (try to make the quote contextual to the weather if possible and be creative) for the day which relates to software/web development/agile/tech etc. Let's keep it short and succinct. 
       
       Follow this format:
 
@@ -469,20 +470,29 @@ export const getWeatherReport = async () => {
       const response = await ai.models.generateContent({
         model: "gemini-2.0-flash",
         contents: [`${stringifiedWeather} ${prompt}`],
+        config: {
+          temperature: 1.5,
+        },
       });
       return response.text;
     } catch (error) {
-      console.error(`Weather API attempt ${attempt} failed:`, error instanceof Error ? error.message : String(error));
-      
+      console.error(
+        `Weather API attempt ${attempt} failed:`,
+        error instanceof Error ? error.message : String(error)
+      );
+
       if (attempt === maxRetries) {
         console.error("All weather API attempts failed:", error);
-        return "⚠️ Weather service temporarily unavailable. Please try again later.";
+        return;
       }
-      
-      // Wait before retrying (exponential backoff)
-      const delay = Math.pow(2, attempt) * 1000;
-      console.log(`Retrying in ${delay}ms...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
+
+      // Add longer delays and jitter for better retry behavior
+      const baseDelay = Math.pow(2, attempt) * 1000;
+      const jitter = Math.random() * 1000;
+      const delay = baseDelay + jitter;
+
+      console.error(`Retrying in ${Math.round(delay)}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
 };
