@@ -38,7 +38,6 @@ enum HolidayType {
 
 enum AssociatedObjectType {
   LEAVE_REQUEST @map("LeaveRequest")
-  // Add other types as needed
 }
 
 type DiscordInfo {
