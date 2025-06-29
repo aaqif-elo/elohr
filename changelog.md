@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented below.
 
+## v1.2.0 [2025-06-29]
+
+### Added
+
+- Date validation in Home component with improved error handling for invalid date parameters.
+- INTERNAL holiday type to support company-specific holidays.
+- Enhanced weather report generation with creative AI prompts and contextual quotes.
+
+### Changed
+
+- Updated date parsing logic to explicitly handle "YYYY-MM-DD" format with better error logging.
+- Improved weather report retry logic with increased attempts (3 to 10) and IPv4 enforcement.
+- Enhanced attendance report processing with better data loading checks and increased timeout reliability.
+- Refactored login error handling with dedicated `handleFailedLogin` function for better code reuse.
+- Updated holiday announcements to use dedicated announcements channel instead of general channel.
+- HolidayModal now defaults to INTERNAL holiday type for better categorization.
+- Enhanced JWT validation with specific token expiration error handling.
+
+### Fixed
+
+- Avatar URL compatibility issues with Discord's avatar retrieval system.
+- Attendance image report generation now waits for data loading completion.
+
+---
+
 ## v1.1.0 [2025-06-16]
 
 ### Added
