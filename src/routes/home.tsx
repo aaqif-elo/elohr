@@ -12,7 +12,13 @@ export default function Home() {
       const year = parseInt(parts[0], 10);
       const month = parseInt(parts[1], 10) - 1; // Months are zero-indexed in JavaScript
       const day = parseInt(parts[2], 10);
-      selectedDate.setFullYear(year, month, day);
+      // Validate parsed parts before creating a date
+      if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+        // Using new Date(y, m, d) creates a date in the local timezone at midnight.
+        selectedDate.setFullYear(year, month, day);
+      } else {
+        console.error("Invalid date components in param:", dateParam);
+      }
     } else {
       console.error("Invalid date format:", dateParam);
     }
