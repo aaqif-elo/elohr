@@ -14,12 +14,14 @@ const imageReportQueue: Array<{
 // Generate a text attendance report from attendance data
 export function generateTextAttendanceReport(attendance: any): string {
   if (!attendance) return "No attendance data found";
-  
+
   const loginTime = new Date(attendance.login).toLocaleTimeString();
-  const logoutTime = attendance.logout ? new Date(attendance.logout).toLocaleTimeString() : "N/A";
+  const logoutTime = attendance.logout
+    ? new Date(attendance.logout).toLocaleTimeString()
+    : "N/A";
   const totalWorkHours = (attendance.totalWork || 0) / (1000 * 60 * 60);
   const totalBreakMinutes = (attendance.totalBreak || 0) / (1000 * 60);
-  
+
   return `**Attendance Summary**
 Login time: ${loginTime}
 Logout time: ${logoutTime}
@@ -30,10 +32,10 @@ Total breaks: ${totalBreakMinutes.toFixed(0)} minutes`;
 // Process one image report at a time from the queue
 async function processImageReportQueue() {
   if (isProcessingImageQueue || imageReportQueue.length === 0) return;
-  
+
   isProcessingImageQueue = true;
-  const {token, isAdmin, date, resolve} = imageReportQueue.shift()!;
-  
+  const { token, isAdmin, date, resolve } = imageReportQueue.shift()!;
+
   try {
     const buffer = await getAttendanceStatsImageInternal(token, isAdmin, date);
     resolve(buffer);
@@ -48,9 +50,13 @@ async function processImageReportQueue() {
 }
 
 // Queue an attendance image report generation and return a promise
-export function queueAttendanceStatsImage(token: string, isAdmin = false, date?: Date): Promise<Buffer | null> {
+export function queueAttendanceStatsImage(
+  token: string,
+  isAdmin = false,
+  date?: Date
+): Promise<Buffer | null> {
   return new Promise((resolve) => {
-    imageReportQueue.push({token, isAdmin, date, resolve});
+    imageReportQueue.push({ token, isAdmin, date, resolve });
     // Start processing if not already running
     if (!isProcessingImageQueue) {
       processImageReportQueue();
@@ -59,7 +65,11 @@ export function queueAttendanceStatsImage(token: string, isAdmin = false, date?:
 }
 
 // Internal function that actually generates the image
-async function getAttendanceStatsImageInternal(token: string, isAdmin = false, date?: Date) {
+async function getAttendanceStatsImageInternal(
+  token: string,
+  isAdmin = false,
+  date?: Date
+) {
   const browserConfig: LaunchOptions = {
     headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
@@ -87,10 +97,10 @@ async function getAttendanceStatsImageInternal(token: string, isAdmin = false, d
   // Add date parameter to URL if provided
   let url = "http://localhost:2500/home";
   if (date) {
-    const dateString = date.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+    const dateString = date.toISOString().split("T")[0]; // Format as YYYY-MM-DD
     url += `?date=${dateString}`;
   }
-  
+
   await page.goto(url, {
     waitUntil: ["domcontentloaded", "load"],
   });
@@ -99,16 +109,30 @@ async function getAttendanceStatsImageInternal(token: string, isAdmin = false, d
   try {
     await page.waitForFunction(
       () => {
-        // Check if we're past the login screen and showing actual attendance data
-        const attendanceElements = document.querySelectorAll("svg circle");
-        const timeDisplay = document.querySelector("svg text");
-        return attendanceElements.length > 0 && timeDisplay !== null;
+        // Check if we're past the loading screen and showing actual attendance data
+        // Look for the time display text that shows actual time (not "Loading...")
+        const timeDisplays = document.querySelectorAll("svg text");
+        const hasActualTimeData = Array.from(timeDisplays).some(text => {
+          const textContent = text.textContent || "";
+          // Check if the text contains time format (AM/PM) and is not "Loading..."
+          return textContent.includes("AM") || textContent.includes("PM") || 
+                 (textContent.match(/\d{1,2}:\d{2}/) && !textContent.includes("Loading"));
+        });
+        
+        // Also check that the circular clock elements are present
+        const clockElements = document.querySelectorAll("svg circle");
+        const hasClockElements = clockElements.length > 0;
+        
+        // Additional check: ensure no "Loading..." text is visible
+        const loadingElements = document.querySelectorAll("*");
+        const hasLoadingText = Array.from(loadingElements).some(el => 
+          (el.textContent || "").includes("Loading...")
+        );
+        
+        return hasActualTimeData && hasClockElements && !hasLoadingText;
       },
-      { timeout: 10000 }
+      { timeout: 15000 } // Increased timeout to 15 seconds
     );
-
-    // Wait for an additional 5 seconds to ensure all data is loaded
-    await new Promise((resolve) => setTimeout(resolve, 5000));
   } catch (error) {
     console.error("Timeout waiting for attendance data:", error);
     // Continue anyway and take whatever is on screen
