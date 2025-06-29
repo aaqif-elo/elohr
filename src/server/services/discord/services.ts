@@ -435,7 +435,7 @@ export const getWeatherReport = async () => {
     return;
   }
 
-  const maxRetries = 3;
+  const maxRetries = 10;
   const timeoutMs = 10000; // 10 seconds
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -447,6 +447,7 @@ export const getWeatherReport = async () => {
         headers: {
           "User-Agent": "EloHR/1.0",
         },
+        family: 4, // Force IPv4 to avoid IPv6 issues
       });
 
       const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
@@ -482,12 +483,15 @@ export const getWeatherReport = async () => {
 
       if (attempt === maxRetries) {
         console.error("All weather API attempts failed:", error);
-        return "⚠️ Weather service temporarily unavailable. Please try again later.";
+        return;
       }
 
-      // Wait before retrying (exponential backoff)
-      const delay = Math.pow(2, attempt) * 1000;
-      console.log(`Retrying in ${delay}ms...`);
+      // Add longer delays and jitter for better retry behavior
+      const baseDelay = Math.pow(2, attempt) * 1000;
+      const jitter = Math.random() * 1000;
+      const delay = baseDelay + jitter;
+
+      console.error(`Retrying in ${Math.round(delay)}ms...`);
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
