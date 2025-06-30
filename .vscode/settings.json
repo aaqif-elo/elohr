@@ -11,7 +11,8 @@
     "oftd",
     "setlocal",
     "solidjs",
-    "vinxi"
+    "vinxi",
+    "xcopy"
   ],
   "postman.settings.dotenv-detection-notification-visibility": false
 }

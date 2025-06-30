@@ -8,9 +8,13 @@ REM Method 1: Use the direct path since we know it
 if exist "node_modules\.pnpm\@prisma+client@6.7.0_prisma_eae679d1c26f2888f88f5407457fe5c5\node_modules\@prisma\client\default.js" (
     set "PRISMA_CLIENT_FILE=node_modules\.pnpm\@prisma+client@6.7.0_prisma_eae679d1c26f2888f88f5407457fe5c5\node_modules\@prisma\client\default.js"
 ) else (
-    REM Method 2: More precise for loop pattern
-    for /r "node_modules\.pnpm" %%f in (@prisma+client*\node_modules\@prisma\client\default.js) do (
-        set "PRISMA_CLIENT_FILE=%%f"
+    REM Method 2: More robust search
+    echo Searching for Prisma client file...
+    for /d %%d in ("node_modules\.pnpm\@prisma+client@*") do (
+        if exist "%%d\node_modules\@prisma\client\default.js" (
+            set "PRISMA_CLIENT_FILE=%%d\node_modules\@prisma\client\default.js"
+            echo Found candidate: %%d\node_modules\@prisma\client\default.js
+        )
     )
 )
 
@@ -38,7 +42,7 @@ del "!PRISMA_CLIENT_FILE!.bak"
 
 echo === Copying required files ===
 copy pnpm-workspace.yaml .output\server\pnpm-workspace.yaml
-xcopy /E /I node_modules\.prisma .output\server\node_modules\.prisma
+xcopy /E /I node_modules\.prisma .output\server\node_modules\prisma
 
 echo === Creating zip archive ===
 cd .output

@@ -13,6 +13,9 @@ import {
   ActionRowBuilder,
 } from "discord.js";
 
+import { config } from "dotenv";
+config();
+
 const attendanceChannelID =
   process.env.NODE_ENV === "production"
     ? process.env.ATTENDANCE_CHANNEL_ID
