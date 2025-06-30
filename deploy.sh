@@ -11,36 +11,36 @@ sudo rm -r nitro.json public/ server/
 echo "Unzipping elohr.zip..."
 unzip elohr.zip -d .
 
-echo "Ensuring Node.js LTS 22 is installed..."
-if ! command -v node &>/dev/null || [[ $(node -v) != *"v22"* ]]; then
-  echo "Installing Node.js LTS 22..."
-  # Use NVM if available, otherwise install directly
-  if command -v nvm &>/dev/null; then
-    nvm install 22 && nvm use 22
-  else
-    # Add NodeSource repository and install Node.js 22
-    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-    sudo apt-get install -y nodejs
-  fi
-fi
+# echo "Ensuring Node.js LTS 22 is installed..."
+# if ! command -v node &>/dev/null || [[ $(node -v) != *"v22"* ]]; then
+#   echo "Installing Node.js LTS 22..."
+#   # Use NVM if available, otherwise install directly
+#   if command -v nvm &>/dev/null; then
+#     nvm install 22 && nvm use 22
+#   else
+#     # Add NodeSource repository and install Node.js 22
+#     curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+#     sudo apt-get install -y nodejs
+#   fi
+# fi
 
-echo "Ensuring pnpm v10.10 is installed..."
-if ! command -v pnpm &>/dev/null || [[ $(pnpm --version) != "10.10."* ]]; then
-  echo "Installing pnpm v10.10..."
-  npm install -g pnpm@10.10
-fi
+# echo "Ensuring pnpm v10.10 is installed..."
+# if ! command -v pnpm &>/dev/null || [[ $(pnpm --version) != "10.10."* ]]; then
+#   echo "Installing pnpm v10.10..."
+#   npm install -g pnpm@10.10
+# fi
 
-echo "Installing dependencies..."
-cd ./server || exit
-# Use the correct version of Node and pnpm
-NODE_VERSION=$(node -v)
-PNPM_VERSION=$(pnpm --version)
-echo "Using Node.js $NODE_VERSION and pnpm $PNPM_VERSION"
-pnpm i || {
-  echo "pnpm install failed"
-  exit 1
-}
-cd ..
+# echo "Installing dependencies..."
+# cd ./server || exit
+# # Use the correct version of Node and pnpm
+# NODE_VERSION=$(node -v)
+# PNPM_VERSION=$(pnpm --version)
+# echo "Using Node.js $NODE_VERSION and pnpm $PNPM_VERSION"
+# pnpm i || {
+#   echo "pnpm install failed"
+#   exit 1
+# }
+# cd ..
 
 echo "Install libs for puppeteer..."
 # Install dependencies

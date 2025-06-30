@@ -19,9 +19,13 @@ All notable changes to this project are documented below.
 - Updated holiday announcements to use dedicated announcements channel instead of general channel.
 - HolidayModal now defaults to INTERNAL holiday type for better categorization.
 - Enhanced JWT validation with specific token expiration error handling.
+- Build script updated to use node_modules/prisma instead of node_modules/.prisma
+- Dotenv config added to admin.handler.ts
+- Deploy script to not install node packages
 
 ### Fixed
 
+- Build script prisma library search strategy
 - Avatar URL compatibility issues with Discord's avatar retrieval system.
 - Attendance image report generation now waits for data loading completion.
 
