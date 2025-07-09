@@ -112,23 +112,26 @@ async function getAttendanceStatsImageInternal(
         // Check if we're past the loading screen and showing actual attendance data
         // Look for the time display text that shows actual time (not "Loading...")
         const timeDisplays = document.querySelectorAll("svg text");
-        const hasActualTimeData = Array.from(timeDisplays).some(text => {
+        const hasActualTimeData = Array.from(timeDisplays).some((text) => {
           const textContent = text.textContent || "";
           // Check if the text contains time format (AM/PM) and is not "Loading..."
-          return textContent.includes("AM") || textContent.includes("PM") || 
-                 (textContent.match(/\d{1,2}:\d{2}/) && !textContent.includes("Loading"));
+          return (
+            textContent.includes("AM") ||
+            textContent.includes("PM") ||
+            (textContent.match(/\d{1,2}:\d{2}/) &&
+              !textContent.includes("Loading"))
+          );
         });
-        
+
         // Also check that the circular clock elements are present
         const clockElements = document.querySelectorAll("svg circle");
         const hasClockElements = clockElements.length > 0;
-        
+
         // Additional check: ensure no "Loading..." text is visible
-        const loadingElements = document.querySelectorAll("*");
-        const hasLoadingText = Array.from(loadingElements).some(el => 
-          (el.textContent || "").includes("Loading...")
-        );
-        
+
+        const hasLoadingText =
+          document.body.textContent?.includes("Loading...") || false;
+
         return hasActualTimeData && hasClockElements && !hasLoadingText;
       },
       { timeout: 15000 } // Increased timeout to 15 seconds
