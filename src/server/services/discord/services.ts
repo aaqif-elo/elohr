@@ -452,7 +452,7 @@ export const getWeatherReport = async () => {
 
       const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
       const stringifiedWeather = JSON.stringify(weather.data);
-      const prompt = `Can you generate a weather report from this? Include a fitting emoji and a quirky quote (try to make the quote contextual to the weather if possible and be creative) for the day which relates to software/web development/agile/tech etc. Let's keep it short and succinct. 
+      const prompt = `Can you generate a weather report from this? Let's keep it short and succinct. 
       
       Follow this format:
 
@@ -462,8 +462,6 @@ export const getWeatherReport = async () => {
 
       Sunrise: {Time}
       Sunset: {Time}
-
-      Quote (Italized) 🤖
 
       Ensure that it is formatted in markdown to be displayed in Discord via discord.js. Don't include anything else except what's in the format.`;
 

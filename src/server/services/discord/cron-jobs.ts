@@ -15,7 +15,6 @@ import {
 enum CRON_TIMES {
   WEEKDAYS_AT_10_40_AM = "0 40 10 * * 0-4",
   EVERYDAY_AT_11_59_PM = "0 59 23 * * *",
-  WEDNESDAYS_AT_5_30_PM = "0 30 17 * * 3",
   WEEKDAYS_AT_6_00_PM = "0 0 18 * * 0-4",
 }
 
@@ -28,15 +27,13 @@ const scrumReminderJob = (callback: () => void) =>
 const autoLogoutPeopleOnABreakJob = (callback: () => void) =>
   new CronJob(CRON_TIMES.EVERYDAY_AT_11_59_PM, callback);
 
-const weeklyFormSubmissionReminderJob = (callback: () => void) =>
-  new CronJob(CRON_TIMES.WEDNESDAYS_AT_5_30_PM, callback);
-
 const production = process.env.NODE_ENV === "production";
 const generalChannelID = production
   ? process.env.ANNOUNCEMENTS_CHANNEL_ID
   : process.env.TEST_CHANNEL_ID;
 
-if (!generalChannelID) throw new Error("ANNOUNCEMENTS_CHANNEL_ID is not defined");
+if (!generalChannelID)
+  throw new Error("ANNOUNCEMENTS_CHANNEL_ID is not defined");
 
 // Helper function to check if two dates are the same day
 function isSameDay(date1: Date | string, date2: Date | string): boolean {
@@ -116,21 +113,6 @@ export const startCronJobs = async (discordClient: Client<boolean>) => {
       content: `@everyone\n${weatherReport}${
         usersOnLeave.length > 0 ? `\n\n${usersOnLeaveAnnouncement}` : ``
       }`,
-    });
-  }).start();
-
-  // Weekly form update reminder WEDNESDAYS_AT_5_30_PM
-  weeklyFormSubmissionReminderJob(async () => {
-    const isHolidayResponse = await isHoliday();
-
-    if (isHolidayResponse) {
-      return;
-    }
-    const generalChannel = (await discordClient.channels.fetch(
-      generalChannelID
-    )) as TextChannel;
-    generalChannel.send({
-      content: `**Final Reminder**\n\nThis is not about reporting what you've worked on, we have scrum meetings for that\n\n@everyone Please fill up the **\`weekly\`** form:\n\nhttps://docs.google.com/forms/d/e/1FAIpQLSfn4ToykETXdHrBIspAaAWhKRGiF48ZDSUm0Mf0xK9Stm0ohw/viewform\n\n#HappyWeekend\n\n\`Please do this with your heart\`\n\`STOP MISSING\``,
     });
   }).start();
 };
