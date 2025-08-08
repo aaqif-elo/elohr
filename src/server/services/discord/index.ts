@@ -162,7 +162,7 @@ function setupEventHandlers() {
       return;
     }
 
-    interactionHandler(interaction, discordClient);
+    interactionHandler(interaction);
   });
 }
 
