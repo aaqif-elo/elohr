@@ -262,8 +262,21 @@ export const handleVoiceStateChange = async (
   } else if (postTransitionState.channel?.name) {
     // This condition implies switching between non-AFK channels,
     // as it's not goingOffline and not comingOnline, but is in a new channel.
-    attendanceCommand = EAttendanceCommands.SWITCH;
-    voiceChannelName = postTransitionState.channel?.name;
+    // Ignore switching if either the source or destination channel is HR or Admin.
+    const HR_CHANNEL_ID = process.env.HR_CHANNEL_ID;
+    const ADMIN_CHANNEL_ID = process.env.ADMIN_CHANNEL_ID;
+    const fromChannelId = preTransitionState.channelId;
+    const toChannelId = postTransitionState.channelId;
+    const isIgnoredSwitch =
+      fromChannelId === HR_CHANNEL_ID ||
+      fromChannelId === ADMIN_CHANNEL_ID ||
+      toChannelId === HR_CHANNEL_ID ||
+      toChannelId === ADMIN_CHANNEL_ID;
+
+    if (!isIgnoredSwitch) {
+      attendanceCommand = EAttendanceCommands.SWITCH;
+      voiceChannelName = postTransitionState.channel?.name;
+    }
   }
 
   if (attendanceCommand) {
