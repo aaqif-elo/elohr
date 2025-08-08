@@ -1,5 +1,14 @@
 import { Holiday, HolidayType, Prisma } from "@prisma/client";
-import { db, normalizeDate } from ".";
+import { db, getEndOfDay as normalizeDate } from ".";
+/**
+ * Sync considerations:
+ *  - We treat OfficeHolidays as source of truth for NATIONAL holidays only.
+ *  - INTERNAL holidays are never touched here.
+ *  - If a holiday (by name) exists and the fetched date changed, we update originalDate,
+ *    clear any override and reset meta fields (dayOfWeek, isWeekend, announcementSent).
+ *  - If a fetched holiday name does not exist, we create it.
+ *  - If a holiday exists in DB for the year but its name is no longer present in source, we soft-deactivate it.
+ */
 
 // Add a new holiday
 async function addHoliday(
@@ -66,9 +75,8 @@ async function ensureYearPopulated(year: string): Promise<void> {
       });
 
       if (existingHolidays === 0) {
-        // Fetch and import holidays for this year
-        const holidays = await getHolidayInfoFromOfficeHolidaysDotCom(year);
-        await importHolidays(holidays);
+        // Fetch and sync holidays for this year
+        await syncHolidays(parseInt(year));
       }
 
       // Mark year as checked regardless of outcome
@@ -155,41 +163,7 @@ interface IHolidayObj {
   description?: string;
 }
 
-// Import holidays from external source (helper function)
-async function importHolidays(holidays: IHolidayObj[]): Promise<Holiday[]> {
-  const results: Holiday[] = [];
-
-  for (const holiday of holidays) {
-    // Normalize the date
-    const normalizedDate = normalizeDate(holiday.date);
-
-    // Check if holiday already exists
-    const startOfDay = new Date(normalizedDate);
-    startOfDay.setHours(0, 0, 0, 0);
-
-    const existingHoliday = await db.holiday.findFirst({
-      where: {
-        name: holiday.name,
-        originalDate: {
-          gte: startOfDay,
-          lte: normalizedDate,
-        },
-      },
-    });
-
-    if (!existingHoliday) {
-      const newHoliday = await addHoliday(
-        holiday.name,
-        normalizedDate,
-        holiday.type,
-        holiday.description
-      );
-      results.push(newHoliday);
-    }
-  }
-
-  return results;
-}
+// importHolidays removed; superseded by syncHolidays
 
 import { load } from "cheerio";
 import axios from "axios";
@@ -246,6 +220,171 @@ async function getHolidayInfoFromOfficeHolidaysDotCom(
       });
   });
   return holidayList;
+}
+
+// Helper: effective date (overridden if present else original)
+function getEffectiveHolidayDate(h: Holiday): Date {
+  return h.overridenDate || h.originalDate;
+}
+
+// Generic helper: group items by name, optionally map each item first, then sort each group by provided date accessor
+function groupItemsByName<T>(
+  items: T[],
+  options: {
+    getName: (item: T) => string;
+    getSortDate: (item: T) => Date;
+    mapItem?: (item: T) => T; // e.g. to normalize dates
+  }
+): Map<string, T[]> {
+  const { getName, getSortDate, mapItem } = options;
+  const grouped = new Map<string, T[]>();
+  for (const item of items) {
+    const processed = mapItem ? mapItem(item) : item;
+    const name = getName(processed);
+    const bucket = grouped.get(name) || [];
+    bucket.push(processed);
+    grouped.set(name, bucket);
+  }
+  for (const bucket of grouped.values()) {
+    bucket.sort((a, b) => getSortDate(a).getTime() - getSortDate(b).getTime());
+  }
+  return grouped;
+}
+
+/**
+ * Sync national holidays in DB with officeholidays.com for a given year.
+ * Simplified strategy (name treated as unique logical key possibly spanning multiple dates):
+ *  - For each holiday name, compare the exact ordered set of dates (multi-day = multiple rows).
+ *  - If ANY difference (count or any date mismatch), delete all existing rows for that name and recreate from fetched list.
+ *  - If a name exists only in fetched -> create rows.
+ *  - If a name exists only in DB -> delete rows (hard delete, no soft deactivation).
+ *  - No in-place updates, no soft deactivation; this reduces complexity and potential edge-case errors.
+ * Returns counts where:
+ *  - added: total new rows inserted for names that were entirely new.
+ *  - updated: total rows inserted as part of replacements (names that existed but whose date sets changed) – we count the new rows.
+ *  - deactivated: total rows deleted for names that disappeared OR were replaced (legacy field kept for compatibility; represents deletions now).
+ */
+export async function syncHolidays(
+  yearNumber: number = new Date().getFullYear()
+): Promise<{
+  year: number;
+  added: number;
+  updated: number;
+  deactivated: number;
+}> {
+  const year = yearNumber;
+  const startOfYear = normalizeDate(new Date(year, 0, 1));
+  const endOfYear = normalizeDate(new Date(year, 11, 31));
+
+  // Fetch authoritative list
+  let fetched: IHolidayObj[] = [];
+  try {
+    fetched = await getHolidayInfoFromOfficeHolidaysDotCom(year.toString());
+  } catch (err) {
+    console.error(`[Holiday Sync] Failed to fetch holidays for ${year}:`, err);
+    throw err;
+  }
+
+  // Group fetched holidays by name (normalized & sorted)
+  const fetchedHolidaysByName = groupItemsByName<IHolidayObj>(fetched, {
+    getName: (h) => h.name,
+    getSortDate: (h) => h.date,
+    mapItem: (h) => ({ ...h, date: normalizeDate(h.date) }),
+  });
+
+  // Load existing national holidays for the year (include inactive to allow hard cleanup)
+  const existing = await db.holiday.findMany({
+    where: {
+      type: HolidayType.NATIONAL,
+      originalDate: {
+        gte: startOfYear,
+        lte: endOfYear,
+      },
+    },
+  });
+
+  // Group existing holidays by name (sorted by effective date)
+  const existingHolidaysByName = groupItemsByName<Holiday>(existing, {
+    getName: (h) => h.name,
+    getSortDate: (h) => getEffectiveHolidayDate(h),
+  });
+
+  let added = 0; // rows for brand-new names
+  let updated = 0; // rows for replaced names (new rows inserted after delete)
+  let deactivated = 0; // rows deleted (either removed names or replaced names)
+
+  // Names present in either fetched or existing
+  const allNames = new Set<string>([
+    ...Array.from(fetchedHolidaysByName.keys()),
+    ...Array.from(existingHolidaysByName.keys()),
+  ]);
+
+  for (const name of allNames) {
+    const fetchedList = fetchedHolidaysByName.get(name) || [];
+    const existingList = existingHolidaysByName.get(name) || [];
+
+    const hasFetched = fetchedList.length > 0;
+    const hasExisting = existingList.length > 0;
+
+    // Case: only fetched -> create all
+    if (hasFetched && !hasExisting) {
+      for (const f of fetchedList) {
+        await addHoliday(name, f.date, HolidayType.NATIONAL, f.description);
+        added++;
+      }
+      continue;
+    }
+
+    // Case: only existing -> delete all
+    if (!hasFetched && hasExisting) {
+      const ids = existingList.map((e) => e.id);
+      if (ids.length) {
+        await db.holiday.deleteMany({ where: { id: { in: ids } } });
+        deactivated += ids.length; // track deletions
+      }
+      continue;
+    }
+
+    // Both present: compare ordered sets of dates
+    const existingDates = existingList
+      .map(getEffectiveHolidayDate)
+      .sort((a, b) => a.getTime() - b.getTime());
+    const fetchedDates = fetchedList
+      .map((f) => f.date)
+      .sort((a, b) => a.getTime() - b.getTime());
+
+    const setsMatch =
+      existingDates.length === fetchedDates.length &&
+      existingDates.every((d, i) => d.getTime() === fetchedDates[i].getTime());
+
+    if (setsMatch) {
+      // No action required
+      continue;
+    }
+
+    console.log(existingDates, fetchedDates);
+
+    // Replace: delete existing rows then recreate fetched rows
+    const ids = existingList.map((e) => e.id);
+    if (ids.length) {
+      await db.holiday.deleteMany({ where: { id: { in: ids } } });
+      deactivated += ids.length; // count deletions in legacy field
+    }
+    for (const f of fetchedList) {
+      await addHoliday(name, f.date, HolidayType.NATIONAL, f.description);
+      updated++; // count newly inserted replacement rows under 'updated'
+    }
+  }
+
+  // Invalidate year cache so subsequent queries can repopulate if needed
+  if (checkedYears[year.toString()]) {
+    delete checkedYears[year.toString()];
+  }
+
+  console.log(
+    `[Holiday Sync] Year ${year}: added(new names)=${added}, updated(replaced rows)=${updated}, deleted=${deactivated}`
+  );
+  return { year, added, updated, deactivated };
 }
 
 // Define the range type

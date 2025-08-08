@@ -5,6 +5,7 @@ import {
   getNextHoliday,
   getUsersOnLeave,
   isHoliday,
+  syncHolidays,
 } from "../../db";
 import {
   announceHoliday,
@@ -16,6 +17,7 @@ enum CRON_TIMES {
   WEEKDAYS_AT_10_40_AM = "0 40 10 * * 0-4",
   EVERYDAY_AT_11_59_PM = "0 59 23 * * *",
   WEEKDAYS_AT_6_00_PM = "0 0 18 * * 0-4",
+  DAILY_AT_2_00_AM = "0 0 2 * * *", // holiday sync
 }
 
 const holidayAnnouncementJob = (callback: () => void) =>
@@ -26,6 +28,9 @@ const scrumReminderJob = (callback: () => void) =>
 
 const autoLogoutPeopleOnABreakJob = (callback: () => void) =>
   new CronJob(CRON_TIMES.EVERYDAY_AT_11_59_PM, callback);
+
+const holidaySyncJob = (callback: () => void) =>
+  new CronJob(CRON_TIMES.DAILY_AT_2_00_AM, callback);
 
 const production = process.env.NODE_ENV === "production";
 const generalChannelID = production
@@ -83,6 +88,21 @@ export const startCronJobs = async (discordClient: Client<boolean>) => {
   // Holiday announcement job
   holidayAnnouncementJob(async () => {
     await holidayAnnouncementHandler(discordClient);
+  }).start();
+
+  // Daily holiday sync at 2:00 AM server time
+  holidaySyncJob(async () => {
+    try {
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      // Sync current year and next year (if near year end or start) to pre-populate changes
+      await syncHolidays(currentYear);
+      if (now.getMonth() === 11 || now.getMonth() === 0) {
+        await syncHolidays(currentYear + (now.getMonth() === 11 ? 1 : -1));
+      }
+    } catch (err) {
+      console.error("Error in holiday sync job:", err);
+    }
   }).start();
 
   // Scrum reminder every weekday at 10:40 AM
