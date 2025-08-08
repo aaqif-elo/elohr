@@ -165,9 +165,6 @@ async function getAttendanceStatsImageInternal(
   return Buffer.from(buffer);
 }
 
-// Public function that now just queues the generation task
-export const getAttendanceStatsImage = queueAttendanceStatsImage;
-
 // Checks if the nickname contains any of the status tags
 function hasStatus(nickname: string | null): boolean {
   if (!nickname) {
@@ -194,7 +191,7 @@ function isValidTag(statusTag: string): boolean {
 
 // Given a Discord GuildMember
 // Return if the GuildMember is an Admin of elo Team
-export function isAdmin(member: GuildMember): boolean {
+function isAdmin(member: GuildMember): boolean {
   return member.roles.highest.id === process.env.ADMIN_ROLE_ID;
 }
 

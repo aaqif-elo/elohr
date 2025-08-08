@@ -1,11 +1,6 @@
 import { CacheType, ChatInputCommandInteraction, Client } from "discord.js";
-import { handleAttendanceCommand } from "./attendance.handler";
 import { handleAdminCommand } from "./admin.handler";
-import {
-  EAttendanceCommands,
-  EAuthCommands,
-  ELeaveCommands,
-} from "../discord.enums";
+import { EAuthCommands, ELeaveCommands } from "../discord.enums";
 import { handleLeaveCommand } from "./leave.handler";
 import { handleAuthCommand } from "./auth.handler";
 
@@ -30,22 +25,11 @@ const sendErrorInteractionResponse = async (
 };
 
 export const interactionHandler = async (
-  interaction: ChatInputCommandInteraction<CacheType>,
-  discordClient: Client<boolean>
+  interaction: ChatInputCommandInteraction<CacheType>
 ) => {
   try {
     if (interaction.channelId === attendanceChannelID) {
-      if (
-        Object.values(EAttendanceCommands).includes(
-          interaction.commandName as EAttendanceCommands
-        )
-      ) {
-        handleAttendanceCommand(
-          interaction,
-          discordClient,
-          sendErrorInteractionResponse
-        );
-      } else if (ELeaveCommands.REQUEST_LEAVE === interaction.commandName) {
+      if (ELeaveCommands.REQUEST_LEAVE === interaction.commandName) {
         handleLeaveCommand(interaction);
       } else if (EAuthCommands.HR === interaction.commandName) {
         handleAuthCommand(interaction);

@@ -1,6 +1,6 @@
 import {Component, JSX, mergeProps} from 'solid-js';
 
-export enum SpinnerType {
+enum SpinnerType {
   audio = 'audio',
   ballTriangle = 'ballTriangle',
   circles = 'circles',
