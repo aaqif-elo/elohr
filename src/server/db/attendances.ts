@@ -676,7 +676,10 @@ export const getLoggedInUsers = async () => {
  * @param date Optional Date for which to generate the report.
  * @returns A promise for the image generation
  */
-export const generateAttendanceImageReport = async (userId: string, date?: Date) => {
+export const generateAttendanceImageReport = async (
+  userId: string,
+  date?: Date
+) => {
   const jwtWithUser = await generateJWTFromUserId(userId);
   if (!jwtWithUser?.jwt) {
     return null;
@@ -689,3 +692,415 @@ export const generateAttendanceImageReport = async (userId: string, date?: Date)
     date
   );
 };
+
+// ---- Weekday Availability (Smart defaults, minimal params) ----
+
+interface WeekdayHeatmapSlot {
+  slotIndex: number; // 0..slotsPerDay-1
+  startMinutes: number; // minutes since 00:00
+  endMinutes: number; // minutes since 00:00
+  presentWeight: number; // weighted presence sum
+  sampleWeight: number; // weighted sample sum
+  confidence: number; // presentWeight / sampleWeight (0..1)
+}
+
+interface WeekdayAvailabilityWindow {
+  startMinutes: number;
+  endMinutes: number;
+  avgConfidence: number; // average confidence across window slots
+}
+
+interface WeekdayAvailabilitySummary {
+  heatmap: WeekdayHeatmapSlot[];
+  windows: WeekdayAvailabilityWindow[];
+  meta: {
+    daysRequested: number;
+    daysIncluded: number;
+    slotMinutes: number;
+    recencyHalfLifeDays: number;
+  };
+}
+
+/**
+ * Build a weekday-only heatmap aggregated across Mon–Fri.
+ * - Excludes weekends
+ * - Excludes active holidays (original or overridden date)
+ * - Uses exponential recency weighting (half-life)
+ * - Default slot = 30 minutes
+ */
+export async function getWeekdayAvailabilityHeatmap(
+  userId: string,
+  days = 30,
+  opts?: { slotMinutes?: number; recencyHalfLifeDays?: number }
+): Promise<{
+  heatmap: WeekdayHeatmapSlot[];
+  meta: {
+    daysRequested: number;
+    daysIncluded: number;
+    slotMinutes: number;
+    recencyHalfLifeDays: number;
+  };
+}> {
+  const slotMinutes = opts?.slotMinutes ?? 30;
+  const recencyHalfLifeDays = opts?.recencyHalfLifeDays ?? 30;
+
+  if (days <= 0) {
+    return {
+      heatmap: [],
+      meta: {
+        daysRequested: days,
+        daysIncluded: 0,
+        slotMinutes,
+        recencyHalfLifeDays,
+      },
+    };
+  }
+
+  const endOfToday = getEndOfDay(new Date());
+  const startDate = new Date(endOfToday);
+  startDate.setDate(startDate.getDate() - (days - 1));
+  const startOfStart = getStartOfDay(startDate);
+
+  // Pull holidays in range
+  const holidays = await db.holiday.findMany({
+    where: {
+      isActive: true,
+      OR: [
+        { originalDate: { gte: startOfStart, lte: endOfToday } },
+        { overridenDate: { gte: startOfStart, lte: endOfToday } },
+      ],
+    },
+    select: { originalDate: true, overridenDate: true },
+  });
+  const iso = (d: Date) => d.toISOString().split("T")[0];
+  const holidaySet = new Set<string>();
+  for (const h of holidays)
+    holidaySet.add(iso(h.overridenDate ?? h.originalDate));
+
+  // Fetch attendances (extend 1 day back to catch segments crossing midnight)
+  const attendances = await db.attendance.findMany({
+    where: {
+      userId,
+      login: {
+        gte: new Date(startOfStart.getTime() - ONE_DAY_IN_MS),
+        lte: endOfToday,
+      },
+    },
+  });
+
+  const slotsPerDay = Math.floor((24 * 60) / slotMinutes);
+  const presentWeights: number[] = Array(slotsPerDay).fill(0);
+  const sampleWeights: number[] = Array(slotsPerDay).fill(0);
+
+  // Build list of included weekdays with weights
+  const includedDays: { start: Date; end: Date; weight: number }[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(endOfToday);
+    d.setDate(d.getDate() - i);
+    const dayStart = getStartOfDay(d);
+    const dayEnd = getEndOfDay(d);
+    const dow = dayStart.getDay();
+    if (dow === 0 || dow === 6) continue; // skip weekends
+    if (holidaySet.has(iso(dayStart))) continue; // skip holidays
+
+    const ageDays = Math.floor(
+      (endOfToday.getTime() - dayEnd.getTime()) / ONE_DAY_IN_MS
+    );
+    const weight = Math.pow(0.5, ageDays / recencyHalfLifeDays);
+    includedDays.push({ start: dayStart, end: dayEnd, weight });
+  }
+
+  // For each included weekday, mark samples and presence by checking overlapping workSegments
+  for (const day of includedDays) {
+    // Precompute intervals overlapping this day
+    const intervals: Array<{ start: Date; end: Date }> = [];
+    for (const a of attendances) {
+      for (const seg of a.workSegments) {
+        const segStart = seg.start;
+        const segEnd = seg.end ?? new Date();
+        // Overlap with this day?
+        if (segStart <= day.end && segEnd >= day.start) {
+          const s = new Date(Math.max(segStart.getTime(), day.start.getTime()));
+          const e = new Date(Math.min(segEnd.getTime(), day.end.getTime()));
+          if (e > s) intervals.push({ start: s, end: e });
+        }
+      }
+    }
+
+    for (let s = 0; s < slotsPerDay; s++) {
+      const slotStart = new Date(
+        day.start.getTime() + s * slotMinutes * 60_000
+      );
+      const slotEnd = new Date(slotStart.getTime() + slotMinutes * 60_000);
+
+      // Count sample for every slot on included days
+      sampleWeights[s] += day.weight;
+
+      // Present if any interval overlaps this slot
+      let present = false;
+      for (const iv of intervals) {
+        if (slotStart < iv.end && slotEnd > iv.start) {
+          present = true;
+          break;
+        }
+      }
+      if (present) presentWeights[s] += day.weight;
+    }
+  }
+
+  const heatmap: WeekdayHeatmapSlot[] = [];
+  for (let s = 0; s < slotsPerDay; s++) {
+    const startMinutes = s * slotMinutes;
+    const endMinutes = startMinutes + slotMinutes;
+    const present = presentWeights[s];
+    const sample = sampleWeights[s];
+    const confidence = sample > 0 ? present / sample : 0;
+    heatmap.push({
+      slotIndex: s,
+      startMinutes,
+      endMinutes,
+      presentWeight: present,
+      sampleWeight: sample,
+      confidence,
+    });
+  }
+
+  return {
+    heatmap,
+    meta: {
+      daysRequested: days,
+      daysIncluded: includedDays.length,
+      slotMinutes,
+      recencyHalfLifeDays,
+    },
+  };
+}
+
+/**
+ * Suggest top weekday windows that satisfy requiredHours (float).
+ * Smart defaults:
+ * - slotMinutes = 30
+ * - minConfidence starts at 0.6; falls back to “best available” if none
+ * - returns up to 3 suggestions
+ */
+export async function getWeekdayAvailabilityWindows(
+  userId: string,
+  requiredHours: number,
+  days = 30,
+  opts?: { slotMinutes?: number; maxSuggestions?: number }
+): Promise<WeekdayAvailabilityWindow[]> {
+  const slotMinutes = opts?.slotMinutes ?? 30;
+  const maxSuggestions = opts?.maxSuggestions ?? 3;
+
+  const { heatmap } = await getWeekdayAvailabilityHeatmap(userId, days, {
+    slotMinutes,
+  });
+
+  const requiredSlots = Math.max(
+    1,
+    Math.ceil((requiredHours * 60) / slotMinutes)
+  );
+
+  const conf = heatmap.map((h) => h.confidence);
+  const samples = heatmap.map((h) => h.sampleWeight);
+
+  if (requiredSlots > conf.length) return [];
+
+  // Build sliding windows of exactly requiredSlots, prefer windows with data.
+  const allWindows: WeekdayAvailabilityWindow[] = [];
+  const windowsWithSamples: WeekdayAvailabilityWindow[] = [];
+
+  let runningConf = 0;
+  let runningSamples = 0;
+
+  for (let i = 0; i < conf.length; i++) {
+    runningConf += conf[i];
+    runningSamples += samples[i];
+
+    if (i >= requiredSlots) {
+      runningConf -= conf[i - requiredSlots];
+      runningSamples -= samples[i - requiredSlots];
+    }
+
+    if (i >= requiredSlots - 1) {
+      const startIdx = i - requiredSlots + 1;
+      const sumC = runningConf;
+      const avg = sumC / requiredSlots;
+
+      const win: WeekdayAvailabilityWindow = {
+        startMinutes: startIdx * slotMinutes,
+        endMinutes: (startIdx + requiredSlots) * slotMinutes,
+  avgConfidence: avg,
+      };
+
+      allWindows.push(win);
+      if (runningSamples > 0) windowsWithSamples.push(win);
+    }
+  }
+
+  const candidates =
+    windowsWithSamples.length > 0 ? windowsWithSamples : allWindows;
+
+  candidates.sort(
+    (a, b) =>
+      b.avgConfidence - a.avgConfidence || a.startMinutes - b.startMinutes
+  );
+
+  return candidates.slice(0, maxSuggestions);
+}
+
+/**
+ * Convenience: minimal call for the Discord command.
+ * Inputs: days (history), requiredHours (float). Returns heatmap + top windows.
+ */
+export async function getWeekdayAvailabilitySummary(
+  userId: string,
+  requiredHours: number,
+  days = 30
+): Promise<WeekdayAvailabilitySummary> {
+  const slotMinutes = 30;
+  const { heatmap, meta } = await getWeekdayAvailabilityHeatmap(userId, days, {
+    slotMinutes,
+    recencyHalfLifeDays: 30,
+  });
+  const windows = await getWeekdayAvailabilityWindows(
+    userId,
+    requiredHours,
+    days,
+    {
+      slotMinutes,
+      maxSuggestions: 3,
+    }
+  );
+  return { heatmap, windows, meta };
+}
+
+/**
+ * Group meeting helper: find top weekday windows for multiple users to collaborate.
+ * - Aggregates individual heatmaps into a joint confidence per slot.
+ * - Default aggregator = 'min' (conservative: slot is as good as the least available user).
+ * - Prefers windows where all users have sample data; falls back to best available otherwise.
+ */
+export async function getGroupWeekdayAvailabilityWindows(
+  userIds: string[],
+  requiredHours: number,
+  days = 30,
+  opts?: {
+    slotMinutes?: number;
+    maxSuggestions?: number;
+    aggregator?: "min" | "avg" | "product";
+    recencyHalfLifeDays?: number;
+  }
+): Promise<WeekdayAvailabilityWindow[]> {
+  const slotMinutes = opts?.slotMinutes ?? 30;
+  const maxSuggestions = opts?.maxSuggestions ?? 3;
+  const aggregator = opts?.aggregator ?? "min";
+  const recencyHalfLifeDays = opts?.recencyHalfLifeDays ?? 30;
+
+  if (!userIds || userIds.length === 0) return [];
+  if (userIds.length === 1) {
+    return getWeekdayAvailabilityWindows(
+      userIds[0],
+      requiredHours,
+      days,
+      { slotMinutes, maxSuggestions }
+    );
+  }
+
+  // Fetch heatmaps in parallel with aligned parameters.
+  const heatmaps = await Promise.all(
+    userIds.map((uid) =>
+      getWeekdayAvailabilityHeatmap(uid, days, {
+        slotMinutes,
+        recencyHalfLifeDays,
+      })
+    )
+  );
+
+  const slotsCount = heatmaps[0].heatmap.length;
+  if (slotsCount === 0) return [];
+  // Sanity: ensure all heatmaps have equal slot counts
+  if (heatmaps.some((h) => h.heatmap.length !== slotsCount)) {
+    // If mismatch occurs, truncate to the smallest length to keep alignment.
+    const minSlots = Math.min(...heatmaps.map((h) => h.heatmap.length));
+    if (minSlots === 0) return [];
+    // Trim all to minSlots
+    for (let i = 0; i < heatmaps.length; i++) {
+      heatmaps[i].heatmap = heatmaps[i].heatmap.slice(0, minSlots);
+    }
+  }
+
+  const requiredSlots = Math.max(
+    1,
+    Math.ceil((requiredHours * 60) / slotMinutes)
+  );
+  if (requiredSlots > heatmaps[0].heatmap.length) return [];
+
+  // Build joint confidence per slot and track sample coverage.
+  const jointConf: number[] = new Array(heatmaps[0].heatmap.length).fill(0);
+  const sampleCount: number[] = new Array(heatmaps[0].heatmap.length).fill(0);
+
+  for (let s = 0; s < jointConf.length; s++) {
+    const confs: number[] = [];
+    let usersWithSamples = 0;
+    for (const hm of heatmaps) {
+      const slot = hm.heatmap[s];
+      confs.push(slot.confidence);
+      if (slot.sampleWeight > 0) usersWithSamples++;
+    }
+
+    let agg = 0;
+    if (aggregator === "min") {
+      agg = Math.min(...confs);
+    } else if (aggregator === "avg") {
+      agg = confs.reduce((a, b) => a + b, 0) / confs.length;
+    } else {
+      // product
+      agg = confs.reduce((a, b) => a * b, 1);
+    }
+    jointConf[s] = agg;
+    sampleCount[s] = usersWithSamples;
+  }
+
+  // Sliding windows over jointConf
+  const allWindows: WeekdayAvailabilityWindow[] = [];
+  const windowsWithFullSamples: WeekdayAvailabilityWindow[] = [];
+
+  let runningConf = 0;
+  for (let i = 0; i < jointConf.length; i++) {
+    runningConf += jointConf[i];
+    if (i >= requiredSlots) runningConf -= jointConf[i - requiredSlots];
+
+    if (i >= requiredSlots - 1) {
+      const startIdx = i - requiredSlots + 1;
+      const avg = runningConf / requiredSlots;
+
+      // Determine if all users have samples across every slot in the window.
+      let fullSamples = true;
+      for (let k = startIdx; k <= i; k++) {
+        if (sampleCount[k] < userIds.length) {
+          fullSamples = false;
+          break;
+        }
+      }
+
+      const win: WeekdayAvailabilityWindow = {
+        startMinutes: startIdx * slotMinutes,
+        endMinutes: (startIdx + requiredSlots) * slotMinutes,
+        avgConfidence: avg,
+      };
+
+      allWindows.push(win);
+      if (fullSamples) windowsWithFullSamples.push(win);
+    }
+  }
+
+  const candidates =
+    windowsWithFullSamples.length > 0 ? windowsWithFullSamples : allWindows;
+
+  candidates.sort(
+    (a, b) => b.avgConfidence - a.avgConfidence || a.startMinutes - b.startMinutes
+  );
+
+  return candidates.slice(0, maxSuggestions);
+}
