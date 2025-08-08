@@ -8,8 +8,6 @@ import {
 } from "discord.js";
 import {
   authCommandBody,
-  logoutCommandBody,
-  breakCommandBody,
   getNextHolidayAnnouncementCommandBody,
   requestLeaveCommandBody,
 } from "./commands";
@@ -172,8 +170,6 @@ async function registerCommands() {
   if (!DISCORD_BOT_TOKEN || !BOT_ID || !DISCORD_SERVER_ID) return;
 
   const commands = [
-    logoutCommandBody,
-    breakCommandBody,
     authCommandBody,
     getNextHolidayAnnouncementCommandBody,
     requestLeaveCommandBody,
