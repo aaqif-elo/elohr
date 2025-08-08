@@ -5,6 +5,7 @@ import {
   ChannelType,
   ChatInputCommandInteraction,
   Client,
+  TextChannel,
   User,
 } from "discord.js";
 import {
@@ -19,6 +20,9 @@ import {
   logout,
   markUpcomingHolidaysAsAnnounced,
   ONE_DAY_IN_MS,
+  getAllEmployeesWithAttendance,
+  getLeavesInDateRange,
+  getStartAndEndOfDay,
   reviewLeaveRequest,
 } from "../../db";
 
@@ -370,6 +374,12 @@ export const autoLogoutUsersWhoAreStillLoggedIn = async (
   });
 
   const logoutPayloads = await Promise.all(logoutPromises);
+
+  try {
+    await sendDailyAttendanceReportToAdmin(discordClient, today);
+  } catch (err) {
+    console.error("Failed to send daily attendance report:", err);
+  }
 
   // Set up auto-login after 90 seconds (at 12:01 AM)
   setTimeout(async () => {
@@ -810,3 +820,187 @@ export const sendLogoutReport = async (
     console.error("Failed to send logout report:", error);
   }
 };
+
+// Build and send a markdown-formatted daily attendance report to the admin channel
+export async function sendDailyAttendanceReportToAdmin(
+  discordClient: Client<boolean>,
+  date: Date = new Date()
+) {
+  const adminChannelID = process.env.ADMIN_CHANNEL_ID;
+  if (!adminChannelID) {
+    console.error("ADMIN_CHANNEL_ID not defined");
+    return;
+  }
+
+  const channel = await discordClient.channels.fetch(adminChannelID);
+  if (!channel || channel.type !== ChannelType.GuildText) {
+    console.error("Admin channel not found or not a text channel");
+    return;
+  }
+
+  const { start, end } = getStartAndEndOfDay(date);
+
+  // Fetch employees with today's attendance and leaves for today
+  const [employeesWithAttendance, leaves] = await Promise.all([
+    getAllEmployeesWithAttendance(date),
+    getLeavesInDateRange(start, end),
+  ]);
+
+  // Map userId -> { name, reason }
+  const leaveByUser = new Map<string, { name: string; reason?: string }>();
+  for (const leave of leaves as any[]) {
+    leaveByUser.set(leave.userId, {
+      name: leave.user?.name ?? "Unknown",
+      reason: leave.reason ?? undefined,
+    });
+  }
+
+  type AttendedItem = {
+    userId: string;
+    name: string;
+    login: Date;
+    totalHours: number;
+    topProject?: { name: string; hours: number };
+  };
+
+  const attended: AttendedItem[] = [];
+  const missedNames: string[] = [];
+  const onLeave: { name: string; reason?: string }[] = [];
+
+  // Overall project totals
+  const projectTotals = new Map<string, { hours: number; employeeIds: Set<string> }>();
+
+  const toHours = (ms: number) => ms / (1000 * 60 * 60);
+  const fmtHours = (hrs: number) => `${hrs.toFixed(1)}h`;
+  const fmtTime = (d: Date) => d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+  const median = (nums: number[]) => {
+    if (!nums.length) return 0;
+    const s = [...nums].sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 === 0 ? (s[mid - 1] + s[mid]) / 2 : s[mid];
+  };
+
+  for (const emp of employeesWithAttendance as any[]) {
+    const userId: string = emp.id;
+    const name: string = emp.name ?? "Unknown";
+
+    // If user is on leave, classify and skip from attended/missed
+    const leaveInfo = leaveByUser.get(userId);
+    if (leaveInfo) {
+      onLeave.push({ name: leaveInfo.name || name, reason: leaveInfo.reason });
+      continue;
+    }
+
+    const att = emp.attendance;
+    if (att) {
+      const login = new Date(att.login);
+      let totalMs = 0;
+      const projMs = new Map<string, number>();
+      const segments = Array.isArray(att.workSegments) ? att.workSegments : [];
+      for (const ws of segments) {
+        const s = ws.start ? new Date(ws.start as any) : null;
+        const e = ws.end ? new Date(ws.end as any) : null;
+        if (!s || !e || isNaN(s.getTime()) || isNaN(e.getTime())) continue;
+        const diff = e.getTime() - s.getTime();
+        if (diff <= 0) continue;
+        totalMs += diff;
+        const proj = ws.project || "(Unspecified)";
+        projMs.set(proj, (projMs.get(proj) || 0) + diff);
+      }
+
+      let topProject: { name: string; hours: number } | undefined;
+      for (const [proj, ms] of projMs.entries()) {
+        const hrs = toHours(ms);
+        if (!topProject || hrs > topProject.hours) topProject = { name: proj, hours: hrs };
+        const rec = projectTotals.get(proj) || { hours: 0, employeeIds: new Set<string>() };
+        rec.hours += hrs;
+        rec.employeeIds.add(userId);
+        projectTotals.set(proj, rec);
+      }
+
+      attended.push({ userId, name, login, totalHours: toHours(totalMs), topProject });
+    } else {
+      // Use proper names for missed list
+      missedNames.push(name);
+    }
+  }
+
+  // Sort attended by hours worked (desc), then by name; others alphabetically
+  attended.sort((a, b) => (b.totalHours - a.totalHours) || a.name.localeCompare(b.name));
+  missedNames.sort((a, b) => a.localeCompare(b));
+  onLeave.sort((a, b) => a.name.localeCompare(b.name));
+
+  const totalEmployees = (employeesWithAttendance as any[]).length;
+  const totalAttended = attended.length;
+  const totalMissed = missedNames.length;
+  const totalLeaves = onLeave.length;
+
+  const loginMinutes = attended.map((a) => a.login.getHours() * 60 + a.login.getMinutes());
+  const hoursWorked = attended.map((a) => a.totalHours);
+  const medianLoginMinutes = median(loginMinutes);
+  const medianHoursWorked = median(hoursWorked);
+  const medianLoginHH = Math.floor(medianLoginMinutes / 60);
+  const medianLoginMM = Math.round(medianLoginMinutes % 60);
+  const medianLoginDate = new Date(new Date(start).setHours(medianLoginHH, medianLoginMM, 0, 0));
+
+  let overallProject: { name: string; hours: number; employees: number } | null = null;
+  for (const [proj, rec] of projectTotals.entries()) {
+    const candidate = { name: proj, hours: rec.hours, employees: rec.employeeIds.size };
+    if (!overallProject || candidate.hours > overallProject.hours) {
+      overallProject = candidate;
+    } else if (overallProject && candidate.hours === overallProject.hours && candidate.employees > overallProject.employees) {
+      overallProject = candidate;
+    }
+  }
+
+  const header = `**Daily Attendance Report — ${date.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })}**`;
+
+  const lines: string[] = [header, ""];
+
+  // Attended
+  lines.push(`### Attended (${totalAttended}/${totalEmployees})`);
+  if (!attended.length) {
+    lines.push("- None");
+  } else {
+    for (const a of attended) {
+      const top = a.topProject ? ` — Most Active: ${a.topProject.name} (${fmtHours(a.topProject.hours)})` : "";
+      lines.push(`- ${a.name}: Login ${fmtTime(a.login)}, Hours ${fmtHours(a.totalHours)}${top}`);
+    }
+  }
+  lines.push("");
+
+  // Missed
+  lines.push(`### Missed (${totalMissed}/${totalEmployees})`);
+  if (!missedNames.length) {
+    lines.push("- None");
+  } else {
+    for (const n of missedNames) lines.push(`- ${n}`);
+  }
+  lines.push("");
+
+  // On Leave
+  lines.push(`### On Leave (${totalLeaves}/${totalEmployees})`);
+  if (!onLeave.length) {
+    lines.push("- None");
+  } else {
+    for (const l of onLeave) lines.push(`- ${l.name}${l.reason ? ` — ${l.reason}` : ""}`);
+  }
+  lines.push("");
+
+  // Summary
+  lines.push("### Summary");
+  lines.push(`- Median Login Time: ${fmtTime(medianLoginDate)} | Median Hours Worked: ${fmtHours(medianHoursWorked)}`);
+  if (overallProject) {
+    lines.push(`- Most Active Project Overall: ${overallProject.name} — ${overallProject.employees} employees, ${fmtHours(overallProject.hours)}`);
+  } else {
+    lines.push(`- Most Active Project Overall: N/A`);
+  }
+
+  const content = lines.join("\n");
+  await (channel as TextChannel).send({ content });
+}

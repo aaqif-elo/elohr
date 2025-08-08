@@ -22,6 +22,7 @@ import { interactionHandler } from "./interaction-handlers";
 import { handleVoiceStateChange } from "./voice-channel-hook.service";
 import { setNameStatus } from "./utils";
 import { startCronJobs } from "./cron-jobs";
+import { sendDailyAttendanceReportToAdmin } from "./services";
 // Add this near the top of the file
 declare global {
   var _discordClientGlobal: Client | undefined;
@@ -125,7 +126,7 @@ const sendAttendanceChangeMessageAndSetStatus = (
 function setupEventHandlers() {
   discordClient.on("ready", () => {
     console.log(`Logged in as ${discordClient.user?.tag}!`);
-
+    sendDailyAttendanceReportToAdmin(discordClient);
     // Setup voice state update handler
     discordClient.on("voiceStateUpdate", (oldState, newState) => {
       if (production) {
