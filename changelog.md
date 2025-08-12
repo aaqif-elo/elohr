@@ -2,11 +2,25 @@
 
 All notable changes to this project are documented below.
 
+## v1.3.1 [2025-08-12]
+
+### Added
+
+- Utility function `discordTimestamp` to format dates into Discord dynamic timestamps.
+
+### Changed
+
+- Meeting reminder notifications now use `discordTimestamp` for consistent time formatting.
+- Meeting command responses now include formatted meeting times using `discordTimestamp`.
+- Reminder logic refined to treat reminders as "unsent" based on specific database conditions for more reliable delivery.
+
+---
+
 ## v1.3.0 [2025-08-12]
 
 ### Added
 
-- Meeting system with Discord integration:
+- Meeting system with Discord integration: (Experimental)
   - New Meeting model and MeetingRequest type; meetings module with create/update/manage APIs.
   - `/meeting` command with participant options (users/roles), agenda, date, duration.
   - Invite accept/reject buttons and reminder notifications via a minutely cron.
@@ -36,22 +50,7 @@ All notable changes to this project are documented below.
 ### Chore
 
 - .gitignore updated to ignore instruction files; VS Code settings adjusted (cSpell words, circular import detection).
-- Dependencies and devDependencies updated in package.json:
-  - @types/node: ^24.0.7 → ^24.2.1
-  - @google/genai: ^1.7.0 → ^1.13.0
-  - @prisma/client: ^6.10.1 → ^6.14.0
-  - @solidjs/start: ^1.1.5 → ^1.1.7
-  - @trpc/client: ^11.4.3 → ^11.4.4
-  - @trpc/server: ^11.4.3 → ^11.4.4
-  - axios: ^1.10.0 → ^1.11.0
-  - cheerio: ^1.1.0 → ^1.1.2
-  - cron: ^4.3.1 → ^4.3.3
-  - dotenv: ^17.0.0 → ^17.2.1
-  - mongodb: ^6.17.0 → ^6.18.0
-  - prisma: ^6.10.1 → ^6.14.0
-  - puppeteer: ^24.11.1 → ^24.16.1
-  - solid-js: ^1.9.7 → ^1.9.9
-  - vinxi: ^0.5.7 → ^0.5.8
+- Dependencies and devDependencies updated to latest compatible versions in package.json.
 
 ---
 
