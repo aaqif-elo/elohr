@@ -2,6 +2,59 @@
 
 All notable changes to this project are documented below.
 
+## v1.3.0 [2025-08-12]
+
+### Added
+
+- Meeting system with Discord integration:
+  - New Meeting model and MeetingRequest type; meetings module with create/update/manage APIs.
+  - `/meeting` command with participant options (users/roles), agenda, date, duration.
+  - Invite accept/reject buttons and reminder notifications via a minutely cron.
+  - Caching added to optimize reminder checks; updated exports to include meetings.
+- Weekday availability insights: heatmap generation and suggested time windows, with optional visualization during meeting scheduling.
+- Daily attendance report: markdown-formatted report sent to the admin channel; wired into event setup and the auto-logout flow.
+- Attendance handling tuned for Bangladesh weekends (Friday/Saturday) and capped open-ended segments; heatmap reflects local working days.
+- Attendance updates are ignored when switching to HR/Admin channels, controlled by environment variables for channel IDs.
+- Holiday synchronization: replaced import with a `syncHolidays` job and a daily 2:00 AM cron; improved add/update/delete logic using end-of-day handling.
+
+### Changed
+
+- Simplified interaction handler signature by removing the unnecessary Discord client parameter.
+- Streamlined attendance command surface: removed unused LOGOUT command and the legacy attendance handler; utilities now queue image generation directly.
+- Simplified the weather report prompt to focus on brevity.
+- Refined attendance stats image loading checks and increased the timeout to 15 seconds.
+
+### Fixed
+
+- Corrected Discord ephemeral replies by using `flags: "Ephemeral"` in leave request notifications.
+
+### Removed
+
+- Unused break and logout command exports.
+- Weekly form submission reminder cron job.
+
+### Chore
+
+- .gitignore updated to ignore instruction files; VS Code settings adjusted (cSpell words, circular import detection).
+- Dependencies and devDependencies updated in package.json:
+  - @types/node: ^24.0.7 → ^24.2.1
+  - @google/genai: ^1.7.0 → ^1.13.0
+  - @prisma/client: ^6.10.1 → ^6.14.0
+  - @solidjs/start: ^1.1.5 → ^1.1.7
+  - @trpc/client: ^11.4.3 → ^11.4.4
+  - @trpc/server: ^11.4.3 → ^11.4.4
+  - axios: ^1.10.0 → ^1.11.0
+  - cheerio: ^1.1.0 → ^1.1.2
+  - cron: ^4.3.1 → ^4.3.3
+  - dotenv: ^17.0.0 → ^17.2.1
+  - mongodb: ^6.17.0 → ^6.18.0
+  - prisma: ^6.10.1 → ^6.14.0
+  - puppeteer: ^24.11.1 → ^24.16.1
+  - solid-js: ^1.9.7 → ^1.9.9
+  - vinxi: ^0.5.7 → ^0.5.8
+
+---
+
 ## v1.2.0 [2025-06-29]
 
 ### Added
