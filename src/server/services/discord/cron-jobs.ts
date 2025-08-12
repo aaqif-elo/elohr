@@ -6,6 +6,13 @@ import {
   getUsersOnLeave,
   isHoliday,
   syncHolidays,
+  findMeetingsDueForReminder,
+  notifyMeetingReminder,
+  markReminderSent,
+  getNextReminderCache,
+  updateNextReminderCache,
+  clearNextReminderCacheIfMatches,
+  findNextMeetingForReminder,
 } from "../../db";
 import {
   announceHoliday,
@@ -18,6 +25,7 @@ enum CRON_TIMES {
   EVERYDAY_AT_11_59_PM = "0 59 23 * * *",
   WEEKDAYS_AT_6_00_PM = "0 0 18 * * 0-4",
   DAILY_AT_2_00_AM = "0 0 2 * * *", // holiday sync
+  EVERY_MINUTE = "0 * * * * *", // meeting reminders
 }
 
 const holidayAnnouncementJob = (callback: () => void) =>
@@ -31,6 +39,9 @@ const autoLogoutPeopleOnABreakJob = (callback: () => void) =>
 
 const holidaySyncJob = (callback: () => void) =>
   new CronJob(CRON_TIMES.DAILY_AT_2_00_AM, callback);
+
+const meetingRemindersJob = (callback: () => void) =>
+  new CronJob(CRON_TIMES.EVERY_MINUTE, callback);
 
 const production = process.env.NODE_ENV === "production";
 const generalChannelID = production
@@ -80,6 +91,46 @@ const holidayAnnouncementHandler = async (discordClient: Client<boolean>) => {
 };
 
 export const startCronJobs = async (discordClient: Client<boolean>) => {
+  // Meeting reminders: sweep DB every minute and on startup
+  const processMeetingReminders = async () => {
+    try {
+      // If we have a cache and it's not time yet, skip DB call
+      const cache = getNextReminderCache();
+      const now = new Date();
+      if (cache && cache.at.getTime() - now.getTime() > 30 * 1000) {
+        return; // Next reminder is more than 30s away; skip sweep
+      }
+
+      const due = await findMeetingsDueForReminder(now);
+      for (const meeting of due) {
+        try {
+          await notifyMeetingReminder(discordClient, meeting);
+          await markReminderSent(meeting.id);
+        } catch (e) {
+          console.error("Error sending meeting reminder:", e);
+        }
+      }
+
+      // Refresh cache with next upcoming meeting's reminder time
+      const next = await findNextMeetingForReminder(now);
+      if (next) {
+        const reminderAt = new Date(next.startTime.getTime() - 10 * 60_000);
+        if (reminderAt > now) updateNextReminderCache(reminderAt, next.id);
+      } else {
+        clearNextReminderCacheIfMatches();
+      }
+    } catch (e) {
+      console.error("Meeting reminder sweep failed:", e);
+    }
+  };
+
+  // Startup sweep
+  processMeetingReminders();
+
+  // Run every minute
+  meetingRemindersJob(async () => {
+    await processMeetingReminders();
+  }).start();
   // Logout users on break every weekday at 11:59 PM
   autoLogoutPeopleOnABreakJob(async () => {
     autoLogoutUsersWhoAreStillLoggedIn(discordClient);
