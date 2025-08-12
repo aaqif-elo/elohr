@@ -11,19 +11,20 @@ import {
   getNextHolidayAnnouncementCommandBody,
   requestLeaveCommandBody,
 } from "./commands";
+import { meetingCommandBody } from "./commands";
 
-import {
-  EAdminCommands,
-  EAttendanceCommands,
-  EAuthCommands,
-  ELeaveCommands,
-} from "./discord.enums";
 import { interactionHandler } from "./interaction-handlers";
+import {
+  getMeetingById,
+  setMeetingRequestAcceptance,
+  cancelMeeting,
+  getUserByDiscordId,
+  getWeekdayAvailabilityHeatmap,
+  getGroupWeekdayAvailabilityWindows,
+} from "../../db";
 import { handleVoiceStateChange } from "./voice-channel-hook.service";
 import { setNameStatus } from "./utils";
 import { startCronJobs } from "./cron-jobs";
-import { sendDailyAttendanceReportToAdmin } from "./services";
-// Add this near the top of the file
 declare global {
   var _discordClientGlobal: Client | undefined;
 }
@@ -65,6 +66,17 @@ export const getGuildMember = async (discordId: string) => {
 
 // Discord login and initialization
 export const initializeDiscord = async () => {
+  // getWeekdayAvailabilityHeatmap("5e23ebb84d38965d54026712", 20)
+  // getGroupWeekdayAvailabilityWindows(
+  //   ["5e23ebb84d38965d54026712", "5e23ec834d38965d54026715"],
+  //   0.5,
+  //   120
+  // ).then((r) => {
+  //   console.log("Group weekday availability windows:", r);
+  // });
+  // // getWeekdayAvailabilityHeatmap("5e23ec834d38965d54026715", 20);
+
+  // return discordClient; // Return early if already initialized
   if (!DISCORD_BOT_TOKEN) {
     console.error("DISCORD_BOT_TOKEN not set, Discord bot will not start");
     return;
@@ -126,7 +138,7 @@ const sendAttendanceChangeMessageAndSetStatus = (
 function setupEventHandlers() {
   discordClient.on("ready", () => {
     console.log(`Logged in as ${discordClient.user?.tag}!`);
-    sendDailyAttendanceReportToAdmin(discordClient);
+
     // Setup voice state update handler
     discordClient.on("voiceStateUpdate", (oldState, newState) => {
       if (production) {
@@ -141,28 +153,69 @@ function setupEventHandlers() {
 
   // Handle interactions (slash commands)
   discordClient.on("interactionCreate", async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
-
-    const validInteractions = [
-      ...Object.values(EAttendanceCommands),
-      ...Object.values(EAdminCommands),
-      ...Object.values(ELeaveCommands),
-      ...Object.values(EAuthCommands),
-    ];
-
-    if (
-      !validInteractions.includes(
-        interaction.commandName as EAttendanceCommands
-      )
-    ) {
-      interaction.reply({
-        content: `<@${interaction.user.id}> ❌ Invalid command!`,
-        flags: "Ephemeral",
-      });
+    if (interaction.isButton()) {
+      const id = interaction.customId;
+      // Only handle meeting invite accept/reject buttons here.
+      if (id.startsWith("mtg-accept-") || id.startsWith("mtg-reject-")) {
+        const [_, action, meetingId] = id.split("-");
+        try {
+          const meeting = await getMeetingById(meetingId);
+          if (!meeting || meeting.isCanceled) {
+            await interaction.reply({
+              content: "This meeting is no longer active.",
+              flags: "Ephemeral",
+            });
+            return;
+          }
+          const { id: userId } = await getUserByDiscordId(interaction.user.id);
+          await setMeetingRequestAcceptance(
+            meetingId,
+            userId,
+            action === "accept"
+          );
+          await interaction.reply({
+            content: `You have ${
+              action === "accept" ? "accepted" : "rejected"
+            } the meeting.`,
+            flags: "Ephemeral",
+          });
+          const refreshed = await getMeetingById(meetingId);
+          if (refreshed) {
+            const total = refreshed.requests.length;
+            const rejected = refreshed.requests.filter(
+              (r) => r.rejectedAt && !r.requestAcceptedAt
+            ).length;
+            const accepted = refreshed.requests.filter(
+              (r) => r.requestAcceptedAt
+            ).length;
+            if (total > 0 && rejected === total && accepted === 0) {
+              await cancelMeeting(meetingId);
+              const ch = await discordClient.channels.fetch(
+                refreshed.channelId
+              );
+              if (ch && ch.isTextBased()) {
+                await (ch as any).send({
+                  content: `All invitees rejected. Meeting${
+                    refreshed.title ? ` "${refreshed.title}"` : ""
+                  } has been canceled.`,
+                });
+              }
+            }
+          }
+        } catch (e) {
+          console.error("Meeting button error:", e);
+          if (!interaction.replied)
+            await interaction.reply({
+              content: "❌ Error handling your action.",
+              flags: "Ephemeral",
+            });
+        }
+      }
       return;
     }
-
-    interactionHandler(interaction);
+    if (!interaction.isChatInputCommand()) return;
+    // Delegate all chat input commands to the centralized interaction handler
+    await interactionHandler(interaction);
   });
 }
 
@@ -174,6 +227,7 @@ async function registerCommands() {
     authCommandBody,
     getNextHolidayAnnouncementCommandBody,
     requestLeaveCommandBody,
+    meetingCommandBody,
   ];
 
   try {
