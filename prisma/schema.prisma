@@ -61,6 +61,15 @@ type WorkSegment {
   project   String
 }
 
+// Meeting request embedded document
+type MeetingRequest {
+  userId            String   @db.ObjectId
+  requestSentAt     DateTime
+  requestAcceptedAt DateTime?
+  rejectedAt        DateTime?
+  attended          Boolean?
+}
+
 type Contract {
   contractType ContractType
   startDate    DateTime
@@ -104,6 +113,7 @@ model User {
   // Relations
   attendances   Attendance[]
   leaveRequests Leave[]
+  meetingsCreated Meeting[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -168,4 +178,23 @@ model Holiday {
   updatedAt DateTime @updatedAt
 
   @@map("holidays")
+}
+
+model Meeting {
+  id            String           @id @default(auto()) @map("_id") @db.ObjectId
+  creatorUserId String           @map("creator") @db.ObjectId
+  creator       User             @relation(fields: [creatorUserId], references: [id])
+  channelId     String
+  title         String?
+  startTime     DateTime
+  endTime       DateTime
+  durationMins  Int
+  isCanceled    Boolean          @default(false)
+  requests      MeetingRequest[]
+  reminderSentAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("meetings")
 }
