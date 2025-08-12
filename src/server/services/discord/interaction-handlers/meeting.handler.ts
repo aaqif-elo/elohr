@@ -25,6 +25,7 @@ import {
   sendMeetingInviteDM,
   getWeekdayAvailabilityHeatmap,
 } from "../../../db";
+import { discordTimestamp } from "../../../utils/discord";
 
 // Utility to convert minutes offset to HH:MM
 function toHHMM(mins: number) {
@@ -363,14 +364,15 @@ export const handleMeetingCommand = async (
     const participantMentions = participantPairs
       .map((p: { discordId: string }) => `<@${p.discordId}>`)
       .join(" ");
+    const whenFancy = `${discordTimestamp(startTime!, "F")} (${duration} mins, ${discordTimestamp(startTime!, "R")})`;
     if (fromModal) {
       await interaction.editReply({
-        content: `Review meeting details:\n• Agenda: ${agenda}\n• When: ${startTime!.toLocaleString()} (${duration} mins)\n• Participants: ${participantMentions}\n\nConfirm?`,
+        content: `Review meeting details:\n• Agenda: ${agenda}\n• When: ${whenFancy}\n• Participants: ${participantMentions}\n\nConfirm?`,
         components: [confirmRow],
       });
     } else {
       await selection.update({
-        content: `Review meeting details:\n• Agenda: ${agenda}\n• When: ${startTime!.toLocaleString()} (${duration} mins)\n• Participants: ${participantMentions}\n\nConfirm?`,
+        content: `Review meeting details:\n• Agenda: ${agenda}\n• When: ${whenFancy}\n• Participants: ${participantMentions}\n\nConfirm?`,
         components: [confirmRow],
       });
     }
@@ -410,7 +412,7 @@ export const handleMeetingCommand = async (
     });
 
     await confirmResponse.update({
-      content: `✅ Meeting scheduled for ${startTime!.toLocaleString()} (${duration} mins). Agenda: ${agenda}. Invitations sent.`,
+      content: `✅ Meeting scheduled for ${discordTimestamp(startTime!, "F")} (${duration} mins, ${discordTimestamp(startTime!, "R")}). Agenda: ${agenda}. Invitations sent.`,
       components: [],
     });
 

@@ -1,5 +1,6 @@
 import { Meeting } from "@prisma/client";
 import { db, getDiscordIdsFromUserIds } from ".";
+import { discordTimestamp } from "../utils/discord";
 import { attendanceEvents } from "./attendances";
 import {
   Client,
@@ -18,6 +19,12 @@ const REMINDER_LEAD_MINUTES = 10;
 const SORT_ASC: "asc" = "asc";
 
 type MeetingRequestEntry = Meeting["requests"][number];
+
+// Treat reminders as "unsent" when the field is either null (explicitly not sent)
+// or not set at all (older documents). This matches both cases in MongoDB.
+const UNSENT_REMINDER_PREDICATE = {
+  OR: [{ reminderSentAt: null }, { reminderSentAt: { isSet: false } }],
+};
 
 export function getNextReminderCache(): { at: Date; meetingId: string } | null {
   return nextReminderCache;
@@ -105,7 +112,7 @@ export async function findMeetingsDueForReminder(
   return await db.meeting.findMany({
     where: {
       isCanceled: false,
-      reminderSentAt: { isSet: false },
+  ...UNSENT_REMINDER_PREDICATE,
       startTime: { gte: now, lte: targetEnd },
     },
   });
@@ -128,7 +135,7 @@ export async function findNextMeetingForReminder(
   return await db.meeting.findFirst({
     where: {
       isCanceled: false,
-      reminderSentAt: { isSet: false },
+  ...UNSENT_REMINDER_PREDICATE,
       startTime: { gte: now },
     },
     orderBy: { startTime: SORT_ASC },
@@ -161,10 +168,7 @@ export async function sendMeetingInviteDM(
       accept,
       reject
     );
-
-    const when = `${meeting.startTime.toLocaleString()} (${
-      meeting.durationMins
-    } mins)`;
+  const when = `${discordTimestamp(meeting.startTime, "F")} (${meeting.durationMins} mins, ${discordTimestamp(meeting.startTime, "R")})`;
     await discordUser.send({
       content: `You are invited to a meeting${
         meeting.title ? `: **${meeting.title}**` : ""
@@ -190,11 +194,9 @@ export async function notifyMeetingReminder(
   for (const mapping of discordMappings) {
     try {
       const user = await discordClient.users.fetch(mapping.discordId);
-      await user.send(
-        `Reminder: Your meeting${
-          meeting.title ? ` "${meeting.title}"` : ""
-        } starts in ${REMINDER_LEAD_MINUTES} minutes (at ${meeting.startTime.toLocaleTimeString()}).`
-      );
+      await user.send(`Reminder: Your meeting${
+        meeting.title ? ` "${meeting.title}"` : ""
+      } starts at ${discordTimestamp(meeting.startTime, "t")} (${discordTimestamp(meeting.startTime, "R")}).`);
     } catch (e) {
       console.error("Failed to DM meeting reminder:", e);
     }
@@ -205,7 +207,7 @@ export async function notifyMeetingReminder(
       channel.send({
         content: `${mentionList} Reminder: Meeting${
           meeting.title ? ` "${meeting.title}"` : ""
-        } starts in ${REMINDER_LEAD_MINUTES} minutes.`,
+        } starts at ${discordTimestamp(meeting.startTime, "t")} (${discordTimestamp(meeting.startTime, "R")}).`,
       });
     }
   } catch (e) {

@@ -1,4 +1,5 @@
 import { Client, GuildMember } from "discord.js";
+import { discordTimestamp } from "../../utils/discord";
 import { platform } from "os";
 import { launch, LaunchOptions } from "puppeteer";
 
@@ -14,10 +15,9 @@ const imageReportQueue: Array<{
 // Generate a text attendance report from attendance data
 export function generateTextAttendanceReport(attendance: any): string {
   if (!attendance) return "No attendance data found";
-
-  const loginTime = new Date(attendance.login).toLocaleTimeString();
+  const loginTime = discordTimestamp(new Date(attendance.login), "t");
   const logoutTime = attendance.logout
-    ? new Date(attendance.logout).toLocaleTimeString()
+    ? discordTimestamp(new Date(attendance.logout), "t")
     : "N/A";
   const totalWorkHours = (attendance.totalWork || 0) / (1000 * 60 * 60);
   const totalBreakMinutes = (attendance.totalBreak || 0) / (1000 * 60);
