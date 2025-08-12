@@ -9,6 +9,8 @@ import {
 } from "../services/discord/utils";
 
 // Add this near the top after imports
+// Reasonable cap for open-ended segments to avoid corrupt data skewing results
+const DEFAULT_MAX_OPEN_SEGMENT_HOURS = 16;
 console.log("Loading attendances.ts module");
 
 // Global declaration
@@ -167,6 +169,15 @@ console.log(
   attendanceEvents
 );
 
+// --- Region: Locale-specific working days (Bangladesh) ---
+// In Bangladesh, the weekend is Friday (5) and Saturday (6).
+// Working days are Sunday (0) through Thursday (4).
+const BD_WEEKEND_DAYS = new Set<number>([5, 6]);
+const isWeekendBD = (dateOrDow: Date | number): boolean => {
+  const dow = typeof dateOrDow === "number" ? dateOrDow : dateOrDow.getDay();
+  return BD_WEEKEND_DAYS.has(dow);
+};
+
 /**
  * Returns today's start (00:00:00.000) and end (23:59:59.999) timestamps.
  */
@@ -249,8 +260,8 @@ export const countWorkingDays = (
     const dayOfWeek = currentDate.getDay();
     const dateString = currentDate.toISOString().split("T")[0];
 
-    // Skip weekends (0 = Sunday, 6 = Saturday) and holidays
-    if (dayOfWeek !== 0 && dayOfWeek !== 6 && !holidaySet.has(dateString)) {
+    // Skip Bangladesh weekends (Fri=5, Sat=6) and holidays
+    if (!isWeekendBD(dayOfWeek) && !holidaySet.has(dateString)) {
       count++;
     }
 
@@ -722,8 +733,8 @@ interface WeekdayAvailabilitySummary {
 }
 
 /**
- * Build a weekday-only heatmap aggregated across Mon–Fri.
- * - Excludes weekends
+ * Build a weekday-only heatmap aggregated across Sun–Thu (Bangladesh working days).
+ * - Excludes weekends (Fri–Sat in BD)
  * - Excludes active holidays (original or overridden date)
  * - Uses exponential recency weighting (half-life)
  * - Default slot = 30 minutes
@@ -731,7 +742,11 @@ interface WeekdayAvailabilitySummary {
 export async function getWeekdayAvailabilityHeatmap(
   userId: string,
   days = 30,
-  opts?: { slotMinutes?: number; recencyHalfLifeDays?: number }
+  opts?: {
+    slotMinutes?: number;
+    recencyHalfLifeDays?: number;
+    maxOpenSegmentHours?: number;
+  }
 ): Promise<{
   heatmap: WeekdayHeatmapSlot[];
   meta: {
@@ -743,6 +758,8 @@ export async function getWeekdayAvailabilityHeatmap(
 }> {
   const slotMinutes = opts?.slotMinutes ?? 30;
   const recencyHalfLifeDays = opts?.recencyHalfLifeDays ?? 30;
+  const maxOpenSegmentHours =
+    opts?.maxOpenSegmentHours ?? DEFAULT_MAX_OPEN_SEGMENT_HOURS;
 
   if (days <= 0) {
     return {
@@ -800,7 +817,7 @@ export async function getWeekdayAvailabilityHeatmap(
     const dayStart = getStartOfDay(d);
     const dayEnd = getEndOfDay(d);
     const dow = dayStart.getDay();
-    if (dow === 0 || dow === 6) continue; // skip weekends
+    if (isWeekendBD(dow)) continue; // skip Fri/Sat (BD weekend)
     if (holidaySet.has(iso(dayStart))) continue; // skip holidays
 
     const ageDays = Math.floor(
@@ -816,13 +833,36 @@ export async function getWeekdayAvailabilityHeatmap(
     const intervals: Array<{ start: Date; end: Date }> = [];
     for (const a of attendances) {
       for (const seg of a.workSegments) {
-        const segStart = seg.start;
-        const segEnd = seg.end ?? new Date();
+        // Normalize potentially corrupted segments
+        const attendanceEnd = a.logout ?? new Date();
+
+        let segStart = new Date(seg.start);
+        let segEnd = new Date(seg.end ?? attendanceEnd);
+
+        // If segment starts before attendance login, clamp to login
+        if (a.login && segStart < a.login) segStart = new Date(a.login);
+        // If segment ends after attendance end, clamp to end
+        if (segEnd > attendanceEnd) segEnd = attendanceEnd;
+
+        // Cap open-ended segments to avoid extremely long running intervals
+        if (!seg.end) {
+          const cap = new Date(
+            segStart.getTime() + maxOpenSegmentHours * 60 * 60 * 1000
+          );
+          if (segEnd > cap) segEnd = cap;
+        }
+
+        // Skip invalid segments
+        if (isNaN(segStart.getTime()) || isNaN(segEnd.getTime())) continue;
+        if (segEnd <= segStart) continue;
+
         // Overlap with this day?
         if (segStart <= day.end && segEnd >= day.start) {
           const s = new Date(Math.max(segStart.getTime(), day.start.getTime()));
           const e = new Date(Math.min(segEnd.getTime(), day.end.getTime()));
-          if (e > s) intervals.push({ start: s, end: e });
+          if (e > s) {
+            intervals.push({ start: s, end: e });
+          }
         }
       }
     }
@@ -930,7 +970,7 @@ export async function getWeekdayAvailabilityWindows(
       const win: WeekdayAvailabilityWindow = {
         startMinutes: startIdx * slotMinutes,
         endMinutes: (startIdx + requiredSlots) * slotMinutes,
-  avgConfidence: avg,
+        avgConfidence: avg,
       };
 
       allWindows.push(win);
@@ -950,32 +990,6 @@ export async function getWeekdayAvailabilityWindows(
 }
 
 /**
- * Convenience: minimal call for the Discord command.
- * Inputs: days (history), requiredHours (float). Returns heatmap + top windows.
- */
-export async function getWeekdayAvailabilitySummary(
-  userId: string,
-  requiredHours: number,
-  days = 30
-): Promise<WeekdayAvailabilitySummary> {
-  const slotMinutes = 30;
-  const { heatmap, meta } = await getWeekdayAvailabilityHeatmap(userId, days, {
-    slotMinutes,
-    recencyHalfLifeDays: 30,
-  });
-  const windows = await getWeekdayAvailabilityWindows(
-    userId,
-    requiredHours,
-    days,
-    {
-      slotMinutes,
-      maxSuggestions: 3,
-    }
-  );
-  return { heatmap, windows, meta };
-}
-
-/**
  * Group meeting helper: find top weekday windows for multiple users to collaborate.
  * - Aggregates individual heatmaps into a joint confidence per slot.
  * - Default aggregator = 'min' (conservative: slot is as good as the least available user).
@@ -990,21 +1004,21 @@ export async function getGroupWeekdayAvailabilityWindows(
     maxSuggestions?: number;
     aggregator?: "min" | "avg" | "product";
     recencyHalfLifeDays?: number;
+    minStartMinutes?: number; // filter: only windows starting at or after this minute-of-day
   }
 ): Promise<WeekdayAvailabilityWindow[]> {
   const slotMinutes = opts?.slotMinutes ?? 30;
   const maxSuggestions = opts?.maxSuggestions ?? 3;
   const aggregator = opts?.aggregator ?? "min";
   const recencyHalfLifeDays = opts?.recencyHalfLifeDays ?? 30;
+  const minStartMinutes = opts?.minStartMinutes;
 
   if (!userIds || userIds.length === 0) return [];
   if (userIds.length === 1) {
-    return getWeekdayAvailabilityWindows(
-      userIds[0],
-      requiredHours,
-      days,
-      { slotMinutes, maxSuggestions }
-    );
+    return getWeekdayAvailabilityWindows(userIds[0], requiredHours, days, {
+      slotMinutes,
+      maxSuggestions,
+    });
   }
 
   // Fetch heatmaps in parallel with aligned parameters.
@@ -1095,11 +1109,17 @@ export async function getGroupWeekdayAvailabilityWindows(
     }
   }
 
-  const candidates =
+  let candidates =
     windowsWithFullSamples.length > 0 ? windowsWithFullSamples : allWindows;
 
+  // Optional: filter out windows that start before a minimum minute-of-day (e.g., now for today)
+  if (typeof minStartMinutes === "number") {
+    candidates = candidates.filter((w) => w.startMinutes >= minStartMinutes);
+  }
+
   candidates.sort(
-    (a, b) => b.avgConfidence - a.avgConfidence || a.startMinutes - b.startMinutes
+    (a, b) =>
+      b.avgConfidence - a.avgConfidence || a.startMinutes - b.startMinutes
   );
 
   return candidates.slice(0, maxSuggestions);
