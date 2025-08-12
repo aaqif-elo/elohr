@@ -1,8 +1,9 @@
 import { CacheType, ChatInputCommandInteraction, Client } from "discord.js";
 import { handleAdminCommand } from "./admin.handler";
-import { EAuthCommands, ELeaveCommands } from "../discord.enums";
+import { EAuthCommands, ELeaveCommands, EMeetingCommands } from "../discord.enums";
 import { handleLeaveCommand } from "./leave.handler";
 import { handleAuthCommand } from "./auth.handler";
+import { handleMeetingCommand } from "./meeting.handler";
 
 console.log("NODE_ENV", process.env.NODE_ENV);
 const production = process.env.NODE_ENV === "production";
@@ -28,6 +29,12 @@ export const interactionHandler = async (
   interaction: ChatInputCommandInteraction<CacheType>
 ) => {
   try {
+    // Route meeting command regardless of channel (guild validation happens in handler)
+    if (interaction.commandName === EMeetingCommands.MEETING) {
+      await handleMeetingCommand(interaction);
+      return;
+    }
+
     if (interaction.channelId === attendanceChannelID) {
       if (ELeaveCommands.REQUEST_LEAVE === interaction.commandName) {
         handleLeaveCommand(interaction);
