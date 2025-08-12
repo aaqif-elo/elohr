@@ -610,7 +610,7 @@ export const sendLeaveRequestNotification = async (
         await interaction.reply({
           content:
             "This leave request has already been processed or doesn't exist.",
-          ephemeral: true,
+          flags: "Ephemeral",
         });
         return;
       }
@@ -621,7 +621,7 @@ export const sendLeaveRequestNotification = async (
       if (!adminId) {
         await interaction.reply({
           content: "Your Discord ID is not linked to any user.",
-          ephemeral: true,
+          flags: "Ephemeral",
         });
         return;
       }
