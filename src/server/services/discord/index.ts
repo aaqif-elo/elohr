@@ -161,10 +161,12 @@ function setupEventHandlers() {
         try {
           const meeting = await getMeetingById(meetingId);
           if (!meeting || meeting.isCanceled) {
-            await interaction.reply({
-              content: "This meeting is no longer active.",
-              flags: "Ephemeral",
-            });
+            if (!interaction.replied && !interaction.deferred) {
+              await interaction.reply({
+                content: "This meeting is no longer active.",
+                flags: "Ephemeral",
+              });
+            }
             return;
           }
           const { id: userId } = await getUserByDiscordId(interaction.user.id);
@@ -173,12 +175,35 @@ function setupEventHandlers() {
             userId,
             action === "accept"
           );
-          await interaction.reply({
-            content: `You have ${
-              action === "accept" ? "accepted" : "rejected"
-            } the meeting.`,
-            flags: "Ephemeral",
-          });
+
+          // Edit the original DM (or message) to reflect the choice and remove buttons.
+          // If the message is a DM invite, interaction.message should exist.
+          const baseText = `You have ${
+            action === "accept" ? "accepted" : "rejected"
+          } the invite to a meeting${
+            meeting.title ? `: **${meeting.title}**` : ""
+          }.`;
+          if (interaction.message && interaction.message.editable) {
+            try {
+              await interaction.update({
+                content: baseText,
+                components: [],
+              });
+            } catch {
+              if (!interaction.replied && !interaction.deferred) {
+                await interaction.reply({
+                  content: baseText,
+                  flags: "Ephemeral",
+                });
+              }
+            }
+          } else if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({
+              content: baseText,
+              flags: "Ephemeral",
+            });
+          }
+
           const refreshed = await getMeetingById(meetingId);
           if (refreshed) {
             const total = refreshed.requests.length;
@@ -204,7 +229,7 @@ function setupEventHandlers() {
           }
         } catch (e) {
           console.error("Meeting button error:", e);
-          if (!interaction.replied)
+          if (!interaction.replied && !interaction.deferred)
             await interaction.reply({
               content: "❌ Error handling your action.",
               flags: "Ephemeral",

@@ -154,6 +154,18 @@ export async function sendMeetingInviteDM(
 ): Promise<void> {
   try {
     const discordUser = await discordClient.users.fetch(userDiscordId);
+    // Resolve inviter's discord ID (creatorUserId -> discordId)
+    let inviterMention = "someone";
+    try {
+      const mappings = await getDiscordIdsFromUserIds([meeting.creatorUserId]);
+      if (mappings.length && mappings[0].discordId) {
+        inviterMention = `<@${mappings[0].discordId}>`;
+      }
+    } catch {
+      // ignore mapping errors; fallback text
+    }
+    // Channel mention
+    const channelMention = `<#${meeting.channelId}>`;
     const accept = new ButtonBuilder()
       .setCustomId(`${MEETING_BUTTON_IDS.ACCEPT}-${meeting.id}`)
       .setLabel("Accept")
@@ -168,11 +180,11 @@ export async function sendMeetingInviteDM(
       accept,
       reject
     );
-  const when = `${discordTimestamp(meeting.startTime, "F")} (${meeting.durationMins} mins, ${discordTimestamp(meeting.startTime, "R")})`;
+    const when = `${discordTimestamp(meeting.startTime, "F")} (${meeting.durationMins} mins, ${discordTimestamp(meeting.startTime, "R")})`;
     await discordUser.send({
-      content: `You are invited to a meeting${
+      content: `${inviterMention} is inviting you to a meeting${
         meeting.title ? `: **${meeting.title}**` : ""
-      } on ${when}. Do you accept?`,
+      } in ${channelMention} on ${when}. Do you accept?`,
       components: [row],
     });
   } catch (e) {
