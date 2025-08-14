@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented below.
 
+## v1.3.2 [2025-08-13]
+
+### Changed
+
+- Meeting invited notifications now includes the name of the meeting creator and the channel where the meeting is to be held.
+- Meeting invite buttons are now removed after the meeting is accepted or rejected to prevent multiple responses.
+
 ## v1.3.1 [2025-08-12]
 
 ### Added
