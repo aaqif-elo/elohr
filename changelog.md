@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented below.
 
+## v1.4.0 [2025-08-14]
+
+### Added
+
+- `/availability` command to check weekday availability heatmaps for team members.
+
+### Changed
+
+- Meeting invite confirmation messages now include detailed information about the meeting (agenda, time, duration, participants).
+
 ## v1.3.2 [2025-08-13]
 
 ### Changed
