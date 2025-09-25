@@ -21,6 +21,10 @@ export enum EMeetingCommands {
   MEETING = "meeting",
 }
 
+export enum EAvailabilityCommands {
+  AVAILABILITY = "availability",
+}
+
 // Participant option names for the /meeting command
 enum EMeetingParticipantOptions {
   PARTICIPANT1 = "participant1",

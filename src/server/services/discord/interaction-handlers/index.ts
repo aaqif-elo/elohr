@@ -1,9 +1,10 @@
 import { CacheType, ChatInputCommandInteraction, Client } from "discord.js";
 import { handleAdminCommand } from "./admin.handler";
-import { EAuthCommands, ELeaveCommands, EMeetingCommands } from "../discord.enums";
+import { EAuthCommands, ELeaveCommands, EMeetingCommands, EAvailabilityCommands } from "../discord.enums";
 import { handleLeaveCommand } from "./leave.handler";
 import { handleAuthCommand } from "./auth.handler";
 import { handleMeetingCommand } from "./meeting.handler";
+import { handleAvailabilityCommand } from "./availability.handler";
 
 console.log("NODE_ENV", process.env.NODE_ENV);
 const production = process.env.NODE_ENV === "production";
@@ -32,6 +33,12 @@ export const interactionHandler = async (
     // Route meeting command regardless of channel (guild validation happens in handler)
     if (interaction.commandName === EMeetingCommands.MEETING) {
       await handleMeetingCommand(interaction);
+      return;
+    }
+
+    // Availability command can run in any channel in the server
+    if (interaction.commandName === EAvailabilityCommands.AVAILABILITY) {
+      await handleAvailabilityCommand(interaction);
       return;
     }
 

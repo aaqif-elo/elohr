@@ -12,6 +12,7 @@ import {
   requestLeaveCommandBody,
 } from "./commands";
 import { meetingCommandBody } from "./commands";
+import { availabilityCommandBody } from "./commands";
 
 import { interactionHandler } from "./interaction-handlers";
 import {
@@ -173,13 +174,9 @@ function setupEventHandlers() {
           } the invite to a meeting${titlePart}.`;
           if (action === "accept" && refreshed) {
             const channelMention = `<#${refreshed.channelId}>`;
-            const whenFancy = `${discordTimestamp(
-              refreshed.startTime,
-              "F"
-            )} (${refreshed.durationMins} mins, ${discordTimestamp(
-              refreshed.startTime,
-              "R"
-            )})`;
+            const whenFancy = `${discordTimestamp(refreshed.startTime, "F")} (${
+              refreshed.durationMins
+            } mins, ${discordTimestamp(refreshed.startTime, "R")})`;
             try {
               const acceptedUserIds = refreshed.requests
                 .filter((r) => !!r.requestAcceptedAt && !r.rejectedAt)
@@ -202,14 +199,23 @@ function setupEventHandlers() {
           const isDM = !interaction.inGuild();
           if (isDM && interaction.message && interaction.message.editable) {
             try {
-              await interaction.update({ content: confirmationText, components: [] });
+              await interaction.update({
+                content: confirmationText,
+                components: [],
+              });
             } catch {
               if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({ content: confirmationText, flags: "Ephemeral" });
+                await interaction.reply({
+                  content: confirmationText,
+                  flags: "Ephemeral",
+                });
               }
             }
           } else if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: confirmationText, flags: "Ephemeral" });
+            await interaction.reply({
+              content: confirmationText,
+              flags: "Ephemeral",
+            });
           }
 
           if (refreshed) {
@@ -260,6 +266,7 @@ async function registerCommands() {
     getNextHolidayAnnouncementCommandBody,
     requestLeaveCommandBody,
     meetingCommandBody,
+    availabilityCommandBody,
   ];
 
   try {
