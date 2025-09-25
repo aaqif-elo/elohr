@@ -19,12 +19,12 @@ import {
   setMeetingRequestAcceptance,
   cancelMeeting,
   getUserByDiscordId,
-  getWeekdayAvailabilityHeatmap,
-  getGroupWeekdayAvailabilityWindows,
+  getDiscordIdsFromUserIds,
 } from "../../db";
 import { handleVoiceStateChange } from "./voice-channel-hook.service";
 import { setNameStatus } from "./utils";
 import { startCronJobs } from "./cron-jobs";
+import { discordTimestamp } from "../../utils/discord";
 declare global {
   var _discordClientGlobal: Client | undefined;
 }
@@ -66,17 +66,6 @@ export const getGuildMember = async (discordId: string) => {
 
 // Discord login and initialization
 export const initializeDiscord = async () => {
-  // getWeekdayAvailabilityHeatmap("5e23ebb84d38965d54026712", 20)
-  // getGroupWeekdayAvailabilityWindows(
-  //   ["5e23ebb84d38965d54026712", "5e23ec834d38965d54026715"],
-  //   0.5,
-  //   120
-  // ).then((r) => {
-  //   console.log("Group weekday availability windows:", r);
-  // });
-  // // getWeekdayAvailabilityHeatmap("5e23ec834d38965d54026715", 20);
-
-  // return discordClient; // Return early if already initialized
   if (!DISCORD_BOT_TOKEN) {
     console.error("DISCORD_BOT_TOKEN not set, Discord bot will not start");
     return;
@@ -176,35 +165,53 @@ function setupEventHandlers() {
             action === "accept"
           );
 
-          // Edit the original DM (or message) to reflect the choice and remove buttons.
-          // If the message is a DM invite, interaction.message should exist.
-          const baseText = `You have ${
+          // Build confirmation text (more details on acceptance)
+          const refreshed = await getMeetingById(meetingId);
+          const titlePart = refreshed?.title ? `: **${refreshed.title}**` : "";
+          let confirmationText = `You have ${
             action === "accept" ? "accepted" : "rejected"
-          } the invite to a meeting${
-            meeting.title ? `: **${meeting.title}**` : ""
-          }.`;
-          if (interaction.message && interaction.message.editable) {
+          } the invite to a meeting${titlePart}.`;
+          if (action === "accept" && refreshed) {
+            const channelMention = `<#${refreshed.channelId}>`;
+            const whenFancy = `${discordTimestamp(
+              refreshed.startTime,
+              "F"
+            )} (${refreshed.durationMins} mins, ${discordTimestamp(
+              refreshed.startTime,
+              "R"
+            )})`;
             try {
-              await interaction.update({
-                content: baseText,
-                components: [],
-              });
+              const acceptedUserIds = refreshed.requests
+                .filter((r) => !!r.requestAcceptedAt && !r.rejectedAt)
+                .map((r) => r.userId);
+              const mappings = await getDiscordIdsFromUserIds(acceptedUserIds);
+              const attendeeMentions = mappings
+                .map((m) => `<@${m.discordId}>`)
+                .join(" ");
+              confirmationText = `You have accepted the invite to a meeting${titlePart}.
+• Channel: ${channelMention}
+• When: ${whenFancy}
+• Attending: ${attendeeMentions || "(none yet)"}`;
+            } catch {
+              // Fallback to base text if mapping fails
+              confirmationText = `You have accepted the invite to a meeting${titlePart}.`;
+            }
+          }
+
+          // Only edit the original message in DMs to avoid changing a shared channel message.
+          const isDM = !interaction.inGuild();
+          if (isDM && interaction.message && interaction.message.editable) {
+            try {
+              await interaction.update({ content: confirmationText, components: [] });
             } catch {
               if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({
-                  content: baseText,
-                  flags: "Ephemeral",
-                });
+                await interaction.reply({ content: confirmationText, flags: "Ephemeral" });
               }
             }
           } else if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({
-              content: baseText,
-              flags: "Ephemeral",
-            });
+            await interaction.reply({ content: confirmationText, flags: "Ephemeral" });
           }
 
-          const refreshed = await getMeetingById(meetingId);
           if (refreshed) {
             const total = refreshed.requests.length;
             const rejected = refreshed.requests.filter(
