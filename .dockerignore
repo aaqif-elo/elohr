@@ -1,0 +1,15 @@
+.git
+.github
+.vinxi
+.vscode
+docs
+node_modules
+Screenshots
+.env
+.gitignore
+.hintrc
+.markdownlint.jsonc
+changelog.md
+deploy.sh
+elohr.zip
+README.md

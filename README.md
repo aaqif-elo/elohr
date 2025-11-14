@@ -103,6 +103,22 @@ pnpm run generate
 pnpm run build
 ```
 
+### 🐳 Containerized Workflow
+
+Use the provided `Dockerfile` to build a portable image without needing a Windows host:
+
+```bash
+docker build -t elohr:latest .
+```
+
+Run the container with your environment variables (re-use `.env` or craft a dedicated file):
+
+```bash
+docker run --env-file .env -p 2500:2500 elohr:latest
+```
+
+The container installs pnpm 10.10, runs `prisma generate`, builds the SolidStart app, and starts it with `pnpm start`. Override `PORT` if you expose a different port.
+
 ## 🏗️ Building & Deployment
 
 ### 💻 Building (Windows)
