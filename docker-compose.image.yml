@@ -1,0 +1,12 @@
+services:
+  app:
+    image: ${APP_IMAGE:-ghcr.io/aaqif-elo/elohr-app:latest}
+    pull_policy: always
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: ${PORT:-2500}
+    ports:
+      - "${PORT:-2500}:2500"
+    restart: unless-stopped

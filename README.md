@@ -145,6 +145,22 @@ You can orchestrate the app (and optionally MongoDB) with Docker Compose. Both f
    docker compose -f docker-compose.yml -f docker-compose.mongo.yml down -v
    ```
 
+- **Pre-built application image**
+
+   If you prefer to skip building locally, authenticate with GitHub Container Registry (`docker login ghcr.io`) and use the published image:
+
+   ```bash
+   docker compose -f docker-compose.image.yml up -d
+   ```
+
+   Combine it with the Mongo override when you want a local database:
+
+   ```bash
+   docker compose -f docker-compose.image.yml -f docker-compose.mongo.yml up -d
+   ```
+
+   Set `APP_IMAGE` in your shell or `.env` if you want to pull a different tag (for example a staging build).
+
 Stop the stack with `docker compose down` (pass both files if you started with the override) and add `-v` if you also want to discard the MongoDB volume.
 
 ## 🏗️ Building & Deployment
