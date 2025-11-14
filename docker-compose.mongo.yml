@@ -1,0 +1,46 @@
+services:
+  app:
+    env_file:
+      - .env
+    environment:
+      DB_URL: mongodb://mongo:27017/elohr?directConnection=true&replicaSet=rs0
+    depends_on:
+      mongo:
+        condition: service_healthy
+      mongo-init-replica:
+        condition: service_completed_successfully
+
+  mongo:
+    image: mongo:7.0
+    hostname: mongo
+    container_name: mongo
+    env_file:
+      - .env
+    restart: unless-stopped
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    extra_hosts:
+      - "mongo:127.0.0.1"
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand({ping: 1}).ok\" | grep 1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 10
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+      - ./docker/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+
+  mongo-init-replica:
+    image: mongo:7.0
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: "no"
+    volumes:
+      - ./docker/mongo-init-replica.sh:/scripts/mongo-init-replica.sh:ro
+    entrypoint: ["bash", "/scripts/mongo-init-replica.sh"]
+
+volumes:
+  mongo-data:

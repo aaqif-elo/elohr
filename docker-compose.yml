@@ -1,0 +1,14 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: elohr-app:latest
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: ${PORT:-2500}
+    ports:
+      - "${PORT:-2500}:2500"
+    restart: unless-stopped

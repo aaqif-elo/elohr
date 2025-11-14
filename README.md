@@ -119,6 +119,34 @@ docker run --env-file .env -p 2500:2500 elohr:latest
 
 The container installs pnpm 10.10, runs `prisma generate`, builds the SolidStart app, and starts it with `pnpm start`. Override `PORT` if you expose a different port.
 
+#### 🧩 Docker Compose Options
+
+You can orchestrate the app (and optionally MongoDB) with Docker Compose. Both files read secrets from the root `.env`, so ensure it is populated with the usual Elohr variables.
+
+- **External MongoDB (default)**
+
+   ```bash
+   docker compose up --build
+   ```
+
+   The `DB_URL` value from your `.env` is passed straight into the container, so point it at Atlas or any other managed cluster.
+
+- **Local MongoDB replica set**
+
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.mongo.yml up --build
+   ```
+
+   The override file launches `mongo:7` with a single-node replica set (required by Prisma) using the initialization script in `docker/mongo-init.js`. A lightweight helper service (`mongo-init-replica`, powered by `docker/mongo-init-replica.sh`) also runs `rs.initiate` on every `docker compose up`, so even previously created `mongo-data` volumes are upgraded automatically. The Mongo container resolves its own hostname to `127.0.0.1`, which lets the replica-set validator treat `mongo:27017` as “self” while other services still reach it via the Docker network. The SolidStart container waits for both Mongo’s health check and the helper to finish before starting, guaranteeing that `local.oplog.rs` exists before Prisma connects. Both the app and Mongo containers source the standard `.env`, so the stack still receives Discord secrets, JWT config, etc. If you need Mongo authentication locally, add `MONGO_INITDB_ROOT_USERNAME`, `MONGO_INITDB_ROOT_PASSWORD`, and related vars to `.env`—they will be forwarded automatically. Data persists in the named `mongo-data` volume, and the app automatically connects to the in-cluster MongoDB instance via `mongodb://mongo:27017/elohr`.
+
+   If you ever need to blow away the replica-set volume entirely (for example to start with a fresh database), run:
+
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.mongo.yml down -v
+   ```
+
+Stop the stack with `docker compose down` (pass both files if you started with the override) and add `-v` if you also want to discard the MongoDB volume.
+
 ## 🏗️ Building & Deployment
 
 ### 💻 Building (Windows)
