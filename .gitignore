@@ -7,6 +7,9 @@ dist
 app.config.timestamp_*.js
 .vscode/find-unused-exports.json
 
+# Local Docker overrides
+docker-compose.local.yml
+
 # Environment
 .env
 .env*.local
