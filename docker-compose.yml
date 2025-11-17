@@ -3,12 +3,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        VITE_TEAM_TZ: ${VITE_TEAM_TZ:-UTC}
     image: elohr-app:latest
     env_file:
       - .env
     environment:
       NODE_ENV: production
       PORT: ${PORT:-2500}
+      VITE_TEAM_TZ: ${VITE_TEAM_TZ:-UTC}
     ports:
       - "${PORT:-2500}:2500"
     restart: unless-stopped

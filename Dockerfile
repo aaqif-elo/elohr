@@ -14,6 +14,8 @@ RUN pnpm install --frozen-lockfile
 RUN pnpm generate
 
 FROM deps AS build
+ARG VITE_TEAM_TZ=UTC
+ENV VITE_TEAM_TZ=${VITE_TEAM_TZ}
 COPY public ./public
 COPY src ./src
 COPY app.config.ts tailwind.config.cjs tsconfig.json ./
