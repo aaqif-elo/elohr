@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented below.
 
+## v1.4.1 [2025-11-17]
+
+### Fixed
+
+- GuildMembersTimeout error due to rate limiting inside `setNameStatus` function because of `guild.members.fetch()` call.
+- Incorrect Scrum time calculation due to missing env `VITE_TEAM_TZ` during Docker build and runtime.
+
 ## v1.4.0 [2025-08-14]
 
 ### Added
