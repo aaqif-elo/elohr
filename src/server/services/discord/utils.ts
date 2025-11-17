@@ -2,6 +2,7 @@ import { Client, GuildMember } from "discord.js";
 import { discordTimestamp } from "../../utils/discord";
 import { platform } from "os";
 import { launch, LaunchOptions } from "puppeteer";
+import { getGuildMember } from ".";
 
 // Queue system for attendance image reports
 let isProcessingImageQueue = false;
@@ -201,7 +202,6 @@ function isAdmin(member: GuildMember): boolean {
 // The nickname is then modified to add the status tag at [status] at the end of the name
 // Any part of the nickname starting with [ is going to be overwritten
 export async function setNameStatus(
-  discordClient: Client, // Discord Client
   status: string, // The status to be set
   id: string // The Discord Id (UUID) for the user
 ) {
@@ -211,11 +211,7 @@ export async function setNameStatus(
     return;
   }
 
-  const member = (
-    await (
-      await discordClient.guilds.fetch(process.env.DISCORD_SERVER_ID!)
-    ).members.fetch()
-  ).get(id);
+  const member = await getGuildMember(id);
 
   if (!member) {
     console.error("Member not found");

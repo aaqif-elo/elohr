@@ -349,11 +349,7 @@ export const autoLogoutUsersWhoAreStillLoggedIn = async (
         return;
       }
 
-      await setNameStatus(
-        discordClient,
-        process.env.STATUS_TAG_UNAVAILABLE || "O",
-        discordId
-      );
+      await setNameStatus(process.env.STATUS_TAG_UNAVAILABLE || "O", discordId);
 
       const fetchedUser = await discordClient.users.fetch(discordId);
 
@@ -412,7 +408,6 @@ export const autoLogoutUsersWhoAreStillLoggedIn = async (
         if (isOnline) {
           await login(userId, member.voice.channel.name);
           await setNameStatus(
-            discordClient,
             process.env.STATUS_TAG_AVAILABLE || "O",
             discordId
           );
@@ -868,11 +863,15 @@ export async function sendDailyAttendanceReportToAdmin(
   const onLeave: { name: string; reason?: string }[] = [];
 
   // Overall project totals
-  const projectTotals = new Map<string, { hours: number; employeeIds: Set<string> }>();
+  const projectTotals = new Map<
+    string,
+    { hours: number; employeeIds: Set<string> }
+  >();
 
   const toHours = (ms: number) => ms / (1000 * 60 * 60);
   const fmtHours = (hrs: number) => `${hrs.toFixed(1)}h`;
-  const fmtTime = (d: Date) => d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+  const fmtTime = (d: Date) =>
+    d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
   const median = (nums: number[]) => {
     if (!nums.length) return 0;
     const s = [...nums].sort((a, b) => a - b);
@@ -911,14 +910,24 @@ export async function sendDailyAttendanceReportToAdmin(
       let topProject: { name: string; hours: number } | undefined;
       for (const [proj, ms] of projMs.entries()) {
         const hrs = toHours(ms);
-        if (!topProject || hrs > topProject.hours) topProject = { name: proj, hours: hrs };
-        const rec = projectTotals.get(proj) || { hours: 0, employeeIds: new Set<string>() };
+        if (!topProject || hrs > topProject.hours)
+          topProject = { name: proj, hours: hrs };
+        const rec = projectTotals.get(proj) || {
+          hours: 0,
+          employeeIds: new Set<string>(),
+        };
         rec.hours += hrs;
         rec.employeeIds.add(userId);
         projectTotals.set(proj, rec);
       }
 
-      attended.push({ userId, name, login, totalHours: toHours(totalMs), topProject });
+      attended.push({
+        userId,
+        name,
+        login,
+        totalHours: toHours(totalMs),
+        topProject,
+      });
     } else {
       // Use proper names for missed list
       missedNames.push(name);
@@ -926,7 +935,9 @@ export async function sendDailyAttendanceReportToAdmin(
   }
 
   // Sort attended by hours worked (desc), then by name; others alphabetically
-  attended.sort((a, b) => (b.totalHours - a.totalHours) || a.name.localeCompare(b.name));
+  attended.sort(
+    (a, b) => b.totalHours - a.totalHours || a.name.localeCompare(b.name)
+  );
   missedNames.sort((a, b) => a.localeCompare(b));
   onLeave.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -935,30 +946,49 @@ export async function sendDailyAttendanceReportToAdmin(
   const totalMissed = missedNames.length;
   const totalLeaves = onLeave.length;
 
-  const loginMinutes = attended.map((a) => a.login.getHours() * 60 + a.login.getMinutes());
+  const loginMinutes = attended.map(
+    (a) => a.login.getHours() * 60 + a.login.getMinutes()
+  );
   const hoursWorked = attended.map((a) => a.totalHours);
   const medianLoginMinutes = median(loginMinutes);
   const medianHoursWorked = median(hoursWorked);
   const medianLoginHH = Math.floor(medianLoginMinutes / 60);
   const medianLoginMM = Math.round(medianLoginMinutes % 60);
-  const medianLoginDate = new Date(new Date(start).setHours(medianLoginHH, medianLoginMM, 0, 0));
+  const medianLoginDate = new Date(
+    new Date(start).setHours(medianLoginHH, medianLoginMM, 0, 0)
+  );
 
-  let overallProject: { name: string; hours: number; employees: number } | null = null;
+  let overallProject: {
+    name: string;
+    hours: number;
+    employees: number;
+  } | null = null;
   for (const [proj, rec] of projectTotals.entries()) {
-    const candidate = { name: proj, hours: rec.hours, employees: rec.employeeIds.size };
+    const candidate = {
+      name: proj,
+      hours: rec.hours,
+      employees: rec.employeeIds.size,
+    };
     if (!overallProject || candidate.hours > overallProject.hours) {
       overallProject = candidate;
-    } else if (overallProject && candidate.hours === overallProject.hours && candidate.employees > overallProject.employees) {
+    } else if (
+      overallProject &&
+      candidate.hours === overallProject.hours &&
+      candidate.employees > overallProject.employees
+    ) {
       overallProject = candidate;
     }
   }
 
-  const header = `**Daily Attendance Report — ${date.toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  })}**`;
+  const header = `**Daily Attendance Report — ${date.toLocaleDateString(
+    "en-US",
+    {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }
+  )}**`;
 
   const lines: string[] = [header, ""];
 
@@ -968,8 +998,16 @@ export async function sendDailyAttendanceReportToAdmin(
     lines.push("- None");
   } else {
     for (const a of attended) {
-      const top = a.topProject ? ` — Most Active: ${a.topProject.name} (${fmtHours(a.topProject.hours)})` : "";
-      lines.push(`- ${a.name}: Login ${fmtTime(a.login)}, Hours ${fmtHours(a.totalHours)}${top}`);
+      const top = a.topProject
+        ? ` — Most Active: ${a.topProject.name} (${fmtHours(
+            a.topProject.hours
+          )})`
+        : "";
+      lines.push(
+        `- ${a.name}: Login ${fmtTime(a.login)}, Hours ${fmtHours(
+          a.totalHours
+        )}${top}`
+      );
     }
   }
   lines.push("");
@@ -988,15 +1026,24 @@ export async function sendDailyAttendanceReportToAdmin(
   if (!onLeave.length) {
     lines.push("- None");
   } else {
-    for (const l of onLeave) lines.push(`- ${l.name}${l.reason ? ` — ${l.reason}` : ""}`);
+    for (const l of onLeave)
+      lines.push(`- ${l.name}${l.reason ? ` — ${l.reason}` : ""}`);
   }
   lines.push("");
 
   // Summary
   lines.push("### Summary");
-  lines.push(`- Median Login Time: ${fmtTime(medianLoginDate)} | Median Hours Worked: ${fmtHours(medianHoursWorked)}`);
+  lines.push(
+    `- Median Login Time: ${fmtTime(
+      medianLoginDate
+    )} | Median Hours Worked: ${fmtHours(medianHoursWorked)}`
+  );
   if (overallProject) {
-    lines.push(`- Most Active Project Overall: ${overallProject.name} — ${overallProject.employees} employees, ${fmtHours(overallProject.hours)}`);
+    lines.push(
+      `- Most Active Project Overall: ${overallProject.name} — ${
+        overallProject.employees
+      } employees, ${fmtHours(overallProject.hours)}`
+    );
   } else {
     lines.push(`- Most Active Project Overall: N/A`);
   }
