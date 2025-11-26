@@ -76,9 +76,20 @@ async function getAttendanceStatsImageInternal(
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
   };
   // On Linux, Puppeteer requires the path to the Chromium executable to be explicitly set.
-  // The default location for Chromium on many Linux distributions is /usr/bin/chromium-browser.
+  // Check common locations for Chromium on Linux distributions.
   if (platform() === "linux") {
-    browserConfig["executablePath"] = "/usr/bin/chromium-browser";
+    const { existsSync } = await import("node:fs");
+    const chromiumPaths = [
+      "/usr/bin/chromium",           // Debian/Ubuntu
+      "/usr/bin/chromium-browser",   // Some Ubuntu versions
+      "/usr/bin/google-chrome",      // Google Chrome
+    ];
+    for (const chromePath of chromiumPaths) {
+      if (existsSync(chromePath)) {
+        browserConfig["executablePath"] = chromePath;
+        break;
+      }
+    }
   }
   const browser = await launch(browserConfig);
   const page = await browser.newPage();
