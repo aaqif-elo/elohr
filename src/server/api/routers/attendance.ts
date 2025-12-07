@@ -10,6 +10,7 @@ import {
   cleanupExistingSubscription,
   registerSubscription,
   activeSubscriptions,
+  getWrappedStats,
 } from "../../db";
 
 import {
@@ -247,5 +248,24 @@ export const attendanceRouter = createTRPCRouter({
           absentDates,
         },
       };
+    }),
+  getWrapped: authProcedure
+    .input((data) =>
+      parseAsync(
+        object({
+          year: optional(string()),
+        }),
+        data
+      )
+    )
+    .query(async (opts) => {
+      const userId = opts.ctx.user.dbId;
+      if (!userId) return null;
+
+      const year = opts.input.year
+        ? parseInt(opts.input.year, 10)
+        : new Date().getFullYear();
+
+      return getWrappedStats(userId, year);
     }),
 });

@@ -124,4 +124,18 @@ export const authRouter = createTRPCRouter({
         return null;
       }
     }),
+  // Dev-only endpoint to generate token by user ID (for testing)
+  getDevToken: publicProcedure
+    .input(wrap(string()))
+    .query(async ({ input: userId }) => {
+      // Only allow in development
+      if (process.env.NODE_ENV === "production") {
+        return null;
+      }
+      const result = await generateJWTFromUserId(userId);
+      if (!result) {
+        return null;
+      }
+      return result.jwt;
+    }),
 });

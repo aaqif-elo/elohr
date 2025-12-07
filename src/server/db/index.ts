@@ -6,3 +6,4 @@ export * from './leaves';
 export * from './holidays';
 export * from './util';
 export * from './meetings';
+export * from './wrapped';

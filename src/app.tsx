@@ -19,6 +19,7 @@ export default function App() {
       >
         <Route path="/" component={AuthGuard}>
           <Route path="/home" component={lazy(() => import("./routes/home"))} />
+          <Route path="/wrapped" component={lazy(() => import("./routes/wrapped"))} />
         </Route>
         <FileRoutes />
       </Router>
