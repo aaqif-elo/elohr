@@ -82,15 +82,16 @@
 }
 
 .wrapped-stat-value {
-  font-size: 4rem;
+  font-size: clamp(2rem, 10vw, 3.5rem);
   font-weight: 900;
   color: white;
   line-height: 1;
   margin-bottom: 0.5rem;
+  word-break: break-word;
 }
 
 .wrapped-stat-label {
-  font-size: 1.125rem;
+  font-size: 0.875rem;
   color: rgba(255, 255, 255, 0.7);
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -101,10 +102,11 @@
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 1rem;
-  padding: 1.5rem;
+  padding: 1.25rem 1rem;
   text-align: center;
-  width: 100%;
-  max-width: 280px;
+  flex: 1 1 140px;
+  min-width: 120px;
+  max-width: 160px;
   margin: 0.5rem;
 }
 
@@ -124,16 +126,17 @@
 .wrapped-project-bar {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.75rem;
   width: 100%;
-  max-width: 320px;
+  max-width: 340px;
   margin-bottom: 0.75rem;
 }
 
 .wrapped-project-name {
-  font-size: 1rem;
+  font-size: 0.875rem;
   color: white;
-  min-width: 100px;
+  width: 90px;
+  flex-shrink: 0;
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
@@ -146,6 +149,7 @@
   background: rgba(255, 255, 255, 0.1);
   border-radius: 4px;
   overflow: hidden;
+  min-width: 80px;
 }
 
 .wrapped-project-bar-fill {
@@ -156,9 +160,10 @@
 }
 
 .wrapped-project-hours {
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   color: rgba(255, 255, 255, 0.6);
-  min-width: 50px;
+  width: 40px;
+  flex-shrink: 0;
   text-align: right;
 }
 
@@ -214,6 +219,7 @@
     opacity: 0;
     transform: translateY(30px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -221,9 +227,12 @@
 }
 
 @keyframes wrapped-pulse-glow {
-  0%, 100% {
+
+  0%,
+  100% {
     text-shadow: 0 0 30px rgba(0, 217, 255, 0.5);
   }
+
   50% {
     text-shadow: 0 0 60px rgba(0, 217, 255, 0.8), 0 0 80px rgba(123, 44, 191, 0.4);
   }
@@ -234,6 +243,7 @@
     opacity: 0;
     transform: scale(0.8);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -314,9 +324,12 @@
 }
 
 @keyframes wrapped-bounce {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateX(-50%) translateY(0);
   }
+
   50% {
     transform: translateX(-50%) translateY(8px);
   }
