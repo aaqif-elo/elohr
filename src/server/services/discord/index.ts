@@ -105,6 +105,7 @@ export const initializeDiscord = async () => {
     return discordClient;
   } catch (error) {
     console.error("Failed to initialize Discord client:", error);
+    process.exit(1);
   }
 };
 
