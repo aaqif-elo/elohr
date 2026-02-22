@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7-labs
-FROM node:22-slim AS base
+FROM node:20.20.0-slim AS base
 ENV PNPM_HOME="/usr/local/share/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable \
@@ -50,8 +50,9 @@ FROM base AS runner
 ENV NODE_ENV=production
 ENV PORT=2500
 
-# Install Chromium for Puppeteer
+# Install Chromium for Puppeteer and FFmpeg for audio processing
 RUN apt-get update && apt-get install -y \
+  ffmpeg \
   chromium \
   fonts-liberation \
   libappindicator3-1 \

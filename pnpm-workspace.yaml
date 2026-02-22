@@ -1,4 +1,5 @@
 onlyBuiltDependencies:
+  - '@discordjs/opus'
   - '@parcel/watcher'
   - '@prisma/client'
   - '@prisma/engines'
