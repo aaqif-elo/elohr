@@ -1,8 +1,10 @@
-import { Client, GuildMember } from "discord.js";
+import type { GuildMember } from "discord.js";
 import { discordTimestamp } from "../../utils/discord";
 import { platform } from "os";
-import { launch, LaunchOptions } from "puppeteer";
+import type { LaunchOptions } from "puppeteer";
+import { launch } from "puppeteer";
 import { getGuildMember } from ".";
+import type { Attendance } from "@prisma/client";
 
 // Queue system for attendance image reports
 let isProcessingImageQueue = false;
@@ -14,8 +16,7 @@ const imageReportQueue: Array<{
 }> = [];
 
 // Generate a text attendance report from attendance data
-export function generateTextAttendanceReport(attendance: any): string {
-  if (!attendance) return "No attendance data found";
+export function generateTextAttendanceReport(attendance: Attendance): string {
   const loginTime = discordTimestamp(new Date(attendance.login), "t");
   const logoutTime = attendance.logout
     ? discordTimestamp(new Date(attendance.logout), "t")
@@ -35,7 +36,12 @@ async function processImageReportQueue() {
   if (isProcessingImageQueue || imageReportQueue.length === 0) return;
 
   isProcessingImageQueue = true;
-  const { token, isAdmin, date, resolve } = imageReportQueue.shift()!;
+  const queueItem = imageReportQueue.shift();
+  if (!queueItem) {
+    isProcessingImageQueue = false;
+    return;
+  }
+  const { token, isAdmin, date, resolve } = queueItem;
 
   try {
     const buffer = await getAttendanceStatsImageInternal(token, isAdmin, date);
@@ -54,7 +60,7 @@ async function processImageReportQueue() {
 export function queueAttendanceStatsImage(
   token: string,
   isAdmin = false,
-  date?: Date
+  date?: Date,
 ): Promise<Buffer | null> {
   return new Promise((resolve) => {
     imageReportQueue.push({ token, isAdmin, date, resolve });
@@ -69,7 +75,7 @@ export function queueAttendanceStatsImage(
 async function getAttendanceStatsImageInternal(
   token: string,
   isAdmin = false,
-  date?: Date
+  date?: Date,
 ) {
   const browserConfig: LaunchOptions = {
     headless: true,
@@ -80,9 +86,9 @@ async function getAttendanceStatsImageInternal(
   if (platform() === "linux") {
     const { existsSync } = await import("node:fs");
     const chromiumPaths = [
-      "/usr/bin/chromium",           // Debian/Ubuntu
-      "/usr/bin/chromium-browser",   // Some Ubuntu versions
-      "/usr/bin/google-chrome",      // Google Chrome
+      "/usr/bin/chromium", // Debian/Ubuntu
+      "/usr/bin/chromium-browser", // Some Ubuntu versions
+      "/usr/bin/google-chrome", // Google Chrome
     ];
     for (const chromePath of chromiumPaths) {
       if (existsSync(chromePath)) {
@@ -146,7 +152,7 @@ async function getAttendanceStatsImageInternal(
 
         return hasActualTimeData && hasClockElements && !hasLoadingText;
       },
-      { timeout: 15000 } // Increased timeout to 15 seconds
+      { timeout: 15000 }, // Increased timeout to 15 seconds
     );
   } catch (error) {
     console.error("Timeout waiting for attendance data:", error);
@@ -186,7 +192,7 @@ function hasStatus(nickname: string | null): boolean {
     nickname.match(new RegExp(`^${process.env.STATUS_TAG_AVAILABLE}`, "g")) !==
       null || // Check if the nickname starts with STATUS_TAG_AVAILABLE
     nickname.match(
-      new RegExp(`^${process.env.STATUS_TAG_UNAVAILABLE}`, "g")
+      new RegExp(`^${process.env.STATUS_TAG_UNAVAILABLE}`, "g"),
     ) !== null || // Check if the nickname starts with STATUS_TAG_UNAVAILABLE
     nickname.match(new RegExp(`^${process.env.STATUS_TAG_BREAK}`, "g")) !== null // Check if the nickname starts with STATUS_TAG_BREAK
   );
@@ -214,7 +220,7 @@ function isAdmin(member: GuildMember): boolean {
 // Any part of the nickname starting with [ is going to be overwritten
 export async function setNameStatus(
   status: string, // The status to be set
-  id: string // The Discord Id (UUID) for the user
+  id: string, // The Discord Id (UUID) for the user
 ) {
   if (!isValidTag(status)) {
     console.error("Invalid ", status);
@@ -237,8 +243,8 @@ export async function setNameStatus(
     await member.setNickname(
       // Set the nickname
       hasStatus(member.nickname) // Check if any status already applied
-        ? `${status}${member.nickname!.substring(1)}`.substring(0, 32) // Replace the previous statusTag
-        : `${status}${member.nickname}`.substring(0, 32) // Don't replace the previous statusTag
+        ? `${status}${member.nickname?.substring(1) ?? ""}`.substring(0, 32) // Replace the previous statusTag
+        : `${status}${member.nickname}`.substring(0, 32), // Don't replace the previous statusTag
     );
   } catch (err) {
     console.error(err);
