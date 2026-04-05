@@ -1,5 +1,5 @@
 import { EAttendanceCommands } from "./discord.enums";
-import { VoiceState } from "discord.js";
+import type { VoiceState } from "discord.js";
 import { getGuildMember } from ".";
 import {
   breakEnd,
@@ -13,7 +13,7 @@ import {
   switchProject,
   updateUserAvatar,
 } from "../../db";
-import { User } from "@prisma/client";
+import type { User } from "@prisma/client";
 
 if (!process.env.VOICE_CHANNEL_ATTENDANCE_DELAY_IN_SECONDS)
   throw new Error("VOICE_CHANNEL_ATTENDANCE_DELAY_IN_SECONDS is not defined");
@@ -176,10 +176,11 @@ const addAttendanceChange = async (attendanceChangePayload: {
                 user.discordInfo.id
               );
             }
-          } catch (err: any) {
+          } catch (err: unknown) {
+            const errMessage = err instanceof Error ? err.message : String(err);
             console.error("Error during switch action:", err);
             notifyDiscordUserCallback(
-              `${process.env.STATUS_TAG_ERROR} Error during switch: ${err.message}`,
+              `${process.env.STATUS_TAG_ERROR} Error during switch: ${errMessage}`,
               user.discordInfo.id
             );
           }
@@ -192,6 +193,7 @@ const addAttendanceChange = async (attendanceChangePayload: {
   };
 
   pendingTimeouts[user.id] = setTimeout(() => {
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
     delete pendingTimeouts[user.id]; // This specific timeout has fired
 
     if (!userActionQueues[user.id]) {
@@ -223,6 +225,7 @@ export const handleVoiceStateChange = async (
   // Clear any existing timeout for this user first
   if (pendingTimeouts[user.id] !== undefined) {
     clearTimeout(pendingTimeouts[user.id]);
+    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
     delete pendingTimeouts[user.id];
   }
 
