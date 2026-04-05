@@ -1,26 +1,28 @@
-import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount, Show, For } from "solid-js";
+import type {
+  UserState} from "../../store";
 import {
   getAdmin,
   getUser,
   setAdmin,
   setAttendance,
-  setAttendanceSummary,
-  UserState,
+  setAttendanceSummary
 } from "../../store";
 import { api } from "../../lib/api";
 import { AttendanceOverview } from "./AttendanceOverview";
 import { isToday } from "./utils";
-import {
+import type {
   TrpcAttendance,
   TrpcUser,
   TrpcUserWithAttendance,
 } from "../../store/utils";
 import { UserRoleTypes } from "@prisma/client";
-import { HRCalendar, DateHighlight, Legends } from "./Calendar";
+import type { DateHighlight} from "./Calendar";
+import { HRCalendar, Legends } from "./Calendar";
 import EmployeeList from "./EmployeeList";
 import { CircularTimeTracking } from "./CircularTimeTracker";
 import { generateTimeSegments } from "../../store/utils";
-import { TrpcAttendanceSummary } from "../../types/attendance";
+import type { TrpcAttendanceSummary } from "../../types/attendance";
 import { HolidayModal } from "./HolidayModal";
 import toast from "solid-toast";
 
@@ -44,16 +46,15 @@ const LeaveRequestModal = (props: {
     setReason(""); // Reset the form
   };
 
-  if (!props.isOpen) return null;
-
   return (
+    <Show when={props.isOpen}>
     <div class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
       <div class="w-full max-w-md rounded-lg bg-white p-6 shadow-xl dark:bg-neutral-800">
         <h2 class="mb-4 text-xl font-bold">Request Leave</h2>
         <div class="mb-4">
           <p class="font-medium">Selected Dates ({props.dates.length} days):</p>
           <div class="mt-2 max-h-40 overflow-auto rounded border p-2">
-            {props.dates.map((date) => (
+            <For each={props.dates}>{(date) => (
               <div class="py-1">
                 <span class="font-medium text-blue-600 dark:text-blue-400">
                   {date.toLocaleDateString("en-US", { weekday: "long" })}
@@ -65,7 +66,7 @@ const LeaveRequestModal = (props: {
                   day: "numeric",
                 })}
               </div>
-            ))}
+            )}</For>
           </div>
         </div>
         <form onSubmit={handleSubmit}>
@@ -84,7 +85,7 @@ const LeaveRequestModal = (props: {
           <div class="flex justify-end space-x-2">
             <button
               type="button"
-              onClick={props.onClose}
+              onClick={() => props.onClose()}
               class="rounded-lg border px-5 py-2.5 text-sm font-medium"
             >
               Cancel
@@ -100,6 +101,7 @@ const LeaveRequestModal = (props: {
         </form>
       </div>
     </div>
+    </Show>
   );
 };
 
@@ -463,9 +465,10 @@ export const AttendanceWrapper = (props: { date: Date }) => {
   // Get the current user data for the circular time tracker
   const overviewUser = () => {
     if (selectedUser()) {
+      const selected = selectedUser();
       return (
         getAdmin()?.allUsers.find(
-          (user) => user.dbID === selectedUser()!.dbID
+          (user) => user.dbID === selected?.dbID
         ) || getUser()
       );
     }
@@ -595,17 +598,20 @@ export const AttendanceWrapper = (props: { date: Date }) => {
     setHolidayModalOpen(false);
     if (!selectedHolidayDate()) return;
 
+    const holidayDate = selectedHolidayDate();
+    if (!holidayDate) return;
+
     setLoadingAttendance(true);
     try {
       // Call API to convert to holiday with user-provided values
       await api.holidays.convertToHoliday.mutate({
-        date: selectedHolidayDate()!.toISOString(),
+        date: holidayDate.toISOString(),
         name: name,
         description: description || undefined,
       });
 
       // Refetch holidays and attendance after change
-      await refreshCalendarData(selectedHolidayDate()!);
+      await refreshCalendarData(holidayDate);
       toast.success(`Successfully created holiday: ${name}`);
     } catch (error) {
       console.error("Failed to convert to holiday:", error);
@@ -636,8 +642,8 @@ export const AttendanceWrapper = (props: { date: Date }) => {
             monthStats={
               summary()
                 ? {
-                    absences: summary()!.stats.daysAbsent,
-                    leavesTaken: summary()!.stats.daysOnLeave,
+                    absences: summary()?.stats.daysAbsent ?? 0,
+                    leavesTaken: summary()?.stats.daysOnLeave ?? 0,
                   }
                 : undefined
             }
@@ -661,7 +667,7 @@ export const AttendanceWrapper = (props: { date: Date }) => {
 
         {/* Overview - third in priority */}
         <div class="min-h-[500px] rounded-lg bg-white p-6 shadow-lg dark:bg-neutral-900">
-          <Show when={user() && user()!.attendance}>
+          <Show when={user()?.attendance}>
             <AttendanceOverview
               loading={loadingAttendance()}
               selectedUser={selectedUser()}
@@ -679,10 +685,12 @@ export const AttendanceWrapper = (props: { date: Date }) => {
               </div>
             }
           >
-            <CircularTimeTracking
-              timeSegments={generateTimeSegments(overviewUser()!.attendance)}
-              currentTime={currentTime()}
-            />
+            {(attendance) => (
+              <CircularTimeTracking
+                timeSegments={generateTimeSegments(attendance())}
+                currentTime={currentTime()}
+              />
+            )}
           </Show>
         </div>
       </div>
