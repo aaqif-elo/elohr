@@ -40,7 +40,7 @@ export const validateToken = async (
       }
     }
 
-    return undefined;
+    return;
   } catch (e) {
     console.log('Error', e);
     if (e instanceof Error) {

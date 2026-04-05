@@ -46,7 +46,7 @@ export const validatePayload = async (
       console.log(body);
     }
 
-    return undefined;
+    return;
   } catch (e) {
     console.log('Error', e);
     if (e instanceof ValiError) {

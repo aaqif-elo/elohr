@@ -619,7 +619,7 @@ export function HRCalendar(props: HRCalendarProps) {
     month: number,
     year: number
   ): DateHighlight | undefined {
-    if (!props.dateHighlights) return undefined;
+    if (!props.dateHighlights) return;
 
     const dateString = `${year}-${String(month + 1).padStart(2, "0")}-${String(
       day
