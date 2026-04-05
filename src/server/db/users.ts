@@ -1,4 +1,4 @@
-import { Attendance, User, UserRoleTypes } from "@prisma/client";
+import type { Attendance, User } from "@prisma/client";
 import { db, getAttendanceForUser, getStartAndEndOfDay } from ".";
 
 // 1. Overload signatures
@@ -202,34 +202,6 @@ export async function getAllEmployeesWithAttendance(date: Date) {
   })[];
 }
 
-/**
- * Get a random user with the specified role(s)
- * Used for synthetic authentication in role-based action tokens
- *
- * @param roles Single role or array of roles that the user must have
- * @returns Basic user information with roles or null if no matching user found
- */
-export async function getRandomUserWithRole(
-  roles: UserRoleTypes | UserRoleTypes[]
-): Promise<{ id: string; roles: UserRoleTypes[] } | null> {
-  const requiredRoles = Array.isArray(roles) ? roles : [roles];
-
-  // Find users with the required role who aren't ex-employees
-  const user = await db.user.findFirst({
-    where: {
-      roles: {
-        hasSome: requiredRoles,
-      },
-      exEmployee: false,
-    },
-    select: {
-      id: true,
-      roles: true,
-    },
-  });
-
-  return user;
-}
 
 /**
  * Update the avatar of a user
