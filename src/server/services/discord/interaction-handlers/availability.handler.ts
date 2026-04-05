@@ -1,4 +1,4 @@
-import { CacheType, ChatInputCommandInteraction } from "discord.js";
+import type { CacheType, ChatInputCommandInteraction } from "discord.js";
 import { EAvailabilityCommands } from "../discord.enums";
 import { getUserByDiscordId, getWeekdayAvailabilityHeatmap } from "../../../db";
 import { discordTimestamp } from "../../../utils/discord";
@@ -33,7 +33,7 @@ export const handleAvailabilityCommand = async (
   await interaction.deferReply({ flags: "Ephemeral" });
 
   // Resolve to app user id
-  let userId: string | null = null;
+  let userId: string;
   try {
     const user = await getUserByDiscordId(target.id);
     userId = user.id;
