@@ -15,11 +15,6 @@ export interface customJwtPayload extends JwtPayload {
 
 const { sign, verify } = jwt;
 
-interface _AuthAttemptPayload {
-  discordUserId: string;
-  dateTime: Date;
-}
-
 let msToAdd = ONE_MONTH_IN_MS;
 if (process.env.JWT_EXP_IN_MS) {
   const parsed = parseInt(process.env.JWT_EXP_IN_MS);
