@@ -1,4 +1,4 @@
-import { Attendance } from "@prisma/client";
+import type { Attendance } from "@prisma/client";
 import { db, ONE_DAY_IN_MS } from ".";
 import { getStartOfDay, getEndOfDay } from "./util";
 import EventEmitter from "events";
@@ -18,24 +18,25 @@ declare global {
   var _attendanceEventsGlobal: AttendanceEventEmitter | undefined;
 }
 
-export interface AttendanceEvents {
+interface AttendanceEvents {
   attendanceUpdated: (attendance: Attendance) => void;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 class AttendanceEventEmitter extends EventEmitter {
   public toIterable<K extends keyof AttendanceEvents>(
     event: K,
-    opts: { signal?: AbortSignal }
+    opts: { signal?: AbortSignal },
   ): AsyncIterable<[Parameters<AttendanceEvents[K]>[0]]> {
     const events: [Parameters<AttendanceEvents[K]>[0]][] = [];
     const queue: ((
-      value: IteratorResult<[Parameters<AttendanceEvents[K]>[0]]>
+      value: IteratorResult<[Parameters<AttendanceEvents[K]>[0]]>,
     ) => void)[] = [];
 
     // Create the event listener that will be attached
     const listener = (data: Parameters<AttendanceEvents[K]>[0]) => {
-      if (queue.length > 0) {
-        const resolve = queue.shift()!;
+      const resolve = queue.shift();
+      if (resolve) {
         resolve({ value: [data], done: false });
       } else {
         events.push([data]);
@@ -50,8 +51,8 @@ class AttendanceEventEmitter extends EventEmitter {
       this.removeListener(event, listener);
       console.log(
         `Removed listener for ${String(event)}, remaining: ${this.listenerCount(
-          event
-        )}`
+          event,
+        )}`,
       );
     };
 
@@ -67,7 +68,8 @@ class AttendanceEventEmitter extends EventEmitter {
             IteratorResult<[Parameters<AttendanceEvents[K]>[0]]>
           > => {
             if (events.length > 0) {
-              return { value: events.shift()!, done: false };
+              const event = events.shift();
+              if (event) return { value: event, done: false };
             }
 
             if (opts.signal?.aborted) {
@@ -112,9 +114,9 @@ export const activeSubscriptions = new Map<string, AbortController>();
 
 // Function to clean up an existing subscription
 export function cleanupExistingSubscription(userId: string): boolean {
-  if (activeSubscriptions.has(userId)) {
+  const controller = activeSubscriptions.get(userId);
+  if (controller) {
     console.log(`Cleaning up existing subscription for user ${userId}`);
-    const controller = activeSubscriptions.get(userId)!;
     controller.abort();
     activeSubscriptions.delete(userId);
     return true;
@@ -125,25 +127,26 @@ export function cleanupExistingSubscription(userId: string): boolean {
 // Function to register a new subscription
 export function registerSubscription(
   userId: string,
-  controller: AbortController
+  controller: AbortController,
 ): void {
   activeSubscriptions.set(userId, controller);
   console.log(`Registered subscription for user ${userId}`);
   console.log(`Total active subscriptions: ${activeSubscriptions.size}`);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
 declare interface AttendanceEventEmitter {
   on<K extends keyof AttendanceEvents>(
     event: K,
-    listener: AttendanceEvents[K]
+    listener: AttendanceEvents[K],
   ): this;
   off<K extends keyof AttendanceEvents>(
     event: K,
-    listener: AttendanceEvents[K]
+    listener: AttendanceEvents[K],
   ): this;
   once<K extends keyof AttendanceEvents>(
     event: K,
-    listener: AttendanceEvents[K]
+    listener: AttendanceEvents[K],
   ): this;
   emit<K extends keyof AttendanceEvents>(
     event: K,
@@ -166,7 +169,7 @@ attendanceEvents.setMaxListeners(0);
 
 console.log(
   "Initializing attendanceEvents singleton instance",
-  attendanceEvents
+  attendanceEvents,
 );
 
 // --- Region: Locale-specific working days (Bangladesh) ---
@@ -177,6 +180,27 @@ const isWeekendBD = (dateOrDow: Date | number): boolean => {
   const dow = typeof dateOrDow === "number" ? dateOrDow : dateOrDow.getDay();
   return BD_WEEKEND_DAYS.has(dow);
 };
+
+/**
+ * Returns the start (Sunday 00:00:00.000) and end (Thursday 23:59:59.999)
+ * of the Bangladesh work week containing the given date.
+ * BD work week: Sunday (0) through Thursday (4). Weekends: Friday (5), Saturday (6).
+ */
+export function getWeekDateRange(date: Date): { start: Date; end: Date } {
+  const dow = date.getDay(); // 0=Sun, 1=Mon, ..., 4=Thu, 5=Fri, 6=Sat
+  const daysSinceSunday = dow <= 4 ? dow : dow === 5 ? 5 : 6;
+
+  const sunday = new Date(date);
+  sunday.setDate(date.getDate() - daysSinceSunday);
+
+  const thursday = new Date(sunday);
+  thursday.setDate(sunday.getDate() + 4);
+
+  return {
+    start: getStartOfDay(sunday),
+    end: getEndOfDay(thursday),
+  };
+}
 
 /**
  * Returns today's start (00:00:00.000) and end (23:59:59.999) timestamps.
@@ -201,7 +225,7 @@ function getDateRangePayload(date: Date) {
 
 export const getAttendanceForUser = async (
   userId: string,
-  date = new Date()
+  date = new Date(),
 ) => {
   const attendance = await db.attendance.findFirst({
     where: {
@@ -222,7 +246,7 @@ export const getAttendanceForUser = async (
 export const getAttendancesInDateRange = async (
   userId: string,
   startDate: Date,
-  endDate: Date
+  endDate: Date,
 ): Promise<Attendance[]> => {
   return db.attendance.findMany({
     where: {
@@ -245,14 +269,14 @@ export const getAttendancesInDateRange = async (
 export const countWorkingDays = (
   startDate: Date,
   endDate: Date,
-  holidays: Date[] = []
+  holidays: Date[] = [],
 ): number => {
   let count = 0;
   const currentDate = new Date(startDate);
 
   // Create a set of holiday dates for faster lookup
   const holidaySet = new Set(
-    holidays.map((date) => new Date(date).toISOString().split("T")[0])
+    holidays.map((date) => new Date(date).toISOString().split("T")[0]),
   );
 
   // Loop through each day in the range
@@ -277,10 +301,7 @@ export const countWorkingDays = (
  * @param userId The user's ID
  * @returns The attendance record if found, otherwise null
  */
-export const getLoggedInAttendance = async (
-  userId: string,
-  date = new Date()
-) => {
+const getLoggedInAttendance = async (userId: string, date = new Date()) => {
   const attendance = await db.attendance.findFirst({
     where: {
       userId,
@@ -421,7 +442,7 @@ export const breakEnd = async (userId: string, project?: string) => {
     },
   });
 
-  let prefix = "";
+  let prefix: string;
   if (!lastBreak.reason) {
     prefix = "Break";
   } else {
@@ -429,7 +450,7 @@ export const breakEnd = async (userId: string, project?: string) => {
   }
   attendanceEvents.emit("attendanceUpdated", attendance);
   return `${prefix} for ${Math.round(
-    lastBreak.length_ms / (1000 * 60)
+    lastBreak.length_ms / (1000 * 60),
   )} minutes ended at ${lastBreak.end.toLocaleTimeString()}`;
 };
 
@@ -446,41 +467,6 @@ export const getLoginTime = async (userId: string) => {
     },
   });
   return attendance ? attendance.login : null;
-};
-
-/**
- * Checks if a user has an active login session from yesterday
- * @param userId
- * @returns A boolean indicating if the user has an active login session from yesterday
- */
-export const hasActiveLoginSessionFromYesterday = async (userId: string) => {
-  const yesterday = new Date(Date.now() - ONE_DAY_IN_MS);
-  const attendance = await getLoggedInAttendance(userId, yesterday);
-
-  return attendance !== null;
-};
-
-/**
- * Get the logout time for a user
- * @param userId
- * @returns A date object representing the logout time, or null if not found
- */
-export const getLogoutTime = async (userId: string) => {
-  const attendance = await db.attendance.findFirst({
-    where: {
-      userId,
-      login: getDateRangePayload(new Date()),
-      OR: [
-        {
-          logout: { isSet: false },
-        },
-        {
-          logout: null,
-        },
-      ],
-    },
-  });
-  return attendance ? attendance.logout : null;
 };
 
 /**
@@ -689,7 +675,7 @@ export const getLoggedInUsers = async () => {
  */
 export const generateAttendanceImageReport = async (
   userId: string,
-  date?: Date
+  date?: Date,
 ) => {
   const jwtWithUser = await generateJWTFromUserId(userId);
   if (!jwtWithUser?.jwt) {
@@ -700,7 +686,7 @@ export const generateAttendanceImageReport = async (
   return queueAttendanceStatsImage(
     jwtWithUser.jwt,
     jwtWithUser.userWithAttendance.user.isAdmin,
-    date
+    date,
   );
 };
 
@@ -721,17 +707,6 @@ interface WeekdayAvailabilityWindow {
   avgConfidence: number; // average confidence across window slots
 }
 
-interface WeekdayAvailabilitySummary {
-  heatmap: WeekdayHeatmapSlot[];
-  windows: WeekdayAvailabilityWindow[];
-  meta: {
-    daysRequested: number;
-    daysIncluded: number;
-    slotMinutes: number;
-    recencyHalfLifeDays: number;
-  };
-}
-
 /**
  * Build a weekday-only heatmap aggregated across Sun–Thu (Bangladesh working days).
  * - Excludes weekends (Fri–Sat in BD)
@@ -746,7 +721,7 @@ export async function getWeekdayAvailabilityHeatmap(
     slotMinutes?: number;
     recencyHalfLifeDays?: number;
     maxOpenSegmentHours?: number;
-  }
+  },
 ): Promise<{
   heatmap: WeekdayHeatmapSlot[];
   meta: {
@@ -821,7 +796,7 @@ export async function getWeekdayAvailabilityHeatmap(
     if (holidaySet.has(iso(dayStart))) continue; // skip holidays
 
     const ageDays = Math.floor(
-      (endOfToday.getTime() - dayEnd.getTime()) / ONE_DAY_IN_MS
+      (endOfToday.getTime() - dayEnd.getTime()) / ONE_DAY_IN_MS,
     );
     const weight = Math.pow(0.5, ageDays / recencyHalfLifeDays);
     includedDays.push({ start: dayStart, end: dayEnd, weight });
@@ -847,7 +822,7 @@ export async function getWeekdayAvailabilityHeatmap(
         // Cap open-ended segments to avoid extremely long running intervals
         if (!seg.end) {
           const cap = new Date(
-            segStart.getTime() + maxOpenSegmentHours * 60 * 60 * 1000
+            segStart.getTime() + maxOpenSegmentHours * 60 * 60 * 1000,
           );
           if (segEnd > cap) segEnd = cap;
         }
@@ -869,7 +844,7 @@ export async function getWeekdayAvailabilityHeatmap(
 
     for (let s = 0; s < slotsPerDay; s++) {
       const slotStart = new Date(
-        day.start.getTime() + s * slotMinutes * 60_000
+        day.start.getTime() + s * slotMinutes * 60_000,
       );
       const slotEnd = new Date(slotStart.getTime() + slotMinutes * 60_000);
 
@@ -923,11 +898,11 @@ export async function getWeekdayAvailabilityHeatmap(
  * - minConfidence starts at 0.6; falls back to “best available” if none
  * - returns up to 3 suggestions
  */
-export async function getWeekdayAvailabilityWindows(
+async function getWeekdayAvailabilityWindows(
   userId: string,
   requiredHours: number,
   days = 30,
-  opts?: { slotMinutes?: number; maxSuggestions?: number }
+  opts?: { slotMinutes?: number; maxSuggestions?: number },
 ): Promise<WeekdayAvailabilityWindow[]> {
   const slotMinutes = opts?.slotMinutes ?? 30;
   const maxSuggestions = opts?.maxSuggestions ?? 3;
@@ -938,7 +913,7 @@ export async function getWeekdayAvailabilityWindows(
 
   const requiredSlots = Math.max(
     1,
-    Math.ceil((requiredHours * 60) / slotMinutes)
+    Math.ceil((requiredHours * 60) / slotMinutes),
   );
 
   const conf = heatmap.map((h) => h.confidence);
@@ -983,7 +958,7 @@ export async function getWeekdayAvailabilityWindows(
 
   candidates.sort(
     (a, b) =>
-      b.avgConfidence - a.avgConfidence || a.startMinutes - b.startMinutes
+      b.avgConfidence - a.avgConfidence || a.startMinutes - b.startMinutes,
   );
 
   return candidates.slice(0, maxSuggestions);
@@ -1005,7 +980,7 @@ export async function getGroupWeekdayAvailabilityWindows(
     aggregator?: "min" | "avg" | "product";
     recencyHalfLifeDays?: number;
     minStartMinutes?: number; // filter: only windows starting at or after this minute-of-day
-  }
+  },
 ): Promise<WeekdayAvailabilityWindow[]> {
   const slotMinutes = opts?.slotMinutes ?? 30;
   const maxSuggestions = opts?.maxSuggestions ?? 3;
@@ -1027,8 +1002,8 @@ export async function getGroupWeekdayAvailabilityWindows(
       getWeekdayAvailabilityHeatmap(uid, days, {
         slotMinutes,
         recencyHalfLifeDays,
-      })
-    )
+      }),
+    ),
   );
 
   const slotsCount = heatmaps[0].heatmap.length;
@@ -1046,7 +1021,7 @@ export async function getGroupWeekdayAvailabilityWindows(
 
   const requiredSlots = Math.max(
     1,
-    Math.ceil((requiredHours * 60) / slotMinutes)
+    Math.ceil((requiredHours * 60) / slotMinutes),
   );
   if (requiredSlots > heatmaps[0].heatmap.length) return [];
 
@@ -1063,7 +1038,7 @@ export async function getGroupWeekdayAvailabilityWindows(
       if (slot.sampleWeight > 0) usersWithSamples++;
     }
 
-    let agg = 0;
+    let agg: number;
     if (aggregator === "min") {
       agg = Math.min(...confs);
     } else if (aggregator === "avg") {
@@ -1119,7 +1094,7 @@ export async function getGroupWeekdayAvailabilityWindows(
 
   candidates.sort(
     (a, b) =>
-      b.avgConfidence - a.avgConfidence || a.startMinutes - b.startMinutes
+      b.avgConfidence - a.avgConfidence || a.startMinutes - b.startMinutes,
   );
 
   return candidates.slice(0, maxSuggestions);
