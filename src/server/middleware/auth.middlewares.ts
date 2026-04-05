@@ -25,7 +25,9 @@ export const verifyAndDecodeToken = (token?: string | null): string | customJwtP
   return decoded as customJwtPayload;
 };
 
-export const validateToken = async (event: FetchEvent) => {
+export const validateToken = async (
+  event: FetchEvent,
+): Promise<Response | undefined> => {
   try {
     const urlObj = new URL(event.request.url);
 
@@ -37,6 +39,8 @@ export const validateToken = async (event: FetchEvent) => {
         return new Response(decoded, {status: 401});
       }
     }
+
+    return undefined;
   } catch (e) {
     console.log('Error', e);
     if (e instanceof Error) {
