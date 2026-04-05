@@ -1,4 +1,4 @@
-import {Attendance} from '../../store';
+import type {Attendance} from '../../store';
 import {generateTimeSegments} from '../../store/utils';
 
 function getTimezoneDifference() {

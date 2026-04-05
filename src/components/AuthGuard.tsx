@@ -1,5 +1,7 @@
-import {RouteSectionProps, useLocation, useNavigate} from '@solidjs/router';
-import {createRenderEffect, createSignal, JSX, on, onMount, Show} from 'solid-js';
+import type {RouteSectionProps} from '@solidjs/router';
+import { useLocation, useNavigate} from '@solidjs/router';
+import type { JSX} from 'solid-js';
+import {createRenderEffect, createSignal, on, onMount, Show} from 'solid-js';
 import toast from 'solid-toast';
 import {api} from '../lib/api';
 import {LOCAL_STORAGE_KEY, loginWithStoredJWT} from '../lib/auth';

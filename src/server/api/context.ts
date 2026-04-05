@@ -1,4 +1,4 @@
-import {FetchCreateContextFnOptions} from '@trpc/server/adapters/fetch';
+import type {FetchCreateContextFnOptions} from '@trpc/server/adapters/fetch';
 import {verifyAndDecodeToken} from '../middleware/auth.middlewares';
 
 export async function createContext({req}: FetchCreateContextFnOptions) {

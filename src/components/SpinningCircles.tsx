@@ -1,4 +1,5 @@
-import {Component, JSX, mergeProps} from 'solid-js';
+import type {Component, JSX} from 'solid-js';
+import { mergeProps} from 'solid-js';
 
 enum SpinnerType {
   audio = 'audio',

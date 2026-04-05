@@ -1,6 +1,6 @@
 import { ELeaveCommands } from "../discord.enums";
 import { getHRLoginInteractionReplyPayload } from "../services";
-import { ChatInputCommandInteraction, CacheType } from "discord.js";
+import type { ChatInputCommandInteraction, CacheType } from "discord.js";
 
 export const handleLeaveCommand = async (
   interaction: ChatInputCommandInteraction<CacheType>

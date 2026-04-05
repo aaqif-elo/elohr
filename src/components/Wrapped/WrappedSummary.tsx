@@ -1,4 +1,5 @@
-import { Component, For } from "solid-js";
+import type { Component} from "solid-js";
+import { For } from "solid-js";
 import type { WrappedStats } from "../../server/db/wrapped";
 
 interface WrappedSummaryProps {

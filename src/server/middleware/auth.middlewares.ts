@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
-import {FetchEvent} from '@solidjs/start/server';
-import {customJwtPayload} from '../api/routers';
+import type {FetchEvent} from '@solidjs/start/server';
+import type {customJwtPayload} from '../api/routers';
 
 const tokenRoutes = new Set([
   '/api/announcements/deployment',

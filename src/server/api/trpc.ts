@@ -1,6 +1,6 @@
 import { initTRPC, TRPCError } from "@trpc/server";
 import type { Context } from "./context";
-import { customJwtPayload } from "./routers";
+import type { customJwtPayload } from "./routers";
 import { UserRoleTypes } from "@prisma/client";
 
 // export const t = initTRPC.context<Context>().create({

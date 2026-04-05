@@ -1,6 +1,6 @@
 import { EAuthCommands } from "../discord.enums";
 import { getHRLoginInteractionReplyPayload } from "../services";
-import { ChatInputCommandInteraction, CacheType } from "discord.js";
+import type { ChatInputCommandInteraction, CacheType } from "discord.js";
 
 export const handleAuthCommand = async (
   interaction: ChatInputCommandInteraction<CacheType>

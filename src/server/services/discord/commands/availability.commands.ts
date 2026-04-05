@@ -1,5 +1,6 @@
+import type {
+  RESTPostAPIChatInputApplicationCommandsJSONBody} from "discord.js";
 import {
-  RESTPostAPIChatInputApplicationCommandsJSONBody,
   SlashCommandBuilder,
 } from "discord.js";
 import { EAvailabilityCommands } from "../discord.enums";

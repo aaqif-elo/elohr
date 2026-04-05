@@ -1,4 +1,4 @@
-import { Leave } from "@prisma/client";
+import type { Leave } from "@prisma/client";
 import { db } from ".";
 
 const reviewedQuery = {

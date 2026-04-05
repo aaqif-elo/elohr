@@ -1,5 +1,6 @@
+import type {
+  RESTPostAPIChatInputApplicationCommandsJSONBody} from "discord.js";
 import {
-  RESTPostAPIChatInputApplicationCommandsJSONBody,
   SlashCommandBuilder,
 } from "discord.js";
 import { EMeetingCommands, MEETING_PARTICIPANT_OPTION_NAMES } from "../discord.enums";

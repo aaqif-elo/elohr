@@ -1,4 +1,5 @@
-import {RESTPostAPIChatInputApplicationCommandsJSONBody, SlashCommandBuilder} from 'discord.js';
+import type {RESTPostAPIChatInputApplicationCommandsJSONBody} from 'discord.js';
+import { SlashCommandBuilder} from 'discord.js';
 import {EAuthCommands} from '../discord.enums';
 
 const authCommand = new SlashCommandBuilder()

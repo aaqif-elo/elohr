@@ -5,9 +5,10 @@ import {
   announceHoliday,
   getLoginUrl,
 } from "../services";
-import {
+import type {
   ChatInputCommandInteraction,
-  CacheType,
+  CacheType} from "discord.js";
+import {
   ButtonBuilder,
   ButtonStyle,
   ActionRowBuilder,

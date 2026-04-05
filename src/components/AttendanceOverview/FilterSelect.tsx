@@ -1,4 +1,5 @@
-import {Component, createSignal, For, Show} from 'solid-js';
+import type {Component} from 'solid-js';
+import { createSignal, For, Show} from 'solid-js';
 
 interface FilterSelectionProps {
   availableFilters: string[];
