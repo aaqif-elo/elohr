@@ -2,8 +2,9 @@ import { wrap } from "@typeschema/valibot";
 import { nullish, string } from "valibot";
 import { createTRPCRouter, publicProcedure } from "../trpc";
 import { getUserByDiscordId, getUserById, ONE_MONTH_IN_MS } from "../../db";
-import jwt, { JwtPayload } from "jsonwebtoken";
-import { UserRoleTypes } from "@prisma/client";
+import type { JwtPayload } from "jsonwebtoken";
+import jwt from "jsonwebtoken";
+import type { UserRoleTypes } from "@prisma/client";
 
 const { JsonWebTokenError } = jwt;
 export interface customJwtPayload extends JwtPayload {
@@ -14,7 +15,7 @@ export interface customJwtPayload extends JwtPayload {
 
 const { sign, verify } = jwt;
 
-interface AuthAttemptPayload {
+interface _AuthAttemptPayload {
   discordUserId: string;
   dateTime: Date;
 }
@@ -120,7 +121,7 @@ export const authRouter = createTRPCRouter({
         }
 
         return userFromDb;
-      } catch (e) {
+      } catch (_e) {
         return null;
       }
     }),
