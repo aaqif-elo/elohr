@@ -6,4 +6,5 @@ onlyBuiltDependencies:
   - '@tailwindcss/oxide'
   - esbuild
   - prisma
+  - protobufjs
   - puppeteer
