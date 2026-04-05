@@ -1,4 +1,5 @@
-import { Component, Show } from "solid-js";
+import type { Component} from "solid-js";
+import { Show } from "solid-js";
 import type { WrappedStats as WrappedStatsData } from "../../server/db/wrapped";
 
 interface WrappedStatsProps {
@@ -32,26 +33,30 @@ export const WrappedCoreStats: Component<WrappedStatsProps> = (props) => {
             <Show when={props.stats.earliestLogin || props.stats.latestLogout}>
                 <div class="wrapped-stats-grid" style={{ "margin-top": "1rem" }}>
                     <Show when={props.stats.earliestLogin}>
-                        <div class="wrapped-stat-card wrapped-animate-in wrapped-animate-in--delay-4">
-                            <div class="wrapped-stat-value" style={{ "font-size": "1.75rem" }}>
-                                {props.stats.earliestLogin!.time}
+                        {(earliestLogin) => (
+                            <div class="wrapped-stat-card wrapped-animate-in wrapped-animate-in--delay-4">
+                                <div class="wrapped-stat-value" style={{ "font-size": "1.75rem" }}>
+                                    {earliestLogin().time}
+                                </div>
+                                <div class="wrapped-stat-label">Earliest Login</div>
+                                <div style={{ "font-size": "0.75rem", color: "rgba(255,255,255,0.5)", "margin-top": "0.25rem" }}>
+                                    {earliestLogin().date}
+                                </div>
                             </div>
-                            <div class="wrapped-stat-label">Earliest Login</div>
-                            <div style={{ "font-size": "0.75rem", color: "rgba(255,255,255,0.5)", "margin-top": "0.25rem" }}>
-                                {props.stats.earliestLogin!.date}
-                            </div>
-                        </div>
+                        )}
                     </Show>
                     <Show when={props.stats.latestLogout}>
-                        <div class="wrapped-stat-card wrapped-animate-in wrapped-animate-in--delay-4">
-                            <div class="wrapped-stat-value" style={{ "font-size": "1.75rem" }}>
-                                {props.stats.latestLogout!.time}
+                        {(latestLogout) => (
+                            <div class="wrapped-stat-card wrapped-animate-in wrapped-animate-in--delay-4">
+                                <div class="wrapped-stat-value" style={{ "font-size": "1.75rem" }}>
+                                    {latestLogout().time}
+                                </div>
+                                <div class="wrapped-stat-label">Latest Logout</div>
+                                <div style={{ "font-size": "0.75rem", color: "rgba(255,255,255,0.5)", "margin-top": "0.25rem" }}>
+                                    {latestLogout().date}
+                                </div>
                             </div>
-                            <div class="wrapped-stat-label">Latest Logout</div>
-                            <div style={{ "font-size": "0.75rem", color: "rgba(255,255,255,0.5)", "margin-top": "0.25rem" }}>
-                                {props.stats.latestLogout!.date}
-                            </div>
-                        </div>
+                        )}
                     </Show>
                 </div>
             </Show>
