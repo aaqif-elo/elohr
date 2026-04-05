@@ -1,4 +1,4 @@
-import {APIEvent, FetchEvent} from '@solidjs/start/server';
+import type {APIEvent, FetchEvent} from '@solidjs/start/server';
 import {object, optional, string, parse, ValiError, pipe, regex, custom} from 'valibot';
 
 const tokenRoutes = new Set(['/api/announcements/deployment']);
@@ -25,11 +25,11 @@ const announcementSchema = object({
   announcement: optional(string()),
 });
 
-const Announcement = announcementSchema['~types']?.input!;
+type AnnouncementInput = typeof announcementSchema extends { '~types': { input: infer T } } ? T : never;
 
 export interface ValidatedEvent extends APIEvent {
   locals: {
-    body: typeof Announcement;
+    body: AnnouncementInput;
   };
 }
 
