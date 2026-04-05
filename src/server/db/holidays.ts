@@ -192,7 +192,7 @@ async function getHolidayInfoFromOfficeHolidaysDotCom(
     description: string,
     shouldAdd = false;
 
-  $("table.country-table > tbody > tr").each((i, elm) => {
+  $("table.country-table > tbody > tr").each((_, elm) => {
     $(elm)
       .find("td")
       .each((j, innerTableCell) => {
