@@ -4,7 +4,7 @@ import AttendanceOverview from "../components/AttendanceOverview";
 export default function Home() {
   const [searchParams] = useSearchParams();
   const dateParam = searchParams.date;
-  let selectedDate = new Date();
+  const selectedDate = new Date();
   if (typeof dateParam === "string") {
     // Expect the string in the format "YYYY-MM-DD"
     const parts = dateParam.split("-");
