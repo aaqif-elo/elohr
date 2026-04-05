@@ -1,12 +1,13 @@
+import type {
+  ChatInputCommandInteraction,
+  Client,
+  TextChannel,
+  User} from "discord.js";
 import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ChannelType,
-  ChatInputCommandInteraction,
-  Client,
-  TextChannel,
-  User,
+  ChannelType
 } from "discord.js";
 import {
   generateAttendanceImageReport,
@@ -22,16 +23,17 @@ import {
   ONE_DAY_IN_MS,
   getAllEmployeesWithAttendance,
   getLeavesInDateRange,
-  getStartAndEndOfDay,
+  getWeekDateRange,
+  countWorkingDays,
+  getHolidaysForDateRange,
   reviewLeaveRequest,
 } from "../../db";
 
 import { generateJWTFromUserDiscordId } from "../../api/routers/auth";
 import { setNameStatus } from "./utils";
 
-import axios from "axios";
 import { GoogleGenAI } from "@google/genai";
-import { Leave } from "@prisma/client";
+import type { Leave } from "@prisma/client";
 
 export const getLoginUrl = async (discordId: string) => {
   try {
@@ -177,7 +179,7 @@ const getNextHolidayAnnouncementMsg = (
     useFromLogic = !isEffectivelySingleDayClosure;
   }
 
-  let prefix = "";
+  let prefix: string;
   if (startsTomorrow) {
     if (useFromLogic) {
       prefix = " from tomorrow";
@@ -240,7 +242,7 @@ export const getUpcomingHolidayAnnouncementMsg = async (
   const nextHoliday = await getNextHoliday(date);
 
   if (!nextHoliday) {
-    return undefined;
+    return;
   }
 
   return getNextHolidayAnnouncementMsg(nextHoliday, date);
@@ -371,67 +373,47 @@ export const autoLogoutUsersWhoAreStillLoggedIn = async (
 
   const logoutPayloads = await Promise.all(logoutPromises);
 
-  try {
-    await sendDailyAttendanceReportToAdmin(discordClient, today);
-  } catch (err) {
-    console.error("Failed to send daily attendance report:", err);
-  }
-
   // Set up auto-login after 90 seconds (at 12:01 AM)
   setTimeout(async () => {
-    const loginPromises = logoutPayloads.map(async (payload) => {
-      if (!payload) {
-        return;
-      }
-      const { discordId, userId, trackIsOnline } = payload;
+    if (!process.env.DISCORD_SERVER_ID) return;
 
-      if (!process.env.DISCORD_SERVER_ID) {
-        return;
-      }
-      // eslint-disable-next-line no-useless-catch
-      try {
-        if (!trackIsOnline) return;
-        const member = (
-          await (
-            await discordClient.guilds.fetch(process.env.DISCORD_SERVER_ID)
-          ).members.fetch()
-        ).get(discordId);
+    const trackablePayloads = logoutPayloads.filter(
+      (p): p is NonNullable<typeof p> => !!p?.trackIsOnline
+    );
+    if (!trackablePayloads.length) return;
 
-        if (!member) {
-          return;
-        }
+    // Fetch guild members once instead of per-user
+    const guild = await discordClient.guilds.fetch(process.env.DISCORD_SERVER_ID);
+    const members = await guild.members.fetch();
 
-        const isOnline =
-          member.voice.channel !== null &&
-          member.voice.channelId !== member.guild.afkChannelId;
+    const loginPromises = trackablePayloads.map(async ({ discordId, userId }) => {
+      const member = members.get(discordId);
+      if (!member) return;
 
-        if (isOnline) {
-          await login(userId, member.voice.channel.name);
-          await setNameStatus(
-            process.env.STATUS_TAG_AVAILABLE || "O",
-            discordId
-          );
+      const isOnline =
+        member.voice.channel !== null &&
+        member.voice.channelId !== member.guild.afkChannelId;
+      if (!isOnline) return;
 
-          return `<@${discordId}> automatically logged in.`;
-        }
-      } catch (err) {
-        throw err;
-      }
+      await login(userId, member.voice.channel.name);
+      await setNameStatus(process.env.STATUS_TAG_AVAILABLE || "O", discordId);
+
+      return `<@${discordId}> automatically logged in.`;
     });
 
     const loginMessages = (await Promise.all(loginPromises)).filter(
-      (msg) => msg !== undefined
+      (msg): msg is string => !!msg
     );
 
     if (loginMessages.length > 0) {
-      let loginAnnouncement = `Auto-login Initiated for users who are online...\n\n`;
-      loginMessages.forEach((msg) => (loginAnnouncement += `${msg}\n`));
-      attendanceChannel.send(loginAnnouncement);
+      attendanceChannel.send(
+        `Auto-login Initiated for users who are online...\n\n${loginMessages.join("\n")}`
+      );
     }
   }, 90000); // 90 seconds
 };
 
-export const getWeatherReport = async () => {
+export const getWeatherReport = async (): Promise<string | undefined> => {
   const openMeteoApiUrl = process.env.OPEN_METEO_URL;
   const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
@@ -447,16 +429,24 @@ export const getWeatherReport = async () => {
     try {
       console.log(`Attempting weather API call (${attempt}/${maxRetries})...`);
 
-      const weather = await axios.get(openMeteoApiUrl, {
-        timeout: timeoutMs,
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      const weatherResponse = await fetch(openMeteoApiUrl, {
+        signal: controller.signal,
         headers: {
           "User-Agent": "EloHR/1.0",
         },
-        family: 4, // Force IPv4 to avoid IPv6 issues
       });
+      clearTimeout(timeoutId);
+
+      if (!weatherResponse.ok) {
+        throw new Error(`Weather API returned ${weatherResponse.status}`);
+      }
+
+      const weatherData = await weatherResponse.json();
 
       const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-      const stringifiedWeather = JSON.stringify(weather.data);
+      const stringifiedWeather = JSON.stringify(weatherData);
       const prompt = `Can you generate a weather report from this? Let's keep it short and succinct. 
       
       Follow this format:
@@ -498,6 +488,8 @@ export const getWeatherReport = async () => {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
+
+  return;
 };
 
 // Update LEAVE_BUTTON_IDS enum
@@ -733,7 +725,7 @@ export const deleteLeaveRequestMessage = async (
   }
 };
 
-export const sendLogoutReport = async (
+const sendLogoutReport = async (
   user: User,
   textReportOrBuffer: string | Buffer<ArrayBuffer>,
   imageReportPromise?: Promise<Buffer | null>
@@ -816,10 +808,16 @@ export const sendLogoutReport = async (
   }
 };
 
-// Build and send a markdown-formatted daily attendance report to the admin channel
-export async function sendDailyAttendanceReportToAdmin(
+// Outlier detection thresholds (office hours: 10 AM – 6 PM)
+const LATE_THRESHOLD_MINUTES = 10 * 60 + 30; // 10:30 AM in minutes
+const LATE_MIN_DAYS = 3; // must be late on at least this many days
+const HOURS_DEVIATION_THRESHOLD = 0.2; // 20% above/below team median
+const SHORT_DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// Build and send a markdown-formatted weekly attendance report to the admin channel
+export async function sendWeeklyAttendanceReportToAdmin(
   discordClient: Client<boolean>,
-  date: Date = new Date()
+  referenceDate: Date = new Date()
 ) {
   const adminChannelID = process.env.ADMIN_CHANNEL_ID;
   if (!adminChannelID) {
@@ -833,85 +831,229 @@ export async function sendDailyAttendanceReportToAdmin(
     return;
   }
 
-  const { start, end } = getStartAndEndOfDay(date);
+  const { start: weekStart, end: weekEnd } = getWeekDateRange(referenceDate);
 
-  // Fetch employees with today's attendance and leaves for today
-  const [employeesWithAttendance, leaves] = await Promise.all([
-    getAllEmployeesWithAttendance(date),
-    getLeavesInDateRange(start, end),
-  ]);
+  // Fetch holidays for the week to determine working days
+  const holidays = await getHolidaysForDateRange(weekStart, weekEnd);
+  const holidayDates = holidays.map(
+    (h) => h.overridenDate ?? h.originalDate
+  );
+  const workingDays = countWorkingDays(weekStart, weekEnd, holidayDates);
 
-  // Map userId -> { name, reason }
-  const leaveByUser = new Map<string, { name: string; reason?: string }>();
-  for (const leave of leaves as any[]) {
-    leaveByUser.set(leave.userId, {
-      name: leave.user?.name ?? "Unknown",
-      reason: leave.reason ?? undefined,
-    });
+  // Collect per-day attendance for every employee across the work week (Sun–Thu)
+  const dayDates: Date[] = [];
+  const cursor = new Date(weekStart);
+  while (cursor <= weekEnd) {
+    const dow = cursor.getDay();
+    // Only include Sun(0)–Thu(4), skip Fri/Sat
+    if (dow >= 0 && dow <= 4) {
+      dayDates.push(new Date(cursor));
+    }
+    cursor.setDate(cursor.getDate() + 1);
   }
 
-  type AttendedItem = {
-    userId: string;
-    name: string;
-    login: Date;
-    totalHours: number;
-    topProject?: { name: string; hours: number };
+  // Parallel: fetch each day's employees+attendance and the week's leaves
+  const [dailySnapshots, leaves] = await Promise.all([
+    Promise.all(dayDates.map((d) => getAllEmployeesWithAttendance(d))),
+    getLeavesInDateRange(weekStart, weekEnd),
+  ]);
+
+  // Build a holiday set for quick lookup
+  const holidayIsoSet = new Set(
+    holidayDates.map((d) => new Date(d).toISOString().split("T")[0])
+  );
+
+  // Determine actual working day dates (exclude holidays)
+  const workingDayDates = dayDates.filter(
+    (d) => !holidayIsoSet.has(d.toISOString().split("T")[0])
+  );
+
+  // Build per-employee weekly data from daily snapshots
+  type EmployeeDayData = {
+    loginMinutes: number;
+    totalHoursMs: number;
+    projects: Map<string, number>;
   };
 
-  const attended: AttendedItem[] = [];
-  const missedNames: string[] = [];
-  const onLeave: { name: string; reason?: string }[] = [];
+  type EmployeeWeekData = {
+    name: string;
+    days: Map<string, EmployeeDayData>; // ISO date string -> day data
+    leaveDays: Set<string>; // ISO date strings on leave
+  };
 
-  // Overall project totals
-  const projectTotals = new Map<
-    string,
-    { hours: number; employeeIds: Set<string> }
-  >();
+  const employeeMap = new Map<string, EmployeeWeekData>();
 
+  // Index leaves by userId -> set of ISO date strings
+  const leavesByUser = new Map<string, { dates: Set<string>; reason?: string }>();
+  for (const leave of leaves) {
+    const existing = leavesByUser.get(leave.userId);
+    const leaveDateStrings = leave.dates
+      .map((d) => new Date(d).toISOString().split("T")[0])
+      .filter(
+        (iso) =>
+          iso >= weekStart.toISOString().split("T")[0] &&
+          iso <= weekEnd.toISOString().split("T")[0]
+      );
+
+    if (existing) {
+      for (const ds of leaveDateStrings) existing.dates.add(ds);
+    } else {
+      leavesByUser.set(leave.userId, {
+        dates: new Set(leaveDateStrings),
+        reason: leave.reason ?? undefined,
+      });
+    }
+  }
+
+  // Process daily snapshots
+  for (let dayIdx = 0; dayIdx < dayDates.length; dayIdx++) {
+    const dayIso = dayDates[dayIdx].toISOString().split("T")[0];
+    const isHolidayDay = holidayIsoSet.has(dayIso);
+    const employees = dailySnapshots[dayIdx] as { id: string; name: string; attendance?: { login: string; workSegments: { start: string; end: string; project: string }[] } }[];
+
+    for (const emp of employees) {
+      if (!employeeMap.has(emp.id)) {
+        employeeMap.set(emp.id, {
+          name: emp.name ?? "Unknown",
+          days: new Map(),
+          leaveDays: new Set(),
+        });
+      }
+      const empData = employeeMap.get(emp.id);
+      if (!empData) continue;
+
+      // Skip holidays — don't count as absent
+      if (isHolidayDay) continue;
+
+      // Mark leave days
+      const userLeave = leavesByUser.get(emp.id);
+      if (userLeave?.dates.has(dayIso)) {
+        empData.leaveDays.add(dayIso);
+        continue;
+      }
+
+      // Process attendance if present
+      if (emp.attendance) {
+        const login = new Date(emp.attendance.login);
+        const loginMinutes = login.getHours() * 60 + login.getMinutes();
+        let totalMs = 0;
+        const projMs = new Map<string, number>();
+        const segments = Array.isArray(emp.attendance.workSegments)
+          ? emp.attendance.workSegments
+          : [];
+
+        for (const ws of segments) {
+          const s = ws.start ? new Date(ws.start) : null;
+          const e = ws.end ? new Date(ws.end) : null;
+          if (!s || !e || isNaN(s.getTime()) || isNaN(e.getTime())) continue;
+          const diff = e.getTime() - s.getTime();
+          if (diff <= 0) continue;
+          totalMs += diff;
+          const proj = ws.project || "(Unspecified)";
+          projMs.set(proj, (projMs.get(proj) || 0) + diff);
+        }
+
+        empData.days.set(dayIso, {
+          loginMinutes,
+          totalHoursMs: totalMs,
+          projects: projMs,
+        });
+      }
+    }
+  }
+
+  // Helpers
   const toHours = (ms: number) => ms / (1000 * 60 * 60);
   const fmtHours = (hrs: number) => `${hrs.toFixed(1)}h`;
-  const fmtTime = (d: Date) =>
-    d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+  const minutesToTimeStr = (mins: number) => {
+    const h = Math.floor(mins / 60);
+    const m = Math.round(mins % 60);
+    const period = h >= 12 ? "PM" : "AM";
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${h12}:${m.toString().padStart(2, "0")} ${period}`;
+  };
   const median = (nums: number[]) => {
     if (!nums.length) return 0;
     const s = [...nums].sort((a, b) => a - b);
     const mid = Math.floor(s.length / 2);
     return s.length % 2 === 0 ? (s[mid - 1] + s[mid]) / 2 : s[mid];
   };
+  const fmtDateShort = (isoDate: string) => {
+    const d = new Date(isoDate);
+    return SHORT_DAY_NAMES[d.getDay()];
+  };
 
-  for (const emp of employeesWithAttendance as any[]) {
-    const userId: string = emp.id;
-    const name: string = emp.name ?? "Unknown";
+  // Aggregate per-employee stats
+  type EmployeeStats = {
+    name: string;
+    daysPresent: number;
+    daysAbsent: number;
+    daysOnLeave: number;
+    totalHours: number;
+    avgLoginMinutes: number;
+    lateDays: number;
+    absentDayNames: string[];
+    leaveDayNames: string[];
+  };
 
-    // If user is on leave, classify and skip from attended/missed
-    const leaveInfo = leaveByUser.get(userId);
-    if (leaveInfo) {
-      onLeave.push({ name: leaveInfo.name || name, reason: leaveInfo.reason });
-      continue;
+  const employeeStats: EmployeeStats[] = [];
+  const allWeeklyHours: number[] = [];
+  const allLoginMinutes: number[] = [];
+  const projectTotals = new Map<string, { hours: number; employeeIds: Set<string> }>();
+  const teamSize = employeeMap.size;
+  let totalPersonDaysPresent = 0;
+
+  for (const [userId, empData] of employeeMap) {
+    const daysPresent = empData.days.size;
+    const daysOnLeave = empData.leaveDays.size;
+    const daysAbsent = workingDays - daysPresent - daysOnLeave;
+    const totalHoursMs = [...empData.days.values()].reduce(
+      (sum, d) => sum + d.totalHoursMs,
+      0
+    );
+    const totalHours = toHours(totalHoursMs);
+    const loginMinutesList = [...empData.days.values()].map((d) => d.loginMinutes);
+    const avgLoginMinutes = loginMinutesList.length
+      ? loginMinutesList.reduce((a, b) => a + b, 0) / loginMinutesList.length
+      : 0;
+    const lateDays = loginMinutesList.filter(
+      (m) => m > LATE_THRESHOLD_MINUTES
+    ).length;
+
+    // Determine which working days were absent (no attendance, no leave, not holiday)
+    const absentDayNames: string[] = [];
+    const leaveDayNames: string[] = [];
+    for (const wd of workingDayDates) {
+      const iso = wd.toISOString().split("T")[0];
+      if (empData.leaveDays.has(iso)) {
+        leaveDayNames.push(fmtDateShort(iso));
+      } else if (!empData.days.has(iso)) {
+        absentDayNames.push(fmtDateShort(iso));
+      }
     }
 
-    const att = emp.attendance;
-    if (att) {
-      const login = new Date(att.login);
-      let totalMs = 0;
-      const projMs = new Map<string, number>();
-      const segments = Array.isArray(att.workSegments) ? att.workSegments : [];
-      for (const ws of segments) {
-        const s = ws.start ? new Date(ws.start as any) : null;
-        const e = ws.end ? new Date(ws.end as any) : null;
-        if (!s || !e || isNaN(s.getTime()) || isNaN(e.getTime())) continue;
-        const diff = e.getTime() - s.getTime();
-        if (diff <= 0) continue;
-        totalMs += diff;
-        const proj = ws.project || "(Unspecified)";
-        projMs.set(proj, (projMs.get(proj) || 0) + diff);
-      }
+    employeeStats.push({
+      name: empData.name,
+      daysPresent,
+      daysAbsent: Math.max(0, daysAbsent),
+      daysOnLeave,
+      totalHours,
+      avgLoginMinutes,
+      lateDays,
+      absentDayNames,
+      leaveDayNames,
+    });
 
-      let topProject: { name: string; hours: number } | undefined;
-      for (const [proj, ms] of projMs.entries()) {
+    if (daysPresent > 0) {
+      allWeeklyHours.push(totalHours);
+      allLoginMinutes.push(...loginMinutesList);
+    }
+    totalPersonDaysPresent += daysPresent;
+
+    // Aggregate project totals
+    for (const dayData of empData.days.values()) {
+      for (const [proj, ms] of dayData.projects) {
         const hrs = toHours(ms);
-        if (!topProject || hrs > topProject.hours)
-          topProject = { name: proj, hours: hrs };
         const rec = projectTotals.get(proj) || {
           hours: 0,
           employeeIds: new Set<string>(),
@@ -920,132 +1062,202 @@ export async function sendDailyAttendanceReportToAdmin(
         rec.employeeIds.add(userId);
         projectTotals.set(proj, rec);
       }
-
-      attended.push({
-        userId,
-        name,
-        login,
-        totalHours: toHours(totalMs),
-        topProject,
-      });
-    } else {
-      // Use proper names for missed list
-      missedNames.push(name);
     }
   }
 
-  // Sort attended by hours worked (desc), then by name; others alphabetically
-  attended.sort(
-    (a, b) => b.totalHours - a.totalHours || a.name.localeCompare(b.name)
-  );
-  missedNames.sort((a, b) => a.localeCompare(b));
-  onLeave.sort((a, b) => a.name.localeCompare(b.name));
+  const totalPersonDays = teamSize * workingDays;
+  const attendanceRate =
+    totalPersonDays > 0
+      ? ((totalPersonDaysPresent / totalPersonDays) * 100).toFixed(0)
+      : "0";
+  const medianWeeklyHours = median(allWeeklyHours);
+  const avgDailyHours =
+    allWeeklyHours.length > 0
+      ? allWeeklyHours.reduce((a, b) => a + b, 0) /
+        allWeeklyHours.length /
+        workingDays
+      : 0;
+  const medianLoginMinutes = median(allLoginMinutes);
 
-  const totalEmployees = (employeesWithAttendance as any[]).length;
-  const totalAttended = attended.length;
-  const totalMissed = missedNames.length;
-  const totalLeaves = onLeave.length;
+  // Classify outliers
+  const absent = employeeStats
+    .filter((e) => e.daysAbsent > 0)
+    .sort((a, b) => b.daysAbsent - a.daysAbsent);
+  const consistentlyLate = employeeStats
+    .filter(
+      (e) =>
+        e.lateDays >= LATE_MIN_DAYS && e.avgLoginMinutes > LATE_THRESHOLD_MINUTES
+    )
+    .sort((a, b) => b.avgLoginMinutes - a.avgLoginMinutes);
+  const aboveAvgHours =
+    medianWeeklyHours > 0
+      ? employeeStats
+          .filter(
+            (e) =>
+              e.daysPresent > 0 &&
+              e.totalHours > medianWeeklyHours * (1 + HOURS_DEVIATION_THRESHOLD)
+          )
+          .sort((a, b) => b.totalHours - a.totalHours)
+      : [];
+  const belowAvgHours =
+    medianWeeklyHours > 0
+      ? employeeStats
+          .filter(
+            (e) =>
+              e.daysPresent > 0 &&
+              e.totalHours < medianWeeklyHours * (1 - HOURS_DEVIATION_THRESHOLD)
+          )
+          .sort((a, b) => a.totalHours - b.totalHours)
+      : [];
+  const perfectAttendance = employeeStats
+    .filter(
+      (e) =>
+        e.daysPresent === workingDays &&
+        e.daysAbsent === 0 &&
+        e.avgLoginMinutes <= LATE_THRESHOLD_MINUTES
+    )
+    .sort((a, b) => a.name.localeCompare(b.name));
 
-  const loginMinutes = attended.map(
-    (a) => a.login.getHours() * 60 + a.login.getMinutes()
-  );
-  const hoursWorked = attended.map((a) => a.totalHours);
-  const medianLoginMinutes = median(loginMinutes);
-  const medianHoursWorked = median(hoursWorked);
-  const medianLoginHH = Math.floor(medianLoginMinutes / 60);
-  const medianLoginMM = Math.round(medianLoginMinutes % 60);
-  const medianLoginDate = new Date(
-    new Date(start).setHours(medianLoginHH, medianLoginMM, 0, 0)
-  );
+  // Build leave summary
+  type LeaveSummaryItem = { name: string; dayNames: string[]; reason?: string };
+  const leaveSummary: LeaveSummaryItem[] = [];
+  for (const emp of employeeStats) {
+    if (emp.daysOnLeave > 0) {
+      const userLeave = [...leavesByUser.entries()].find(([uid]) => {
+        const empEntry = [...employeeMap.entries()].find(
+          ([id]) => id === uid
+        );
+        return empEntry && empEntry[1].name === emp.name;
+      });
+      leaveSummary.push({
+        name: emp.name,
+        dayNames: emp.leaveDayNames,
+        reason: userLeave?.[1].reason,
+      });
+    }
+  }
+  leaveSummary.sort((a, b) => a.name.localeCompare(b.name));
 
-  let overallProject: {
-    name: string;
-    hours: number;
-    employees: number;
-  } | null = null;
-  for (const [proj, rec] of projectTotals.entries()) {
-    const candidate = {
-      name: proj,
+  // Sort projects by hours
+  const sortedProjects = [...projectTotals.entries()]
+    .map(([name, rec]) => ({
+      name,
       hours: rec.hours,
       employees: rec.employeeIds.size,
-    };
-    if (!overallProject || candidate.hours > overallProject.hours) {
-      overallProject = candidate;
-    } else if (
-      overallProject &&
-      candidate.hours === overallProject.hours &&
-      candidate.employees > overallProject.employees
-    ) {
-      overallProject = candidate;
-    }
-  }
+    }))
+    .sort((a, b) => b.hours - a.hours)
+    .slice(0, 5);
 
-  const header = `**Daily Attendance Report — ${date.toLocaleDateString(
-    "en-US",
-    {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
+  // Format the report
+  const fmtDate = (d: Date) =>
+    d.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
       day: "numeric",
-    }
-  )}**`;
+    });
+  const header = `**Weekly Attendance Report — ${fmtDate(weekStart)} to ${fmtDate(weekEnd)}**`;
 
   const lines: string[] = [header, ""];
 
-  // Attended
-  lines.push(`### Attended (${totalAttended}/${totalEmployees})`);
-  if (!attended.length) {
-    lines.push("- None");
-  } else {
-    for (const a of attended) {
-      const top = a.topProject
-        ? ` — Most Active: ${a.topProject.name} (${fmtHours(
-            a.topProject.hours
-          )})`
-        : "";
-      lines.push(
-        `- ${a.name}: Login ${fmtTime(a.login)}, Hours ${fmtHours(
-          a.totalHours
-        )}${top}`
-      );
+  // Overview
+  const holidayCount = dayDates.length - workingDays;
+  lines.push("### Overview");
+  lines.push(
+    `- Team Size: ${teamSize} | Working Days: ${workingDays}${holidayCount > 0 ? ` | Holidays: ${holidayCount}` : ""}`
+  );
+  lines.push(
+    `- Attendance Rate: ${attendanceRate}% (${totalPersonDaysPresent}/${totalPersonDays} person-days)`
+  );
+  lines.push(
+    `- Avg Daily Hours: ${fmtHours(avgDailyHours)} | Median Login Time: ${minutesToTimeStr(medianLoginMinutes)}`
+  );
+  lines.push("");
+
+  // Highlights
+  const hasHighlights =
+    absent.length > 0 ||
+    consistentlyLate.length > 0 ||
+    aboveAvgHours.length > 0 ||
+    belowAvgHours.length > 0 ||
+    perfectAttendance.length > 0;
+
+  if (hasHighlights) {
+    lines.push("### Highlights");
+
+    if (absent.length > 0) {
+      lines.push("🔴 **Absences** (no login, no leave)");
+      for (const e of absent) {
+        lines.push(
+          `- ${e.name}: ${e.absentDayNames.join(", ")} (${e.daysAbsent} day${e.daysAbsent > 1 ? "s" : ""})`
+        );
+      }
+      lines.push("");
+    }
+
+    if (consistentlyLate.length > 0) {
+      lines.push("⏰ **Consistently Late** (avg login after 10:30 AM on 3+ days)");
+      for (const e of consistentlyLate) {
+        lines.push(
+          `- ${e.name}: avg login ${minutesToTimeStr(e.avgLoginMinutes)} (${e.lateDays} day${e.lateDays > 1 ? "s" : ""} late)`
+        );
+      }
+      lines.push("");
+    }
+
+    if (aboveAvgHours.length > 0) {
+      lines.push("📈 **Above Average Hours** (>20% above team median)");
+      for (const e of aboveAvgHours) {
+        const pct = (
+          ((e.totalHours - medianWeeklyHours) / medianWeeklyHours) *
+          100
+        ).toFixed(0);
+        lines.push(
+          `- ${e.name}: ${fmtHours(e.totalHours)} total — ${pct}% above median`
+        );
+      }
+      lines.push("");
+    }
+
+    if (belowAvgHours.length > 0) {
+      lines.push("📉 **Below Average Hours** (>20% below team median)");
+      for (const e of belowAvgHours) {
+        const pct = (
+          ((medianWeeklyHours - e.totalHours) / medianWeeklyHours) *
+          100
+        ).toFixed(0);
+        lines.push(
+          `- ${e.name}: ${fmtHours(e.totalHours)} total — ${pct}% below median`
+        );
+      }
+      lines.push("");
+    }
+
+    if (perfectAttendance.length > 0) {
+      lines.push("⭐ **Perfect Attendance** (all days, on time)");
+      lines.push(`- ${perfectAttendance.map((e) => e.name).join(", ")}`);
+      lines.push("");
     }
   }
-  lines.push("");
 
-  // Missed
-  lines.push(`### Missed (${totalMissed}/${totalEmployees})`);
-  if (!missedNames.length) {
-    lines.push("- None");
-  } else {
-    for (const n of missedNames) lines.push(`- ${n}`);
+  // Projects
+  if (sortedProjects.length > 0) {
+    lines.push("### Projects");
+    for (const p of sortedProjects) {
+      lines.push(
+        `- ${p.name}: ${fmtHours(p.hours)} (${p.employees} employee${p.employees > 1 ? "s" : ""})`
+      );
+    }
+    lines.push("");
   }
-  lines.push("");
 
-  // On Leave
-  lines.push(`### On Leave (${totalLeaves}/${totalEmployees})`);
-  if (!onLeave.length) {
-    lines.push("- None");
-  } else {
-    for (const l of onLeave)
-      lines.push(`- ${l.name}${l.reason ? ` — ${l.reason}` : ""}`);
-  }
-  lines.push("");
-
-  // Summary
-  lines.push("### Summary");
-  lines.push(
-    `- Median Login Time: ${fmtTime(
-      medianLoginDate
-    )} | Median Hours Worked: ${fmtHours(medianHoursWorked)}`
-  );
-  if (overallProject) {
-    lines.push(
-      `- Most Active Project Overall: ${overallProject.name} — ${
-        overallProject.employees
-      } employees, ${fmtHours(overallProject.hours)}`
-    );
-  } else {
-    lines.push(`- Most Active Project Overall: N/A`);
+  // Leave
+  if (leaveSummary.length > 0) {
+    lines.push("### Leave");
+    for (const l of leaveSummary) {
+      const reason = l.reason ? ` (${l.reason})` : "";
+      lines.push(`- ${l.name}: ${l.dayNames.join(", ")}${reason}`);
+    }
+    lines.push("");
   }
 
   const content = lines.join("\n");
