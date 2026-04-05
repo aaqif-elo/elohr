@@ -23,8 +23,8 @@ import {
 } from "valibot";
 
 import { tracked } from "@trpc/server";
-import { Attendance } from "@prisma/client";
-import { TimeUnit, TrpcLeaveInfo } from "../../../types/attendance";
+import type { Attendance } from "@prisma/client";
+import type { TimeUnit, TrpcLeaveInfo } from "../../../types/attendance";
 
 export const attendanceRouter = createTRPCRouter({
   getAttendance: authProcedure
@@ -197,7 +197,7 @@ export const attendanceRouter = createTRPCRouter({
       // Calculate absent dates
       const absentDates: string[] = [];
       // Loop through all work days in the range
-      let currentDay = new Date(startDate);
+      const currentDay = new Date(startDate);
       const today = new Date();
       today.setHours(0, 0, 0, 0); // Reset time to start of day for accurate comparison
 
