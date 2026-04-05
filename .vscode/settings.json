@@ -17,5 +17,6 @@
     "xcopy"
   ],
   "postman.settings.dotenv-detection-notification-visibility": false,
-  "findUnusedExports.detectCircularImports": true
+  "findUnusedExports.detectCircularImports": true,
+  "prisma.pinToPrisma6": true
 }
