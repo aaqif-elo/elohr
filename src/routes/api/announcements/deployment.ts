@@ -1,8 +1,7 @@
 // import {addAnnouncement, COMMON_ERRORS} from '../../../server/db';
-import { ValidatedEvent } from "../../..//server/middleware/payload.middleware";
+import type { ValidatedEvent } from "../../..//server/middleware/payload.middleware";
 
-export async function POST(announcementRequest: ValidatedEvent) {
-  const body = announcementRequest.locals.body;
+export async function POST(_announcementRequest: ValidatedEvent) {
   return new Response(null, { status: 201 });
   // TODO: Implement later as a secret based announcement function
   // try {
