@@ -1,4 +1,5 @@
-import { Component, Show } from "solid-js";
+import type { Component} from "solid-js";
+import { Show } from "solid-js";
 import type { WrappedStats } from "../../server/db/wrapped";
 
 interface WrappedBreaksProps {
@@ -29,27 +30,31 @@ export const WrappedBreaks: Component<WrappedBreaksProps> = (props) => {
             </div>
 
             <Show when={props.patterns.longestBreak}>
-                <div class="wrapped-fun-fact wrapped-animate-in wrapped-animate-in--delay-3" style={{ "margin-top": "1.5rem" }}>
-                    😴 Your longest break was{" "}
-                    <span class="wrapped-highlight--pink">
-                        {Math.floor(props.patterns.longestBreak!.durationMins / 60)}h {props.patterns.longestBreak!.durationMins % 60}m
-                    </span>
-                    <br />
-                    <span style={{ "font-size": "0.875rem", opacity: 0.7 }}>
-                        on {props.patterns.longestBreak!.date}
-                    </span>
-                </div>
+                {(longestBreak) => (
+                    <div class="wrapped-fun-fact wrapped-animate-in wrapped-animate-in--delay-3" style={{ "margin-top": "1.5rem" }}>
+                        😴 Your longest break was{" "}
+                        <span class="wrapped-highlight--pink">
+                            {Math.floor(longestBreak().durationMins / 60)}h {longestBreak().durationMins % 60}m
+                        </span>
+                        <br />
+                        <span style={{ "font-size": "0.875rem", opacity: 0.7 }}>
+                            on {longestBreak().date}
+                        </span>
+                    </div>
+                )}
             </Show>
 
             <Show when={props.patterns.mostBreaksInDay}>
-                <div class="wrapped-fun-fact wrapped-animate-in wrapped-animate-in--delay-4" style={{ "margin-top": "0.5rem" }}>
-                    ☕ Most breaks in one day:{" "}
-                    <span class="wrapped-highlight">{props.patterns.mostBreaksInDay!.count}</span>
-                    <br />
-                    <span style={{ "font-size": "0.875rem", opacity: 0.7 }}>
-                        on {props.patterns.mostBreaksInDay!.date}
-                    </span>
-                </div>
+                {(mostBreaks) => (
+                    <div class="wrapped-fun-fact wrapped-animate-in wrapped-animate-in--delay-4" style={{ "margin-top": "0.5rem" }}>
+                        ☕ Most breaks in one day:{" "}
+                        <span class="wrapped-highlight">{mostBreaks().count}</span>
+                        <br />
+                        <span style={{ "font-size": "0.875rem", opacity: 0.7 }}>
+                            on {mostBreaks().date}
+                        </span>
+                    </div>
+                )}
             </Show>
         </>
     );
