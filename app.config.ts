@@ -9,7 +9,6 @@ export default defineConfig({
     optimizeDeps: {
       exclude: [
         "mongodb",
-        "axios",
         "cheerio",
         "cron",
         "discord.js",
@@ -23,7 +22,6 @@ export default defineConfig({
       external: [
         "@prisma/client",
         "mongodb",
-        "axios",
         "cheerio",
         "cron",
         "discord.js",
