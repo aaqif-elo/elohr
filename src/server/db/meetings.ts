@@ -1,9 +1,9 @@
-import { Meeting } from "@prisma/client";
+import type { Meeting } from "@prisma/client";
 import { db, getDiscordIdsFromUserIds } from ".";
 import { discordTimestamp } from "../utils/discord";
 import { attendanceEvents } from "./attendances";
+import type { Client } from "discord.js";
 import {
-  Client,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -15,8 +15,6 @@ let nextReminderCache: { at: Date; meetingId: string } | null = null;
 
 // Lead time in minutes for reminders (before meeting start)
 const REMINDER_LEAD_MINUTES = 10;
-// Typed literal for Prisma sort order without assertions
-const SORT_ASC: "asc" = "asc";
 
 type MeetingRequestEntry = Meeting["requests"][number];
 
@@ -32,7 +30,7 @@ export function getNextReminderCache(): { at: Date; meetingId: string } | null {
 
 export function updateNextReminderCache(
   candidateAt: Date,
-  meetingId: string
+  meetingId: string,
 ): void {
   if (!nextReminderCache || candidateAt < nextReminderCache.at) {
     nextReminderCache = { at: candidateAt, meetingId };
@@ -72,7 +70,7 @@ export async function createMeeting(doc: CreateMeetingInput): Promise<Meeting> {
   // Update next reminder cache with this meeting's reminder time (10 minutes before start)
   const now = new Date();
   const reminderAt = new Date(
-    meeting.startTime.getTime() - REMINDER_LEAD_MINUTES * 60_000
+    meeting.startTime.getTime() - REMINDER_LEAD_MINUTES * 60_000,
   );
   if (reminderAt > now) {
     updateNextReminderCache(reminderAt, meeting.id);
@@ -80,9 +78,9 @@ export async function createMeeting(doc: CreateMeetingInput): Promise<Meeting> {
   return meeting;
 }
 
-export async function updateMeeting(
+async function updateMeeting(
   id: string,
-  updates: Partial<Meeting>
+  updates: Partial<Meeting>,
 ): Promise<Meeting | null> {
   try {
     return await db.meeting.update({
@@ -104,7 +102,7 @@ export async function cancelMeeting(id: string): Promise<Meeting | null> {
 
 // Reminders
 export async function findMeetingsDueForReminder(
-  now = new Date()
+  now = new Date(),
 ): Promise<Meeting[]> {
   // Reminder triggers within 10 minutes of the meeting start time. We include
   // all meetings starting between now and now+10m, not yet sent, to recover after restarts.
@@ -112,7 +110,7 @@ export async function findMeetingsDueForReminder(
   return await db.meeting.findMany({
     where: {
       isCanceled: false,
-  ...UNSENT_REMINDER_PREDICATE,
+      ...UNSENT_REMINDER_PREDICATE,
       startTime: { gte: now, lte: targetEnd },
     },
   });
@@ -120,7 +118,7 @@ export async function findMeetingsDueForReminder(
 
 export async function markReminderSent(
   meetingId: string,
-  when = new Date()
+  when = new Date(),
 ): Promise<void> {
   await db.meeting.update({
     where: { id: meetingId },
@@ -130,15 +128,15 @@ export async function markReminderSent(
 }
 
 export async function findNextMeetingForReminder(
-  now = new Date()
+  now = new Date(),
 ): Promise<Meeting | null> {
   return await db.meeting.findFirst({
     where: {
       isCanceled: false,
-  ...UNSENT_REMINDER_PREDICATE,
+      ...UNSENT_REMINDER_PREDICATE,
       startTime: { gte: now },
     },
-    orderBy: { startTime: SORT_ASC },
+    orderBy: { startTime: "asc" },
   });
 }
 
@@ -150,7 +148,7 @@ enum MEETING_BUTTON_IDS {
 export async function sendMeetingInviteDM(
   discordClient: Client<boolean>,
   userDiscordId: string,
-  meeting: Meeting
+  meeting: Meeting,
 ): Promise<void> {
   try {
     const discordUser = await discordClient.users.fetch(userDiscordId);
@@ -178,7 +176,7 @@ export async function sendMeetingInviteDM(
       .setEmoji("❌");
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
       accept,
-      reject
+      reject,
     );
     const when = `${discordTimestamp(meeting.startTime, "F")} (${meeting.durationMins} mins, ${discordTimestamp(meeting.startTime, "R")})`;
     await discordUser.send({
@@ -194,7 +192,7 @@ export async function sendMeetingInviteDM(
 
 export async function notifyMeetingReminder(
   discordClient: Client<boolean>,
-  meeting: Meeting
+  meeting: Meeting,
 ) {
   // DM accepted users and mention in channel
   const acceptedUserIds = meeting.requests
@@ -206,9 +204,11 @@ export async function notifyMeetingReminder(
   for (const mapping of discordMappings) {
     try {
       const user = await discordClient.users.fetch(mapping.discordId);
-      await user.send(`Reminder: Your meeting${
-        meeting.title ? ` "${meeting.title}"` : ""
-      } starts at ${discordTimestamp(meeting.startTime, "t")} (${discordTimestamp(meeting.startTime, "R")}).`);
+      await user.send(
+        `Reminder: Your meeting${
+          meeting.title ? ` "${meeting.title}"` : ""
+        } starts at ${discordTimestamp(meeting.startTime, "t")} (${discordTimestamp(meeting.startTime, "R")}).`,
+      );
     } catch (e) {
       console.error("Failed to DM meeting reminder:", e);
     }
@@ -231,7 +231,7 @@ export async function notifyMeetingReminder(
 export async function setMeetingRequestAcceptance(
   meetingId: string,
   userId: string,
-  accepted: boolean
+  accepted: boolean,
 ): Promise<Meeting | null> {
   // Read-modify-write since Prisma doesn't support positional updates on nested arrays for Mongo yet
   const existingMeeting = await db.meeting.findUnique({
@@ -248,23 +248,12 @@ export async function setMeetingRequestAcceptance(
             requestAcceptedAt: accepted ? now : null,
             rejectedAt: accepted ? null : now,
           }
-        : request
+        : request,
   );
   return await db.meeting.update({
     where: { id: meetingId },
     data: { requests: updatedRequests },
   });
-}
-
-export async function everyoneRejected(meeting: Meeting): Promise<boolean> {
-  // true if all have rejectedAt and none have requestAcceptedAt
-  const hasAnyAccepted = meeting.requests.some(
-    (req) => !!req.requestAcceptedAt
-  );
-  const allRejected =
-    meeting.requests.length > 0 &&
-    meeting.requests.every((req) => !!req.rejectedAt);
-  return allRejected && !hasAnyAccepted;
 }
 
 // Attendance hook: mark attended if a user is working during meeting time window
@@ -296,11 +285,11 @@ attendanceEvents.on("attendanceUpdated", async (attendance) => {
         (request) =>
           request.userId === attendance.userId && !request.attended
             ? { ...request, attended: true }
-            : request
+            : request,
       );
 
       const hasChanges = updatedRequests.some(
-        (req, idx) => req !== meetingRecord.requests[idx]
+        (req, idx) => req !== meetingRecord.requests[idx],
       );
       if (hasChanges) {
         await db.meeting.update({
