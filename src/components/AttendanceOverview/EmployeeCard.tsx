@@ -1,5 +1,6 @@
-import {Component, createMemo, JSX} from 'solid-js';
-import {Attendance} from '../../store';
+import type {Component, JSX} from 'solid-js';
+import { createMemo, For, Show} from 'solid-js';
+import type {Attendance} from '../../store';
 import {formatDuration} from '../util';
 import {getStatus} from './utils';
 
@@ -15,7 +16,7 @@ type EmployeeCardProps = {
 
 const EmployeeCard: Component<EmployeeCardProps> = props => {
   // Compute the status based on attendance.
-  const status = getStatus(props.attendance);
+  const status = () => getStatus(props.attendance);
 
   // Determine the most active project by summing work segments.
   const getMostActiveProject = (): string | null => {
@@ -41,37 +42,19 @@ const EmployeeCard: Component<EmployeeCardProps> = props => {
     return maxProject;
   };
 
-  const mostActiveProject = getMostActiveProject();
+  const mostActiveProject = () => getMostActiveProject();
 
   // Define a chip style for the status that uses the indicator color as its background.
-  const statusChipStyle: JSX.CSSProperties = {
+  const statusChipStyle = (): JSX.CSSProperties => ({
     display: 'inline-flex',
     'align-items': 'center',
-    'background-color': status === 'present' ? 'green' : status === 'on break' ? 'orange' : 'red',
+    'background-color': status() === 'present' ? 'green' : status() === 'on break' ? 'orange' : 'red',
     color: 'white',
     padding: '4px 8px',
     'border-radius': '12px',
     'font-size': '14px',
     'margin-bottom': '4px',
-  };
-
-  // Show work details if logged in; otherwise show "Absent."
-  const attendanceContent: JSX.Element =
-    props.attendance && props.attendance.loggedInTime ? (
-      <div style={{'margin-top': '8px', 'font-size': '14px'}}>
-        {/* Render the status chip inline */}
-        <div style={statusChipStyle}>{status}</div>
-        {typeof props.attendance.totalWorkTime === 'number' && (
-          <div>Total Worked: {formatDuration(props.attendance.totalWorkTime)}</div>
-        )}
-        {typeof props.attendance.totalBreakTime === 'number' && (
-          <div>Total Breaks: {formatDuration(props.attendance.totalBreakTime)}</div>
-        )}
-        {mostActiveProject && <div>Most Active Project: {mostActiveProject}</div>}
-      </div>
-    ) : (
-      <div style={{'margin-top': '8px', 'font-size': '14px'}}>Absent</div>
-    );
+  });
 
   // Basic styles – you might want to move these into your CSS.
   const cardStyle = createMemo<JSX.CSSProperties>(() => ({
@@ -109,11 +92,25 @@ const EmployeeCard: Component<EmployeeCardProps> = props => {
       <div>
         <div style={{'font-weight': 'bold', 'font-size': '16px'}}>{props.name}</div>
         <div>
-          {props.roles.map(role => (
+          <For each={props.roles}>{role => (
             <span style={chipStyle}>{role}</span>
-          ))}
+          )}</For>
         </div>
-        {attendanceContent}
+        <Show
+          when={props.attendance?.loggedInTime}
+          fallback={<div style={{'margin-top': '8px', 'font-size': '14px'}}>Absent</div>}
+        >
+          <div style={{'margin-top': '8px', 'font-size': '14px'}}>
+            <div style={statusChipStyle()}>{status()}</div>
+            {typeof props.attendance?.totalWorkTime === 'number' && (
+              <div>Total Worked: {formatDuration(props.attendance.totalWorkTime)}</div>
+            )}
+            {typeof props.attendance?.totalBreakTime === 'number' && (
+              <div>Total Breaks: {formatDuration(props.attendance.totalBreakTime)}</div>
+            )}
+            {mostActiveProject() && <div>Most Active Project: {mostActiveProject()}</div>}
+          </div>
+        </Show>
       </div>
     </div>
   );
