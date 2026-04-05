@@ -1,7 +1,7 @@
 import {createSignal, For, Show, onMount, onCleanup} from 'solid-js';
 import type {Component} from 'solid-js';
 import {getSystemTheme} from './utils';
-import {TimeSegment} from '../../store/utils';
+import type {TimeSegment} from '../../store/utils';
 
 // New interface for segment summaries
 interface SegmentSummary {
@@ -161,9 +161,9 @@ export const CircularTimeTracking: Component<{
   };
 
   // Calculate segment summaries
-  const calculateSegmentSummary = (segments: TimeSegment[]): SegmentSummary => {
+  const calculateSegmentSummary = (segments: TimeSegment[], currentTime: Date): SegmentSummary => {
     const totalDuration = segments.reduce((acc, segment) => {
-      const effectiveEnd = getEffectiveEndTime(segment, props.currentTime);
+      const effectiveEnd = getEffectiveEndTime(segment, currentTime);
       return acc + (effectiveEnd.getTime() - segment.start.getTime());
     }, 0);
 
@@ -208,27 +208,24 @@ export const CircularTimeTracking: Component<{
           />
 
           {/* Hour markers (24) */}
-          <For each={Array(24).fill(0)}>
-            {(_, i) => {
-              // Each hour is 15° => i() * 15°, minus 90° for top alignment
-              const angle = (i() * 15 - 90) * (Math.PI / 180);
-              const x1 = 150 + 135 * Math.cos(angle);
-              const y1 = 150 + 135 * Math.sin(angle);
-              const x2 = 150 + 145 * Math.cos(angle);
-              const y2 = 150 + 145 * Math.sin(angle);
+          {Array.from({length: 24}, (_, i) => {
+            const angle = (i * 15 - 90) * (Math.PI / 180);
+            const x1 = 150 + 135 * Math.cos(angle);
+            const y1 = 150 + 135 * Math.sin(angle);
+            const x2 = 150 + 145 * Math.cos(angle);
+            const y2 = 150 + 145 * Math.sin(angle);
 
-              return (
-                <line
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                  class="stroke-gray-400 stroke-1 dark:stroke-gray-100"
-                  pointer-events="none"
-                />
-              );
-            }}
-          </For>
+            return (
+              <line
+                x1={x1}
+                y1={y1}
+                x2={x2}
+                y2={y2}
+                class="stroke-gray-400 stroke-1 dark:stroke-gray-100"
+                pointer-events="none"
+              />
+            );
+          })}
 
           {/* 
             ADDING AN INTERNAL DIAL FOR MINUTES 
@@ -236,29 +233,25 @@ export const CircularTimeTracking: Component<{
             We can make a smaller inner circle for minute markers.
             Each minute is 6°, so i() * 6 - 90 for the angle.
           */}
-          <For each={Array(60).fill(0)}>
-            {(_, i) => {
-              const angle = (i() * 6 - 90) * (Math.PI / 180);
-              // We draw minute ticks from r=110 to r=115 (for example)
-              // so they appear inside the hour ring.
-              const x1 = 150 + 70 * Math.cos(angle);
-              const y1 = 150 + 70 * Math.sin(angle);
-              const x2 = 150 + 75 * Math.cos(angle);
-              const y2 = 150 + 75 * Math.sin(angle);
+          {Array.from({length: 60}, (_, i) => {
+            const angle = (i * 6 - 90) * (Math.PI / 180);
+            // Minute ticks from r=70 to r=75 inside the hour ring
+            const x1 = 150 + 70 * Math.cos(angle);
+            const y1 = 150 + 70 * Math.sin(angle);
+            const x2 = 150 + 75 * Math.cos(angle);
+            const y2 = 150 + 75 * Math.sin(angle);
 
-              return (
-                <line
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                  // A slightly lighter stroke so it doesn't overpower hour markers
-                  class="stroke-gray-300 stroke-1 dark:stroke-gray-500"
-                  pointer-events="none"
-                />
-              );
-            }}
-          </For>
+            return (
+              <line
+                x1={x1}
+                y1={y1}
+                x2={x2}
+                y2={y2}
+                class="stroke-gray-300 stroke-1 dark:stroke-gray-500"
+                pointer-events="none"
+              />
+            );
+          })}
 
           {/* Optionally hide minute labels on very small screens */}
           <Show when={windowWidth() > 400}>
@@ -276,7 +269,7 @@ export const CircularTimeTracking: Component<{
                     dominant-baseline="middle"
                     class="fill-gray-500 text-xs font-light dark:fill-gray-400"
                     pointer-events="none"
-                    style="user-select: none; cursor: default;"
+                    style={{"user-select":"none","cursor":"default"}}
                   >
                     {minute}
                   </text>
@@ -370,7 +363,7 @@ export const CircularTimeTracking: Component<{
                   x2={secondX}
                   y2={secondY}
                   class="stroke-red-500 stroke-1"
-                  style="transition: all 125ms linear"
+                  style={{"transition":"all 125ms linear"}}
                 />
                 <circle cx="150" cy="150" r="4" class="fill-gray-800 dark:fill-gray-200" />
               </>
@@ -378,27 +371,25 @@ export const CircularTimeTracking: Component<{
           })()}
 
           {/* Hour numbers (0-23) */}
-          <For each={Array(24).fill(0)}>
-            {(_, i) => {
-              const angle = (i() * 15 - 90) * (Math.PI / 180);
-              const x = 150 + 120 * Math.cos(angle);
-              const y = 150 + 120 * Math.sin(angle);
+          {Array.from({length: 24}, (_, i) => {
+            const angle = (i * 15 - 90) * (Math.PI / 180);
+            const x = 150 + 120 * Math.cos(angle);
+            const y = 150 + 120 * Math.sin(angle);
 
-              return (
-                <text
-                  x={x}
-                  y={y}
-                  text-anchor="middle"
-                  dominant-baseline="middle"
-                  class="fill-gray-600 text-sm font-light dark:fill-gray-200"
-                  pointer-events="none"
-                  style="user-select: none; cursor: default;"
-                >
-                  {i()}
-                </text>
-              );
-            }}
-          </For>
+            return (
+              <text
+                x={x}
+                y={y}
+                text-anchor="middle"
+                dominant-baseline="middle"
+                class="fill-gray-600 text-sm font-light dark:fill-gray-200"
+                pointer-events="none"
+                style={{"user-select":"none","cursor":"default"}}
+              >
+                {i}
+              </text>
+            );
+          })}
           <text
             x="150"
             y="125"
@@ -418,24 +409,22 @@ export const CircularTimeTracking: Component<{
       {/* Hover details */}
       <Show when={activeSegment()}>
         <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 transform rounded-lg bg-white p-3 sm:p-4 shadow-lg dark:bg-neutral-800 max-w-[90%] sm:max-w-none">
-          {(() => {
-            const segment = props.timeSegments.find(s => s.id === activeSegment());
-            if (!segment) return null;
-
-            const effectiveEnd = getEffectiveEndTime(segment, props.currentTime);
-
-            return (
-              <div class="text-sm">
-                <p class="font-bold">{segment.type === 'work' ? 'Work Period' : 'Break'}</p>
-                <p>
-                  {formatTime(segment.start)} -{' '}
-                  {!segment.end ? 'Ongoing' : formatTime(effectiveEnd)}
-                </p>
-                {segment.channel && <p>Channel: {segment.channel}</p>}
-                <p>Duration: {getDuration(segment)}</p>
-              </div>
-            );
-          })()}
+          <Show when={props.timeSegments.find(s => s.id === activeSegment())}>
+            {(segment) => {
+              const effectiveEnd = () => getEffectiveEndTime(segment(), props.currentTime);
+              return (
+                <div class="text-sm">
+                  <p class="font-bold">{segment().type === 'work' ? 'Work Period' : 'Break'}</p>
+                  <p>
+                    {formatTime(segment().start)} -{' '}
+                    {!segment().end ? 'Ongoing' : formatTime(effectiveEnd())}
+                  </p>
+                  {segment().channel && <p>Channel: {segment().channel}</p>}
+                  <p>Duration: {getDuration(segment())}</p>
+                </div>
+              );
+            }}
+          </Show>
         </div>
       </Show>
 
@@ -454,7 +443,7 @@ export const CircularTimeTracking: Component<{
             <div class="absolute bottom-full left-0 mb-2 w-64 max-w-[90vw] sm:max-w-[300px] rounded-lg bg-white p-3 sm:p-4 shadow-lg dark:bg-neutral-800">
               {(() => {
                 const segments = getSegmentsForLegendItem('break');
-                const summary = calculateSegmentSummary(segments);
+                const summary = calculateSegmentSummary(segments, props.currentTime);
                 return (
                   <div class="text-sm">
                     <p class="font-bold">Break Periods Summary</p>
@@ -486,7 +475,7 @@ export const CircularTimeTracking: Component<{
                 <div class="absolute bottom-full left-0 mb-2 w-64 max-w-[90vw] sm:max-w-[300px] rounded-lg bg-white p-3 sm:p-4 shadow-lg dark:bg-neutral-800">
                   {(() => {
                     const segments = getSegmentsForLegendItem(channel);
-                    const summary = calculateSegmentSummary(segments);
+                    const summary = calculateSegmentSummary(segments, props.currentTime);
                     return (
                       <div class="text-sm">
                         <p class="font-bold">{channel} Channel Summary</p>
