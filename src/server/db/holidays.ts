@@ -1,4 +1,5 @@
-import { Holiday, HolidayType, Prisma } from "@prisma/client";
+import type { Holiday} from "@prisma/client";
+import { HolidayType, Prisma } from "@prisma/client";
 import { db, getEndOfDay as normalizeDate } from ".";
 /**
  * Sync considerations:
@@ -147,7 +148,7 @@ async function deactivateHoliday(id: string): Promise<Holiday> {
 }
 
 // Mark a holiday as announced
-export async function markHolidayAsAnnounced(id: string): Promise<Holiday> {
+async function markHolidayAsAnnounced(id: string): Promise<Holiday> {
   return db.holiday.update({
     where: { id },
     data: {
@@ -166,22 +167,23 @@ interface IHolidayObj {
 // importHolidays removed; superseded by syncHolidays
 
 import { load } from "cheerio";
-import axios from "axios";
 
 async function getHolidayInfoFromOfficeHolidaysDotCom(
   year: string
 ): Promise<IHolidayObj[]> {
-  const holidayListPage = await axios.get(
-    `https://www.officeholidays.com/countries/bangladesh/${year}`,
-    {
-      headers: {
-        "user-agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36",
-      },
-    }
-  );
+  const url = `https://www.officeholidays.com/countries/bangladesh/${encodeURIComponent(year)}`;
+  const holidayListPage = await fetch(url, {
+    headers: {
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Safari/537.36",
+    },
+  });
 
-  const body = await holidayListPage.data;
+  if (!holidayListPage.ok) {
+    throw new Error(`Failed to fetch holidays: ${holidayListPage.status}`);
+  }
+
+  const body = await holidayListPage.text();
   const $ = load(body);
 
   const holidayList: IHolidayObj[] = [];
@@ -277,7 +279,7 @@ export async function syncHolidays(
   const endOfYear = normalizeDate(new Date(year, 11, 31));
 
   // Fetch authoritative list
-  let fetched: IHolidayObj[] = [];
+  let fetched: IHolidayObj[];
   try {
     fetched = await getHolidayInfoFromOfficeHolidaysDotCom(year.toString());
   } catch (err) {
@@ -377,9 +379,7 @@ export async function syncHolidays(
   }
 
   // Invalidate year cache so subsequent queries can repopulate if needed
-  if (checkedYears[year.toString()]) {
-    delete checkedYears[year.toString()];
-  }
+  checkedYears[year.toString()] = false;
 
   console.log(
     `[Holiday Sync] Year ${year}: added(new names)=${added}, updated(replaced rows)=${updated}, deleted=${deactivated}`
@@ -584,7 +584,7 @@ export async function shiftHoliday(
 /**
  * Represents a chain of consecutive holidays and weekends
  */
-export interface HolidayChain {
+interface HolidayChain {
   startDate: Date;
   endDate: Date;
   holidays: string[]; // List of unique holiday names in chronological order
@@ -652,7 +652,7 @@ export async function getNextHoliday(
   const holidayDate = nextHoliday.overridenDate || nextHoliday.originalDate;
 
   // For this holiday, check if it's part of a longer chain
-  let startDate = new Date(holidayDate);
+  const startDate = new Date(holidayDate);
   let endDate = new Date(holidayDate);
   let currentDate = new Date(holidayDate);
 
