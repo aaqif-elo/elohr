@@ -33,7 +33,9 @@ export interface ValidatedEvent extends APIEvent {
   };
 }
 
-export const validatePayload = async (event: FetchEvent) => {
+export const validatePayload = async (
+  event: FetchEvent,
+): Promise<Response | undefined> => {
   try {
     const urlObj = new URL(event.request.url);
 
@@ -43,6 +45,8 @@ export const validatePayload = async (event: FetchEvent) => {
       event.locals.body = body;
       console.log(body);
     }
+
+    return undefined;
   } catch (e) {
     console.log('Error', e);
     if (e instanceof ValiError) {
