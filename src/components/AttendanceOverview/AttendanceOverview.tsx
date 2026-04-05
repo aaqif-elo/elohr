@@ -2,7 +2,8 @@ import {createEffect, createMemo, createSignal, Show} from 'solid-js';
 import type {Component, JSX} from 'solid-js';
 import {getEffectiveEndTime} from './CircularTimeTracker';
 import {SpinningCircles} from '../SpinningCircles';
-import {getAdmin, getAvatarUrl, getUser, UserState} from '../../store';
+import type { UserState} from '../../store';
+import {getAdmin, getAvatarUrl, getUser} from '../../store';
 import {getScrumTime, wasInScrum} from './utils';
 import {formatDuration} from '../util';
 import {generateTimeSegments} from '../../store/utils';
@@ -66,12 +67,13 @@ export const AttendanceOverview: Component<AttendanceOverviewProps> = props => {
   });
 
   const hoursWorked = createMemo(() => {
+    const time = currentTime();
     return formatDuration(
       generateTimeSegments(overviewUser().attendance).reduce((total, segment) => {
         if (segment.type === 'work') {
           return (
             total +
-            (getEffectiveEndTime(segment, currentTime()).getTime() - segment.start.getTime())
+            (getEffectiveEndTime(segment, time).getTime() - segment.start.getTime())
           );
         }
         return total;
@@ -80,11 +82,12 @@ export const AttendanceOverview: Component<AttendanceOverviewProps> = props => {
   });
 
   const mostWorkedProject = createMemo(() => {
+    const time = currentTime();
     const projectDurations = generateTimeSegments(overviewUser().attendance).reduce(
       (acc, segment) => {
         if (segment.type === 'work' && segment.channel) {
           const duration =
-            getEffectiveEndTime(segment, currentTime()).getTime() - segment.start.getTime();
+            getEffectiveEndTime(segment, time).getTime() - segment.start.getTime();
           acc[segment.channel] = (acc[segment.channel] || 0) + duration;
         }
         return acc;
@@ -117,7 +120,7 @@ export const AttendanceOverview: Component<AttendanceOverviewProps> = props => {
     <div class="mx-auto h-full">
       <div class="mb-4 flex items-center space-x-4">
         <img
-          src={getAvatarUrl(overviewUser().discordID, overviewUser().discordAvatarId)!}
+          src={getAvatarUrl(overviewUser().discordID, overviewUser().discordAvatarId) ?? ""}
           alt={`${overviewUser().name} avatar`}
           class="h-16 w-16 rounded-full object-cover"
         />
@@ -136,7 +139,10 @@ export const AttendanceOverview: Component<AttendanceOverviewProps> = props => {
             }`}
           >
             {currentStatus().status}
-            {currentStatus().duration && ` (${formatDuration(currentStatus().duration!)})`}
+            {(() => {
+              const duration = currentStatus().duration;
+              return duration !== null ? ` (${formatDuration(duration)})` : '';
+            })()}
           </span>
         )}
         {getStatsRow('Login Time', formatTime(overviewUser().attendance.loggedInTime))}
