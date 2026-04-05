@@ -106,7 +106,7 @@ export const initializeDiscord = async (): Promise<Client | undefined> => {
     return discordClient;
   } catch (error) {
     console.error("Failed to initialize Discord client:", error);
-    return;
+    process.exit(1);
   }
 };
 
