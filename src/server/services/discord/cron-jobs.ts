@@ -1,5 +1,5 @@
 import { CronJob } from "cron";
-import { Client, TextChannel } from "discord.js";
+import type { Client, TextChannel } from "discord.js";
 import {
   getDiscordIdsFromUserIds,
   getNextHoliday,
@@ -18,6 +18,7 @@ import {
   announceHoliday,
   autoLogoutUsersWhoAreStillLoggedIn,
   getWeatherReport,
+  sendWeeklyAttendanceReportToAdmin,
 } from "./services";
 
 enum CRON_TIMES {
@@ -131,9 +132,21 @@ export const startCronJobs = async (discordClient: Client<boolean>) => {
   meetingRemindersJob(async () => {
     await processMeetingReminders();
   }).start();
-  // Logout users on break every weekday at 11:59 PM
+  // Logout users on break every day at 11:59 PM
+  // On Thursdays (end of BD work week), also generate the weekly attendance report
+  // after logout to ensure accurate data
   autoLogoutPeopleOnABreakJob(async () => {
-    autoLogoutUsersWhoAreStillLoggedIn(discordClient);
+    // Capture day before async work — logout may span past midnight
+    const isThursday = new Date().getDay() === 4;
+    await autoLogoutUsersWhoAreStillLoggedIn(discordClient);
+
+    if (isThursday) {
+      try {
+        await sendWeeklyAttendanceReportToAdmin(discordClient);
+      } catch (err) {
+        console.error("Failed to send weekly attendance report:", err);
+      }
+    }
   }).start();
 
   // Holiday announcement job
