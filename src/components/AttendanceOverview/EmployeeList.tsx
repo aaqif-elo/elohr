@@ -1,4 +1,5 @@
-import {Component, createMemo, createSignal, For, Show} from 'solid-js';
+import type {Component} from 'solid-js';
+import { createMemo, createSignal, For, Show} from 'solid-js';
 import EmployeeCard from './EmployeeCard';
 import {getAdmin, getAvatarUrl} from '../../store';
 import {getStatus} from './utils';
@@ -19,7 +20,7 @@ const EmployeeList: Component<EmployeeListProps> = props => {
 
   // We'll only render if adminData exists and has a list of users.
   const hasAdminData = createMemo(
-    () => adminData() !== null && adminData() !== undefined && !!adminData()!.allUsers
+    () => !!(adminData()?.allUsers)
   );
 
   // Helper function to find the most active time range
@@ -44,7 +45,7 @@ const EmployeeList: Component<EmployeeListProps> = props => {
   const attendanceSummary = createMemo(() => {
     if (!hasAdminData()) return null;
 
-    const users = adminData()!.allUsers;
+    const users = adminData()?.allUsers ?? [];
     const presentUsers = users.filter(
       user => !user.attendance.onLeave && user.attendance.loggedInTime
     );
@@ -68,12 +69,12 @@ const EmployeeList: Component<EmployeeListProps> = props => {
     // Median login and logout times
     const loginTimes = users
       .map(user => user.attendance.loggedInTime)
-      .filter(Boolean)
-      .sort((a, b) => a!.getTime() - b!.getTime());
+      .filter((t) => t !== null && t !== undefined)
+      .sort((a, b) => a.getTime() - b.getTime());
     const logoutTimes = users
       .map(user => user.attendance.loggedOutTime)
-      .filter(Boolean)
-      .sort((a, b) => a!.getTime() - b!.getTime());
+      .filter((t) => t !== null && t !== undefined)
+      .sort((a, b) => a.getTime() - b.getTime());
 
     const medianLoginTime =
       loginTimes[Math.floor(loginTimes.length / 2)]?.toLocaleTimeString() || 'N/A';
@@ -125,7 +126,7 @@ const EmployeeList: Component<EmployeeListProps> = props => {
   const allProjects = createMemo((): string[] => {
     if (!hasAdminData()) return [];
     const projectsSet = new Set<string>();
-    adminData()!.allUsers.forEach(user => {
+    adminData()?.allUsers.forEach(user => {
       user.attendance.workSegments?.forEach(segment => {
         projectsSet.add(segment.project);
       });
@@ -137,7 +138,7 @@ const EmployeeList: Component<EmployeeListProps> = props => {
   const allRoles = createMemo((): string[] => {
     if (!hasAdminData()) return [];
     const rolesSet = new Set<string>();
-    adminData()!.allUsers.forEach(user => {
+    adminData()?.allUsers.forEach(user => {
       user.roles.forEach(role => rolesSet.add(role));
     });
     return Array.from(rolesSet);
@@ -158,7 +159,7 @@ const EmployeeList: Component<EmployeeListProps> = props => {
   // Filter the list of users based on the selected filters
   const filteredUsers = createMemo((): UserState[] => {
     if (!hasAdminData()) return [];
-    return adminData()!.allUsers.filter(user => {
+    return (adminData()?.allUsers ?? []).filter(user => {
       // Filter by name (case-insensitive)
       if (searchTerm() && !user.name.toLowerCase().includes(searchTerm().toLowerCase())) {
         return false;
