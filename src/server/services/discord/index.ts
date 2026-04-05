@@ -10,6 +10,7 @@ import {
   authCommandBody,
   getNextHolidayAnnouncementCommandBody,
   requestLeaveCommandBody,
+  recordingCommandBody,
 } from "./commands";
 import { meetingCommandBody } from "./commands";
 import { availabilityCommandBody } from "./commands";
@@ -66,7 +67,7 @@ export const getGuildMember = async (discordId: string) => {
 };
 
 // Discord login and initialization
-export const initializeDiscord = async () => {
+export const initializeDiscord = async (): Promise<Client | undefined> => {
   if (!DISCORD_BOT_TOKEN) {
     console.error("DISCORD_BOT_TOKEN not set, Discord bot will not start");
     return;
@@ -105,6 +106,7 @@ export const initializeDiscord = async () => {
     return discordClient;
   } catch (error) {
     console.error("Failed to initialize Discord client:", error);
+    return;
   }
 };
 
@@ -128,7 +130,7 @@ const sendAttendanceChangeMessageAndSetStatus = (
 function setupEventHandlers() {
   discordClient.on("ready", () => {
     console.log(`Logged in as ${discordClient.user?.tag}!`);
-
+    
     // Setup voice state update handler
     discordClient.on("voiceStateUpdate", (oldState, newState) => {
       if (production) {
@@ -169,14 +171,12 @@ function setupEventHandlers() {
           // Build confirmation text (more details on acceptance)
           const refreshed = await getMeetingById(meetingId);
           const titlePart = refreshed?.title ? `: **${refreshed.title}**` : "";
-          let confirmationText = `You have ${
-            action === "accept" ? "accepted" : "rejected"
-          } the invite to a meeting${titlePart}.`;
+          let confirmationText = `You have ${action === "accept" ? "accepted" : "rejected"
+            } the invite to a meeting${titlePart}.`;
           if (action === "accept" && refreshed) {
             const channelMention = `<#${refreshed.channelId}>`;
-            const whenFancy = `${discordTimestamp(refreshed.startTime, "F")} (${
-              refreshed.durationMins
-            } mins, ${discordTimestamp(refreshed.startTime, "R")})`;
+            const whenFancy = `${discordTimestamp(refreshed.startTime, "F")} (${refreshed.durationMins
+              } mins, ${discordTimestamp(refreshed.startTime, "R")})`;
             try {
               const acceptedUserIds = refreshed.requests
                 .filter((r) => !!r.requestAcceptedAt && !r.rejectedAt)
@@ -231,11 +231,10 @@ function setupEventHandlers() {
               const ch = await discordClient.channels.fetch(
                 refreshed.channelId
               );
-              if (ch && ch.isTextBased()) {
-                await (ch as any).send({
-                  content: `All invitees rejected. Meeting${
-                    refreshed.title ? ` "${refreshed.title}"` : ""
-                  } has been canceled.`,
+              if (ch && ch.isTextBased() && 'send' in ch) {
+                await ch.send({
+                  content: `All invitees rejected. Meeting${refreshed.title ? ` "${refreshed.title}"` : ""
+                    } has been canceled.`,
                 });
               }
             }
@@ -267,6 +266,7 @@ async function registerCommands() {
     requestLeaveCommandBody,
     meetingCommandBody,
     availabilityCommandBody,
+    recordingCommandBody,
   ];
 
   try {
