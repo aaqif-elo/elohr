@@ -1,11 +1,11 @@
-import {
+import type {
   Attendance,
   Break,
   ContractType,
   User,
   WorkSegment,
 } from "@prisma/client";
-import { Attendance as AttendanceState } from "./user.store";
+import type { Attendance as AttendanceState } from "./user.store";
 
 export interface TrpcUser
   extends Omit<User, "leaves" | "contracts" | "createdAt" | "updatedAt"> {
@@ -265,7 +265,7 @@ export function generateTimeSegmentPreState(
 }
 
 // Add this function to your existing utils.ts file
-import { AttendanceSummary, TrpcAttendanceSummary } from "../types/attendance";
+import type { AttendanceSummary, TrpcAttendanceSummary } from "../types/attendance";
 
 export function convertTrpcAttendanceSummaryToAttendanceSummary(
   summary: TrpcAttendanceSummary

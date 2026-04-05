@@ -1,4 +1,4 @@
-export type DiscordTimestampStyle = "t" | "T" | "d" | "D" | "f" | "F" | "R";
+type DiscordTimestampStyle = "t" | "T" | "d" | "D" | "f" | "F" | "R";
 
 /**
  * Format a Date or epoch milliseconds into a Discord dynamic timestamp.

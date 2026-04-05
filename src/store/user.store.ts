@@ -1,4 +1,4 @@
-import {
+import type {
   Break,
   ContractType,
   User,
@@ -7,17 +7,18 @@ import {
   Attendance as DbAttendance,
 } from '@prisma/client';
 import {createStore} from 'solid-js/store';
+import type {
+  TrpcAttendance,
+  TrpcUser,
+  TrpcUserWithAttendance} from './utils';
 import {
   calculateMsWorkedOrBreaksTaken,
   convertTrpcAttendanceToDbAttendance,
   convertTrpcUserToDbUser,
   generateTimeSegmentPreState,
-  TrpcAttendance,
-  TrpcUser,
-  TrpcUserWithAttendance,
   convertTrpcAttendanceSummaryToAttendanceSummary,
 } from './utils';
-import {AttendanceSummary, TrpcAttendanceSummary} from '../types/attendance';
+import type {AttendanceSummary, TrpcAttendanceSummary} from '../types/attendance';
 
 export interface Attendance {
   onLeave: boolean;
