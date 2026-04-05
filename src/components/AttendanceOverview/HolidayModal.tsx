@@ -76,7 +76,7 @@ export function HolidayModal(props: HolidayModalProps) {
 
           <div class="flex justify-end space-x-3">
             <button
-              onClick={props.onClose}
+              onClick={() => props.onClose()}
               class="rounded px-4 py-2 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-neutral-700"
             >
               Cancel
