@@ -1,6 +1,7 @@
-import {
+import type {
   CacheType,
-  ChatInputCommandInteraction,
+  ChatInputCommandInteraction} from "discord.js";
+import {
   GuildMember,
   Role,
   User,
@@ -9,8 +10,9 @@ import {
   EMeetingCommands,
   MEETING_PARTICIPANT_OPTION_NAMES,
 } from "../discord.enums";
+import type {
+  Client} from "discord.js";
 import {
-  Client,
   ButtonBuilder,
   ButtonStyle,
   ActionRowBuilder,
@@ -100,7 +102,7 @@ export const handleMeetingCommand = async (
       participantDiscordIds.add(mentionable.id);
     }
   }
-  let participantDiscordIdList = Array.from(participantDiscordIds);
+  const participantDiscordIdList = Array.from(participantDiscordIds);
 
   // Include the initiator by default
   if (!participantDiscordIdList.includes(interaction.user.id)) {
@@ -257,7 +259,7 @@ export const handleMeetingCommand = async (
         return `${label} ${blocks[level].repeat(10)} ${Math.round(avg * 100)}%`;
       });
       heatmapText = "\n\nAvailability heatmap (hourly avg):\n" + rows.join("\n");
-    } catch {}
+    } catch { /* heatmap generation is best-effort */ }
   }
 
   await interaction.editReply({
@@ -345,7 +347,15 @@ export const handleMeetingCommand = async (
       startTime = materializeToDateAtMinutes();
     }
 
-    const endTime = new Date(startTime!.getTime() + duration * 60_000);
+    if (!startTime) {
+      await interaction.editReply({
+        content: "❌ Could not determine meeting start time.",
+        components: [],
+      });
+      return;
+    }
+
+    const endTime = new Date(startTime.getTime() + duration * 60_000);
 
     // Step 3: confirmation before creating the meeting
     const confirmBtn = new ButtonBuilder()
@@ -364,7 +374,7 @@ export const handleMeetingCommand = async (
     const participantMentions = participantPairs
       .map((p: { discordId: string }) => `<@${p.discordId}>`)
       .join(" ");
-    const whenFancy = `${discordTimestamp(startTime!, "F")} (${duration} mins, ${discordTimestamp(startTime!, "R")})`;
+    const whenFancy = `${discordTimestamp(startTime, "F")} (${duration} mins, ${discordTimestamp(startTime, "R")})`;
     if (fromModal) {
       await interaction.editReply({
         content: `Review meeting details:\n• Agenda: ${agenda}\n• When: ${whenFancy}\n• Participants: ${participantMentions}\n\nConfirm?`,
@@ -395,7 +405,7 @@ export const handleMeetingCommand = async (
       title: agenda,
       creatorUserId: creator.id,
       channelId: interaction.channelId,
-      startTime: startTime!,
+      startTime: startTime,
       endTime,
       durationMins: duration,
       requests: participantPairs.map(
@@ -412,7 +422,7 @@ export const handleMeetingCommand = async (
     });
 
     await confirmResponse.update({
-      content: `✅ Meeting scheduled for ${discordTimestamp(startTime!, "F")} (${duration} mins, ${discordTimestamp(startTime!, "R")}). Agenda: ${agenda}. Invitations sent.`,
+      content: `✅ Meeting scheduled for ${discordTimestamp(startTime, "F")} (${duration} mins, ${discordTimestamp(startTime, "R")}). Agenda: ${agenda}. Invitations sent.`,
       components: [],
     });
 
@@ -430,7 +440,7 @@ export const handleMeetingCommand = async (
     );
 
     // Reminder will be handled by cron-based scheduler; no local timers here
-  } catch (e) {
+  } catch (_e) {
     await interaction.editReply({
       content: "⏱️ Time out. Please run the command again.",
     });
