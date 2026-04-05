@@ -1,4 +1,5 @@
-import { Component, For, Show } from "solid-js";
+import type { Component} from "solid-js";
+import { For, Show } from "solid-js";
 import type { WrappedStats } from "../../server/db/wrapped";
 
 interface WrappedProjectsProps {
@@ -14,17 +15,19 @@ export const WrappedProjects: Component<WrappedProjectsProps> = (props) => {
         <>
             <h2 class="wrapped-title wrapped-animate-in">Project Time</h2>
             <Show when={props.insights.topProject}>
-                <div class="wrapped-animate-in wrapped-animate-in--delay-1" style={{ "text-align": "center", "margin-bottom": "2rem" }}>
-                    <p class="wrapped-subtitle" style={{ "margin-bottom": "0.5rem" }}>
-                        Your #1 Project
-                    </p>
-                    <div style={{ "font-size": "2.5rem", color: "white", "font-weight": "800" }}>
-                        {props.insights.topProject!.name}
+                {(topProject) => (
+                    <div class="wrapped-animate-in wrapped-animate-in--delay-1" style={{ "text-align": "center", "margin-bottom": "2rem" }}>
+                        <p class="wrapped-subtitle" style={{ "margin-bottom": "0.5rem" }}>
+                            Your #1 Project
+                        </p>
+                        <div style={{ "font-size": "2.5rem", color: "white", "font-weight": "800" }}>
+                            {topProject().name}
+                        </div>
+                        <div style={{ "font-size": "1.25rem", color: "#00d9ff" }}>
+                            {topProject().hours} hours
+                        </div>
                     </div>
-                    <div style={{ "font-size": "1.25rem", color: "#00d9ff" }}>
-                        {props.insights.topProject!.hours} hours
-                    </div>
-                </div>
+                )}
             </Show>
 
             <div class="wrapped-animate-in wrapped-animate-in--delay-2" style={{ width: "100%", "max-width": "360px" }}>

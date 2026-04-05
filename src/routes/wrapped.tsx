@@ -46,84 +46,86 @@ export default function Wrapped() {
                 </div>
             }
         >
-            <div class="wrapped-container">
-                {/* Navigation dots */}
-                <nav class="wrapped-nav">
-                    <button
-                        class="wrapped-nav-dot wrapped-nav-dot--active"
-                        onClick={() =>
-                            document.getElementById("slide-hero")?.scrollIntoView({ behavior: "smooth" })
-                        }
-                    />
-                    <button
-                        class="wrapped-nav-dot"
-                        onClick={() =>
-                            document.getElementById("slide-stats")?.scrollIntoView({ behavior: "smooth" })
-                        }
-                    />
-                    <button
-                        class="wrapped-nav-dot"
-                        onClick={() =>
-                            document.getElementById("slide-projects")?.scrollIntoView({ behavior: "smooth" })
-                        }
-                    />
-                    <button
-                        class="wrapped-nav-dot"
-                        onClick={() =>
-                            document.getElementById("slide-breaks")?.scrollIntoView({ behavior: "smooth" })
-                        }
-                    />
-                    <button
-                        class="wrapped-nav-dot"
-                        onClick={() =>
-                            document.getElementById("slide-time")?.scrollIntoView({ behavior: "smooth" })
-                        }
-                    />
-                    <button
-                        class="wrapped-nav-dot"
-                        onClick={() =>
-                            document.getElementById("slide-badges")?.scrollIntoView({ behavior: "smooth" })
-                        }
-                    />
-                    <button
-                        class="wrapped-nav-dot"
-                        onClick={() =>
-                            document.getElementById("slide-summary")?.scrollIntoView({ behavior: "smooth" })
-                        }
-                    />
-                </nav>
+            {(data) => (
+                <div class="wrapped-container">
+                    {/* Navigation dots */}
+                    <nav class="wrapped-nav">
+                        <button
+                            class="wrapped-nav-dot wrapped-nav-dot--active"
+                            onClick={() =>
+                                document.getElementById("slide-hero")?.scrollIntoView({ behavior: "smooth" })
+                            }
+                        />
+                        <button
+                            class="wrapped-nav-dot"
+                            onClick={() =>
+                                document.getElementById("slide-stats")?.scrollIntoView({ behavior: "smooth" })
+                            }
+                        />
+                        <button
+                            class="wrapped-nav-dot"
+                            onClick={() =>
+                                document.getElementById("slide-projects")?.scrollIntoView({ behavior: "smooth" })
+                            }
+                        />
+                        <button
+                            class="wrapped-nav-dot"
+                            onClick={() =>
+                                document.getElementById("slide-breaks")?.scrollIntoView({ behavior: "smooth" })
+                            }
+                        />
+                        <button
+                            class="wrapped-nav-dot"
+                            onClick={() =>
+                                document.getElementById("slide-time")?.scrollIntoView({ behavior: "smooth" })
+                            }
+                        />
+                        <button
+                            class="wrapped-nav-dot"
+                            onClick={() =>
+                                document.getElementById("slide-badges")?.scrollIntoView({ behavior: "smooth" })
+                            }
+                        />
+                        <button
+                            class="wrapped-nav-dot"
+                            onClick={() =>
+                                document.getElementById("slide-summary")?.scrollIntoView({ behavior: "smooth" })
+                            }
+                        />
+                    </nav>
 
-                {/* Slides */}
-                <WrappedSlide variant="hero" id="slide-hero">
-                    <WrappedHero year={wrappedData()!.year} />
-                </WrappedSlide>
+                    {/* Slides */}
+                    <WrappedSlide variant="hero" id="slide-hero">
+                        <WrappedHero year={data().year} />
+                    </WrappedSlide>
 
-                <WrappedSlide variant="stats" id="slide-stats">
-                    <WrappedStats stats={wrappedData()!.coreStats} />
-                </WrappedSlide>
+                    <WrappedSlide variant="stats" id="slide-stats">
+                        <WrappedStats stats={data().coreStats} />
+                    </WrappedSlide>
 
-                <WrappedSlide variant="projects" id="slide-projects">
-                    <WrappedProjects insights={wrappedData()!.projectInsights} />
-                </WrappedSlide>
+                    <WrappedSlide variant="projects" id="slide-projects">
+                        <WrappedProjects insights={data().projectInsights} />
+                    </WrappedSlide>
 
-                <WrappedSlide variant="breaks" id="slide-breaks">
-                    <WrappedBreaks patterns={wrappedData()!.breakPatterns} />
-                </WrappedSlide>
+                    <WrappedSlide variant="breaks" id="slide-breaks">
+                        <WrappedBreaks patterns={data().breakPatterns} />
+                    </WrappedSlide>
 
-                <WrappedSlide variant="time" id="slide-time">
-                    <WrappedTimePersonality
-                        timePersonality={wrappedData()!.timePersonality}
-                    />
-                </WrappedSlide>
+                    <WrappedSlide variant="time" id="slide-time">
+                        <WrappedTimePersonality
+                            timePersonality={data().timePersonality}
+                        />
+                    </WrappedSlide>
 
-                <WrappedSlide variant="badges" id="slide-badges">
-                    <WrappedBadges badges={wrappedData()!.badges} />
-                </WrappedSlide>
+                    <WrappedSlide variant="badges" id="slide-badges">
+                        <WrappedBadges badges={data().badges} />
+                    </WrappedSlide>
 
-                <WrappedSlide variant="summary" id="slide-summary">
-                    <WrappedSummary stats={wrappedData()!} />
-                </WrappedSlide>
-            </div>
+                    <WrappedSlide variant="summary" id="slide-summary">
+                        <WrappedSummary stats={data()} />
+                    </WrappedSlide>
+                </div>
+            )}
         </Show>
     );
 }

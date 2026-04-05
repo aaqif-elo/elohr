@@ -1,4 +1,5 @@
-import { Component, Show } from "solid-js";
+import type { Component} from "solid-js";
+import { Show } from "solid-js";
 import type { WrappedStats } from "../../server/db/wrapped";
 
 interface WrappedTimePersonalityProps {
@@ -65,44 +66,48 @@ export const WrappedTimePersonality: Component<WrappedTimePersonalityProps> = (
                 style={{ "margin-top": "1rem" }}
             >
                 <Show when={props.timePersonality.longestWorkday}>
-                    <div class="wrapped-stat-card wrapped-animate-in wrapped-animate-in--delay-3">
-                        <div
-                            class="wrapped-stat-value wrapped-highlight--pink"
-                            style={{ "font-size": "2rem" }}
-                        >
-                            {props.timePersonality.longestWorkday!.hours}h
+                    {(longestWorkday) => (
+                        <div class="wrapped-stat-card wrapped-animate-in wrapped-animate-in--delay-3">
+                            <div
+                                class="wrapped-stat-value wrapped-highlight--pink"
+                                style={{ "font-size": "2rem" }}
+                            >
+                                {longestWorkday().hours}h
+                            </div>
+                            <div class="wrapped-stat-label">Longest Day</div>
+                            <div
+                                style={{
+                                    "font-size": "0.75rem",
+                                    color: "rgba(255,255,255,0.5)",
+                                    "margin-top": "0.25rem",
+                                }}
+                            >
+                                {longestWorkday().date}
+                            </div>
                         </div>
-                        <div class="wrapped-stat-label">Longest Day</div>
-                        <div
-                            style={{
-                                "font-size": "0.75rem",
-                                color: "rgba(255,255,255,0.5)",
-                                "margin-top": "0.25rem",
-                            }}
-                        >
-                            {props.timePersonality.longestWorkday!.date}
-                        </div>
-                    </div>
+                    )}
                 </Show>
                 <Show when={props.timePersonality.shortestWorkday}>
-                    <div class="wrapped-stat-card wrapped-animate-in wrapped-animate-in--delay-4">
-                        <div
-                            class="wrapped-stat-value"
-                            style={{ "font-size": "2rem", color: "#4ade80" }}
-                        >
-                            {props.timePersonality.shortestWorkday!.hours}h
+                    {(shortestWorkday) => (
+                        <div class="wrapped-stat-card wrapped-animate-in wrapped-animate-in--delay-4">
+                            <div
+                                class="wrapped-stat-value"
+                                style={{ "font-size": "2rem", color: "#4ade80" }}
+                            >
+                                {shortestWorkday().hours}h
+                            </div>
+                            <div class="wrapped-stat-label">Shortest Day</div>
+                            <div
+                                style={{
+                                    "font-size": "0.75rem",
+                                    color: "rgba(255,255,255,0.5)",
+                                    "margin-top": "0.25rem",
+                                }}
+                            >
+                                {shortestWorkday().date}
+                            </div>
                         </div>
-                        <div class="wrapped-stat-label">Shortest Day</div>
-                        <div
-                            style={{
-                                "font-size": "0.75rem",
-                                color: "rgba(255,255,255,0.5)",
-                                "margin-top": "0.25rem",
-                            }}
-                        >
-                            {props.timePersonality.shortestWorkday!.date}
-                        </div>
-                    </div>
+                    )}
                 </Show>
             </div>
         </>
