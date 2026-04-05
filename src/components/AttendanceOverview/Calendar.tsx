@@ -4,6 +4,7 @@ import {
   createEffect,
   Show,
   For,
+  on,
   onMount,
   onCleanup,
 } from "solid-js";
@@ -22,6 +23,12 @@ import toast from "solid-toast";
 type MenuAction = {
   label: string;
   action: (date: Date) => void | Promise<void>;
+};
+
+type CalendarDateParts = {
+  day: number;
+  month: number;
+  year: number;
 };
 
 
@@ -304,8 +311,9 @@ export function HRCalendar(props: HRCalendarProps) {
 
   // Handle menu action
   function handleMenuAction(action: MenuAction) {
-    if (menuOpen()) {
-      action.action(menuOpen()!.date);
+    const menu = menuOpen();
+    if (menu) {
+      action.action(menu.date);
       closeMenu();
     }
   }
@@ -359,8 +367,9 @@ export function HRCalendar(props: HRCalendarProps) {
         const newDate = new Date(year, month, day);
         if (shiftHolidayMode()) {
           // Complete the shift with both dates
-          if (holidayToShift() && props.onShiftHoliday) {
-            props.onShiftHoliday(holidayToShift()!.date, newDate);
+          const holiday = holidayToShift();
+          if (holiday && props.onShiftHoliday) {
+            props.onShiftHoliday(holiday.date, newDate);
           }
           // Exit shift mode
           setShiftHolidayMode(false);
@@ -529,11 +538,7 @@ export function HRCalendar(props: HRCalendarProps) {
   });
 
   // Get month details
-  const monthData = createMemo(() => {
-    // Add this line to create a dependency on props.dateHighlights
-    const highlights = props.dateHighlights;
-
-    const date = currentDate();
+  const monthData = createMemo(on([currentDate, () => props.dateHighlights], ([date]) => {
     const year = date.getFullYear();
     const month = date.getMonth();
 
@@ -580,7 +585,7 @@ export function HRCalendar(props: HRCalendarProps) {
     );
 
     return [...allDays, ...nextMonthDays];
-  });
+  }));
 
   // Check if a date is selected
   function isSelected(day: number, month: number, year: number): boolean {
@@ -746,7 +751,7 @@ export function HRCalendar(props: HRCalendarProps) {
   }
 
   // Fix issue with highlighting by updating the onMouseOver handler
-  function handleDayMouseOver(e: MouseEvent, dayInfo: any) {
+  function handleDayMouseOver(e: MouseEvent, dayInfo: CalendarDateParts) {
     if (props.loading) return;
 
     const day = dayInfo.day;
@@ -765,7 +770,7 @@ export function HRCalendar(props: HRCalendarProps) {
       }
 
       // Format the tooltip text with the description on a second line
-      let tooltipText = highlight.description;
+      const tooltipText = highlight.description;
 
       // If there's a description, add it on a second line with styling
       if (highlight.description && highlight.descriptionDetails) {
@@ -804,12 +809,13 @@ export function HRCalendar(props: HRCalendarProps) {
   }
 
   // Add these helper functions for detecting long press
-  function handleTouchStart(e: TouchEvent, dayInfo: any) {
+  function handleTouchStart(e: TouchEvent, dayInfo: CalendarDateParts) {
     if (props.loading || shiftHolidayMode() || leaveSelectionMode()) return;
     
     // Clear any existing timer
-    if (longPressTimer()) {
-      clearTimeout(longPressTimer()!);
+    const currentLongPressTimer = longPressTimer();
+    if (currentLongPressTimer) {
+      clearTimeout(currentLongPressTimer);
     }
     
     // Set new timer for long press (700ms is a good duration)
@@ -829,8 +835,9 @@ export function HRCalendar(props: HRCalendarProps) {
 
   function handleTouchEnd() {
     // Clear timer if touch ends before long press is triggered
-    if (longPressTimer()) {
-      clearTimeout(longPressTimer()!);
+    const currentLongPressTimer = longPressTimer();
+    if (currentLongPressTimer) {
+      clearTimeout(currentLongPressTimer);
       setLongPressTimer(null);
     }
     
@@ -843,7 +850,7 @@ export function HRCalendar(props: HRCalendarProps) {
   }
 
   // Modify your day click handler to prevent normal clicks from firing during long press
-  function handleDayClick(dayInfo: any) {
+  function handleDayClick(dayInfo: CalendarDateParts) {
     if (props.loading || longPressActive()) return;
     handleSelectDate(dayInfo.day, dayInfo.month, dayInfo.year);
   }
@@ -1124,8 +1131,7 @@ export function HRCalendar(props: HRCalendarProps) {
                         : undefined,
                       "border-color": highlight ? highlight.color : undefined,
                     }}
-                    onClick={() => !props.loading && !longPressActive() && 
-                      handleSelectDate(dayInfo.day, dayInfo.month, dayInfo.year)}
+                    onClick={() => handleDayClick(dayInfo)}
                     onTouchStart={(e) => handleTouchStart(e, dayInfo)}
                     onTouchEnd={handleTouchEnd}
                     onTouchCancel={handleTouchEnd}
@@ -1174,7 +1180,7 @@ export function HRCalendar(props: HRCalendarProps) {
           onClick={(e) => e.stopPropagation()}
         >
           <ul>
-            <For each={getMenuActions(menuOpen()!.date)}>
+            <For each={getMenuActions(menuOpen()?.date ?? new Date())}>
               {(action) => (
                 <li onClick={() => handleMenuAction(action)}>{action.label}</li>
               )}
@@ -1197,8 +1203,9 @@ export function HRCalendar(props: HRCalendarProps) {
             left: `${hoverInfo.x}px`,
             top: `${hoverInfo.y}px`,
           }}
+          // eslint-disable-next-line solid/no-innerhtml
           innerHTML={hoverInfo.text}
-        ></div>
+         />
       </Show>
     </div>
   );
