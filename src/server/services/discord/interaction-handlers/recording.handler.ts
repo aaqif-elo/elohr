@@ -421,6 +421,7 @@ function mentionActionItemAssignees(
 
 function formatSummaryForDiscord(result: {
   sessionId: string;
+  summaryTitle: string | null;
   summary: string | null;
   userCount: number;
   duration: number;
@@ -433,13 +434,16 @@ function formatSummaryForDiscord(result: {
 
   const header = [
     "## 📋 Recording Summary",
+    result.summaryTitle?.trim()
+      ? `**Title:** ${result.summaryTitle.trim()}`
+      : null,
     `**Session:** \`${result.sessionId}\``,
     `**Duration:** ${durationStr}`,
     `**Participants:** ${result.userCount}`,
     "",
     "---",
     "",
-  ].join("\n");
+  ].filter((line): line is string => Boolean(line)).join("\n");
 
   const summaryBody = mentionActionItemAssignees(
     result.summary?.trim() || "*No summary available*",
