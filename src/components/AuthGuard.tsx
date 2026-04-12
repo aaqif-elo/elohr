@@ -8,7 +8,11 @@ import {LOCAL_STORAGE_KEY, loginWithStoredJWT} from '../lib/auth';
 import {getUser} from '../store';
 import FullScreenLoader from './FullScreenLoader';
 
-export function AuthGuard(props: RouteSectionProps): JSX.Element {
+type AuthGuardProps = Partial<RouteSectionProps> & {
+  children?: JSX.Element;
+};
+
+export function AuthGuard(props: AuthGuardProps): JSX.Element {
   const [isAuthenticated, setIsAuthenticated] = createSignal(false);
   const navigate = useNavigate();
   const location = useLocation();

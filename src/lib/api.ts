@@ -9,6 +9,14 @@ import type { AppRouter } from "../server/api/root";
 import { LOCAL_STORAGE_KEY } from "./auth";
 import { EventSourcePolyfill } from "event-source-polyfill";
 
+const getStoredAuthToken = () => {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  return window.localStorage.getItem(LOCAL_STORAGE_KEY) ?? "";
+};
+
 const getBaseUrl = () => {
   if (typeof window !== "undefined") return "";
   // replace example.com with your actual production url
@@ -37,9 +45,7 @@ export const api = createTRPCClient<AppRouter>({
         eventSourceOptions: async () => {
           return {
             headers: {
-              Authorization: `Bearer ${
-                localStorage.getItem(LOCAL_STORAGE_KEY) || ""
-              }`,
+              Authorization: `Bearer ${getStoredAuthToken()}`,
               ...customHeaders,
             },
           };
@@ -49,9 +55,7 @@ export const api = createTRPCClient<AppRouter>({
         url: `${getBaseUrl()}/api/trpc`,
         headers() {
           return {
-            Authorization: `Bearer ${
-              localStorage.getItem(LOCAL_STORAGE_KEY) || ""
-            }`,
+            Authorization: `Bearer ${getStoredAuthToken()}`,
             ...customHeaders,
           };
         },
