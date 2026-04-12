@@ -31,6 +31,10 @@ import {
   createChronologicalTranscript,
 } from "./transcript-format";
 import {
+  createStoredSessionSummary,
+  SESSION_SUMMARY_FILE_NAME,
+} from "./session-summary";
+import {
   generateSummary,
 } from "./transcription.service";
 
@@ -145,6 +149,7 @@ export async function processRecording(
     mergedAudioPath: null,
     transcriptPath: null,
     summaryPath: null,
+    summaryTitle: null,
     summary: null,
     userCount: session.userIds.size,
     duration: Math.floor(getSessionDurationMs(session) / 1000),
@@ -243,15 +248,24 @@ export async function processRecording(
     session.id,
   );
 
-  const summary = await generateSummary(
+  const generatedSummary = await generateSummary(
     chronologicalTranscript,
     session.sessionPath,
     buildSummaryContext(session, userNames),
   );
-  const summaryPath = join(session.sessionPath, "summary.txt");
-  writeFileSync(summaryPath, summary, "utf-8");
+  const storedSummary = createStoredSessionSummary({
+    sessionId: session.id,
+    title: generatedSummary.title,
+    summary: generatedSummary.summary,
+    durationSeconds: result.duration,
+    participants: result.summaryParticipants,
+  });
+
+  const summaryPath = join(session.sessionPath, SESSION_SUMMARY_FILE_NAME);
+  writeFileSync(summaryPath, `${JSON.stringify(storedSummary, null, 2)}\n`, "utf-8");
   result.summaryPath = summaryPath;
-  result.summary = summary;
+  result.summaryTitle = storedSummary.title;
+  result.summary = storedSummary.summary;
 
   await updateStatusMessage(
     statusMessage,

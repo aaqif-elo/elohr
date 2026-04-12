@@ -11,12 +11,29 @@ export interface SummaryParticipant {
   userName: string;
 }
 
+export interface GeneratedSummary {
+  title: string;
+  summary: string;
+}
+
+export interface StoredSessionSummary {
+  version: 1;
+  sessionId: string;
+  title: string;
+  summary: string;
+  durationSeconds: number;
+  participantCount: number;
+  participants: SummaryParticipant[];
+  generatedAt: string;
+}
+
 export interface ProcessingResult {
   sessionId: string;
   sessionPath: string;
   mergedAudioPath: string | null;
   transcriptPath: string | null;
   summaryPath: string | null;
+  summaryTitle: string | null;
   summary: string | null;
   userCount: number;
   duration: number;

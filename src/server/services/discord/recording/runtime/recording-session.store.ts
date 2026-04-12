@@ -1,6 +1,32 @@
 import type { RecordingSession } from "./recording-types";
 
 const activeSessions = new Map<string, RecordingSession>();
+const SESSION_ID_REGEX =
+  /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})T(?<hour>\d{2})-(?<minute>\d{2})-(?<second>\d{2})_(?<random>[a-z0-9]{6})$/;
+
+export function isSessionId(value: string): boolean {
+  return SESSION_ID_REGEX.test(value);
+}
+
+export function getSessionIdCreatedAt(sessionId: string): Date | null {
+  const match = SESSION_ID_REGEX.exec(sessionId);
+  if (!match?.groups) {
+    return null;
+  }
+
+  const {
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second,
+  } = match.groups;
+
+  const isoTimestamp = `${year}-${month}-${day}T${hour}:${minute}:${second}.000Z`;
+  const createdAt = new Date(isoTimestamp);
+  return Number.isNaN(createdAt.getTime()) ? null : createdAt;
+}
 
 export function getSessionDurationMs(
   session: Pick<RecordingSession, "startedAt" | "stoppedAt">,

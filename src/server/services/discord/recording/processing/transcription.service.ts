@@ -6,6 +6,7 @@ import type {
 import { appendFileSync, readFileSync } from "fs";
 import { basename, join, relative } from "path";
 import type {
+  GeneratedSummary,
   SummaryPromptContext,
 } from "./recording-processing.types";
 
@@ -465,7 +466,12 @@ function buildSummaryPrompt(
     "- If ownership is ambiguous, keep it as Owner unclear.",
     "- Preserve technical, software, client, and project terminology where possible.",
     "",
-    "Return markdown using exactly these sections and headings in this order:",
+    "Return ONLY a valid JSON object with these exact top-level keys:",
+    '- "title": concise 4-10 word meeting title.',
+    '- "summaryMarkdown": markdown using the required headings below.',
+    "Do not wrap JSON in markdown code fences.",
+    "",
+    "summaryMarkdown must include exactly these sections and headings in this order:",
     "",
     "## Agendas & Sub-agendas",
     "- One bullet per major agenda discussed.",
@@ -496,10 +502,63 @@ function buildSummaryPrompt(
     transcription,
     "---",
     "",
-    "Summary:",
+    "JSON:",
   ].filter((line): line is string => Boolean(line));
 
   return promptLines.join("\n");
+}
+
+function extractCodeFenceJson(text: string): string | null {
+  const codeFenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  return codeFenceMatch?.[1]?.trim() || null;
+}
+
+function extractLikelyJsonObject(text: string): string | null {
+  const firstBraceIndex = text.indexOf("{");
+  const lastBraceIndex = text.lastIndexOf("}");
+  if (firstBraceIndex < 0 || lastBraceIndex <= firstBraceIndex) {
+    return null;
+  }
+
+  return text.slice(firstBraceIndex, lastBraceIndex + 1).trim();
+}
+
+function parseGeneratedSummary(responseText: string): GeneratedSummary | null {
+  const normalizedResponse = responseText.trim();
+  const jsonCandidates = [
+    normalizedResponse,
+    extractCodeFenceJson(normalizedResponse),
+    extractLikelyJsonObject(normalizedResponse),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  for (const candidate of jsonCandidates) {
+    try {
+      const parsed: unknown = JSON.parse(candidate);
+      const title = getObjectStringProperty(parsed, "title");
+      const summaryMarkdown = getObjectStringProperty(parsed, "summaryMarkdown");
+
+      if (title && summaryMarkdown) {
+        return {
+          title: title.trim(),
+          summary: appendSummaryDisclaimer(summaryMarkdown),
+        };
+      }
+    } catch {
+      // Try the next parsing strategy.
+    }
+  }
+
+  return null;
+}
+
+function buildFallbackSummary(responseText: string): GeneratedSummary {
+  const trimmedResponse = responseText.trim();
+  return {
+    title: "Recording Summary",
+    summary: appendSummaryDisclaimer(
+      trimmedResponse || "Unable to generate summary.",
+    ),
+  };
 }
 
 function appendSummaryDisclaimer(summary: string): string {
@@ -681,7 +740,7 @@ export async function generateSummary(
   transcription: string,
   sessionPath: string,
   context: SummaryPromptContext,
-): Promise<string> {
+): Promise<GeneratedSummary> {
   if (!GEMINI_API_KEY) {
     throw new Error("GEMINI_API_KEY is not configured");
   }
@@ -690,23 +749,25 @@ export async function generateSummary(
     !transcription.trim() ||
     transcription === "[No speech detected in the audio]"
   ) {
-    return appendSummaryDisclaimer(
-      "No content to summarize - the recording contained no detectable speech.",
-    );
+    return {
+      title: "No Speech Detected",
+      summary: appendSummaryDisclaimer(
+        "No content to summarize - the recording contained no detectable speech.",
+      ),
+    };
   }
 
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
   const prompt = buildSummaryPrompt(transcription, context);
 
   try {
-    const summary = await callGeminiWithRetry(ai, [prompt], 0.3, {
+    const rawResponse = await callGeminiWithRetry(ai, [prompt], 0.3, {
       sessionPath,
       operation: "meeting_summary",
       primaryInputModality: "text",
     });
-    return appendSummaryDisclaimer(
-      summary.trim() || "Unable to generate summary.",
-    );
+
+    return parseGeneratedSummary(rawResponse) || buildFallbackSummary(rawResponse);
   } catch (error) {
     console.error("Summary generation error:", error);
     throw new Error(
