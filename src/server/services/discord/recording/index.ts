@@ -4,19 +4,30 @@ export {
   SAMPLE_RATE,
 } from "./shared/audio-format";
 export {
-  convertPcmToMp3,
   mergeSessionAudio,
   mergeSnippetsToAudio,
 } from "./processing/audio-merge";
 export {
+  initLiveTranscription,
+  transcribeSnippetsOffline,
+} from "./processing/live-transcription.service";
+export {
   processRecording,
   queueRecordingForProcessing,
 } from "./processing/recording-processing.service";
-export { createMergedTranscript } from "./processing/transcript-format";
+export {
+  discoverSegmentsFromFilesystem,
+} from "./processing/snippet-batcher";
+export {
+  createChronologicalTranscript,
+} from "./processing/transcript-format";
 export {
   generateSummary,
-  transcribeAudioWithTimestamps,
 } from "./processing/transcription.service";
+export type {
+  SummaryParticipant,
+  SummaryPromptContext,
+} from "./processing/recording-processing.types";
 export {
   startRecording,
   stopRecording,

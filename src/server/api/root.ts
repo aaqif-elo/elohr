@@ -4,6 +4,7 @@ import {
   authRouter,
   holidaysRouter,
   leavesRouter,
+  recordingsRouter,
 } from "./routers";
 import { createTRPCRouter } from "./trpc";
 
@@ -13,6 +14,7 @@ export const appRouter = createTRPCRouter({
   admin: adminRouter,
   holidays: holidaysRouter,
   leaves: leavesRouter,
+  recordings: recordingsRouter,
 });
 
 export type AppRouter = typeof appRouter;

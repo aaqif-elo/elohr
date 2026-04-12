@@ -21,6 +21,7 @@ export interface StoredSessionSummary {
   sessionId: string;
   title: string;
   summary: string;
+  channelName?: string;
   durationSeconds: number;
   participantCount: number;
   participants: SummaryParticipant[];

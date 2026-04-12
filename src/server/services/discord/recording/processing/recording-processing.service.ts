@@ -257,6 +257,7 @@ export async function processRecording(
     sessionId: session.id,
     title: generatedSummary.title,
     summary: generatedSummary.summary,
+    channelName: session.channelName,
     durationSeconds: result.duration,
     participants: result.summaryParticipants,
   });
