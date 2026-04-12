@@ -12,21 +12,12 @@ import {
   requestLeaveCommandBody,
   recordingCommandBody,
 } from "./commands";
-import { meetingCommandBody } from "./commands";
 import { availabilityCommandBody } from "./commands";
 
 import { interactionHandler } from "./interaction-handlers";
-import {
-  getMeetingById,
-  setMeetingRequestAcceptance,
-  cancelMeeting,
-  getUserByDiscordId,
-  getDiscordIdsFromUserIds,
-} from "../../db";
 import { handleVoiceStateChange } from "./voice-channel-hook.service";
 import { setNameStatus } from "./utils";
 import { startCronJobs } from "./cron-jobs";
-import { discordTimestamp } from "../../utils/discord";
 declare global {
   var _discordClientGlobal: Client | undefined;
 }
@@ -146,108 +137,6 @@ function setupEventHandlers() {
   // Handle interactions (slash commands)
   discordClient.on("interactionCreate", async (interaction) => {
     if (interaction.isButton()) {
-      const id = interaction.customId;
-      // Only handle meeting invite accept/reject buttons here.
-      if (id.startsWith("mtg-accept-") || id.startsWith("mtg-reject-")) {
-        const [_, action, meetingId] = id.split("-");
-        try {
-          const meeting = await getMeetingById(meetingId);
-          if (!meeting || meeting.isCanceled) {
-            if (!interaction.replied && !interaction.deferred) {
-              await interaction.reply({
-                content: "This meeting is no longer active.",
-                flags: "Ephemeral",
-              });
-            }
-            return;
-          }
-          const { id: userId } = await getUserByDiscordId(interaction.user.id);
-          await setMeetingRequestAcceptance(
-            meetingId,
-            userId,
-            action === "accept"
-          );
-
-          // Build confirmation text (more details on acceptance)
-          const refreshed = await getMeetingById(meetingId);
-          const titlePart = refreshed?.title ? `: **${refreshed.title}**` : "";
-          let confirmationText = `You have ${action === "accept" ? "accepted" : "rejected"
-            } the invite to a meeting${titlePart}.`;
-          if (action === "accept" && refreshed) {
-            const channelMention = `<#${refreshed.channelId}>`;
-            const whenFancy = `${discordTimestamp(refreshed.startTime, "F")} (${refreshed.durationMins
-              } mins, ${discordTimestamp(refreshed.startTime, "R")})`;
-            try {
-              const acceptedUserIds = refreshed.requests
-                .filter((r) => !!r.requestAcceptedAt && !r.rejectedAt)
-                .map((r) => r.userId);
-              const mappings = await getDiscordIdsFromUserIds(acceptedUserIds);
-              const attendeeMentions = mappings
-                .map((m) => `<@${m.discordId}>`)
-                .join(" ");
-              confirmationText = `You have accepted the invite to a meeting${titlePart}.
-• Channel: ${channelMention}
-• When: ${whenFancy}
-• Attending: ${attendeeMentions || "(none yet)"}`;
-            } catch {
-              // Fallback to base text if mapping fails
-              confirmationText = `You have accepted the invite to a meeting${titlePart}.`;
-            }
-          }
-
-          // Only edit the original message in DMs to avoid changing a shared channel message.
-          const isDM = !interaction.inGuild();
-          if (isDM && interaction.message && interaction.message.editable) {
-            try {
-              await interaction.update({
-                content: confirmationText,
-                components: [],
-              });
-            } catch {
-              if (!interaction.replied && !interaction.deferred) {
-                await interaction.reply({
-                  content: confirmationText,
-                  flags: "Ephemeral",
-                });
-              }
-            }
-          } else if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({
-              content: confirmationText,
-              flags: "Ephemeral",
-            });
-          }
-
-          if (refreshed) {
-            const total = refreshed.requests.length;
-            const rejected = refreshed.requests.filter(
-              (r) => r.rejectedAt && !r.requestAcceptedAt
-            ).length;
-            const accepted = refreshed.requests.filter(
-              (r) => r.requestAcceptedAt
-            ).length;
-            if (total > 0 && rejected === total && accepted === 0) {
-              await cancelMeeting(meetingId);
-              const ch = await discordClient.channels.fetch(
-                refreshed.channelId
-              );
-              if (ch && ch.isTextBased() && 'send' in ch) {
-                await ch.send({
-                  content: `All invitees rejected. Meeting${refreshed.title ? ` "${refreshed.title}"` : ""
-                    } has been canceled.`,
-                });
-              }
-            }
-          }
-        } catch (e) {
-          console.error("Meeting button error:", e);
-          if (!interaction.replied && !interaction.deferred)
-            await interaction.reply({
-              content: "❌ Error handling your action.",
-              flags: "Ephemeral",
-            });
-        }
-      }
       return;
     }
     if (!interaction.isChatInputCommand()) return;
@@ -264,7 +153,6 @@ async function registerCommands() {
     authCommandBody,
     getNextHolidayAnnouncementCommandBody,
     requestLeaveCommandBody,
-    meetingCommandBody,
     availabilityCommandBody,
     recordingCommandBody,
   ];
