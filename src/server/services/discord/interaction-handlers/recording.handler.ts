@@ -13,10 +13,12 @@ import {
   getActiveSession,
   getStatusMessage,
   hasActiveSession,
+  initLiveTranscription,
   queueRecordingForProcessing,
   startRecording,
   stopRecording,
 } from "../recording";
+import type { SummaryParticipant } from "../recording/processing/recording-processing.types";
 
 // Path to permissions file
 const PERMISSIONS_FILE = join(process.cwd(), "recording-permissions.json");
@@ -156,6 +158,9 @@ async function handleStartRecording(
       member.id,
     );
 
+    // Begin transcribing snippets as they are produced
+    initLiveTranscription(session);
+
     // Send status message
     await interaction.editReply({
       content: getStatusMessage(ERecordingStage.STARTED, session.id),
@@ -240,10 +245,12 @@ async function handleStopRecording(
 
       // Post the summary
       if (result.summary) {
-        const summaryContent = formatSummaryForDiscord(result);
-        await interaction.followUp({
-          content: summaryContent,
-        });
+        const summaryContents = formatSummaryForDiscord(result);
+        for (const summaryContent of summaryContents) {
+          await interaction.followUp({
+            content: summaryContent,
+          });
+        }
       }
     } catch (error) {
       console.error("Error processing recording:", error);
@@ -266,27 +273,235 @@ async function handleStopRecording(
 /**
  * Format the summary for Discord
  */
+const DISCORD_MESSAGE_LIMIT = 2000;
+
+function splitTextForDiscord(text: string, maxLength: number): string[] {
+  if (!text.trim()) {
+    return [];
+  }
+
+  const lines = text.split("\n");
+  const chunks: string[] = [];
+  let currentChunk = "";
+
+  const flushChunk = () => {
+    if (currentChunk.trim()) {
+      chunks.push(currentChunk.trim());
+      currentChunk = "";
+    }
+  };
+
+  const appendSegment = (segment: string) => {
+    if (!segment) {
+      return;
+    }
+
+    const candidate = currentChunk ? `${currentChunk}\n${segment}` : segment;
+    if (candidate.length <= maxLength) {
+      currentChunk = candidate;
+      return;
+    }
+
+    if (currentChunk) {
+      flushChunk();
+    }
+
+    if (segment.length <= maxLength) {
+      currentChunk = segment;
+      return;
+    }
+
+    let remaining = segment;
+    while (remaining.length > maxLength) {
+      let splitIndex = remaining.lastIndexOf(" ", maxLength);
+      if (splitIndex <= 0) {
+        splitIndex = maxLength;
+      }
+
+      const piece = remaining.slice(0, splitIndex).trimEnd();
+      if (piece) {
+        chunks.push(piece);
+      }
+      remaining = remaining.slice(splitIndex).trimStart();
+    }
+
+    currentChunk = remaining;
+  };
+
+  for (const line of lines) {
+    appendSegment(line);
+  }
+
+  flushChunk();
+  return chunks;
+}
+
+function normalizeName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function findMentionForAssignee(
+  assignee: string,
+  participants: SummaryParticipant[],
+): string | null {
+  const normalizedAssignee = normalizeName(assignee);
+  if (!normalizedAssignee || normalizedAssignee === "owner unclear") {
+    return null;
+  }
+
+  const exactMatches = participants.filter(
+    (participant) => normalizeName(participant.userName) === normalizedAssignee,
+  );
+  if (exactMatches.length === 1) {
+    return `<@${exactMatches[0].discordId}>`;
+  }
+
+  if (exactMatches.length > 1) {
+    return null;
+  }
+
+  const partialMatches = participants.filter((participant) => {
+    const normalizedParticipantName = normalizeName(participant.userName);
+    return normalizedParticipantName.includes(normalizedAssignee);
+  });
+
+  if (partialMatches.length === 1) {
+    return `<@${partialMatches[0].discordId}>`;
+  }
+
+  return null;
+}
+
+function mentionActionItemAssignees(
+  summary: string,
+  participants: SummaryParticipant[],
+): string {
+  if (participants.length === 0) {
+    return summary;
+  }
+
+  const lines = summary.split("\n");
+  let inActionItems = false;
+
+  return lines
+    .map((line) => {
+      const trimmedLine = line.trim();
+      if (trimmedLine === "## Action Items") {
+        inActionItems = true;
+        return line;
+      }
+
+      if (trimmedLine.startsWith("## ") && trimmedLine !== "## Action Items") {
+        inActionItems = false;
+        return line;
+      }
+
+      if (!inActionItems) {
+        return line;
+      }
+
+      const actionItemMatch = line.match(/^(\s*-\s*)([^:]+)(:\s+.*)$/);
+      if (!actionItemMatch) {
+        return line;
+      }
+
+      const mention = findMentionForAssignee(actionItemMatch[2].trim(), participants);
+      if (!mention) {
+        return line;
+      }
+
+      return `${actionItemMatch[1]}${mention}${actionItemMatch[3]}`;
+    })
+    .join("\n");
+}
+
 function formatSummaryForDiscord(result: {
   sessionId: string;
   summary: string | null;
   userCount: number;
   duration: number;
-}): string {
+  summaryParticipants: SummaryParticipant[];
+}): string[] {
   const durationMins = Math.floor(result.duration / 60);
   const durationSecs = result.duration % 60;
   const durationStr =
     durationMins > 0 ? `${durationMins}m ${durationSecs}s` : `${durationSecs}s`;
 
-  let content = `## 📋 Recording Summary\n`;
-  content += `**Session:** \`${result.sessionId}\`\n`;
-  content += `**Duration:** ${durationStr}\n`;
-  content += `**Participants:** ${result.userCount}\n\n`;
+  const header = [
+    "## 📋 Recording Summary",
+    `**Session:** \`${result.sessionId}\``,
+    `**Duration:** ${durationStr}`,
+    `**Participants:** ${result.userCount}`,
+    "",
+    "---",
+    "",
+  ].join("\n");
 
-  if (result.summary) {
-    content += `---\n\n${result.summary}`;
-  } else {
-    content += `---\n\n*No summary available*`;
+  const summaryBody = mentionActionItemAssignees(
+    result.summary?.trim() || "*No summary available*",
+    result.summaryParticipants,
+  );
+  const singleMessage = `${header}${summaryBody}`;
+  if (singleMessage.length <= DISCORD_MESSAGE_LIMIT) {
+    return [singleMessage];
   }
 
-  return content;
+  const continuationHeader = "## 📋 Recording Summary (continued)\n\n";
+  const firstChunkLimit = DISCORD_MESSAGE_LIMIT - header.length;
+  const continuationChunkLimit = DISCORD_MESSAGE_LIMIT - continuationHeader.length;
+  const summaryChunks = splitTextForDiscord(
+    summaryBody,
+    Math.max(Math.min(firstChunkLimit, continuationChunkLimit), 1),
+  );
+
+  if (summaryChunks.length === 0) {
+    return [header.trimEnd()];
+  }
+
+  const messages: string[] = [];
+  let firstBody = "";
+  let index = 0;
+
+  while (index < summaryChunks.length) {
+    const chunk = summaryChunks[index];
+    const candidate = firstBody ? `${firstBody}\n${chunk}` : chunk;
+    if (candidate.length > firstChunkLimit) {
+      break;
+    }
+
+    firstBody = candidate;
+    index++;
+  }
+
+  if (!firstBody) {
+    firstBody = summaryChunks[index];
+    index++;
+  }
+
+  messages.push(`${header}${firstBody}`);
+
+  let continuationBody = "";
+  while (index < summaryChunks.length) {
+    const chunk = summaryChunks[index];
+    const candidate = continuationBody ? `${continuationBody}\n${chunk}` : chunk;
+    if (candidate.length > continuationChunkLimit) {
+      messages.push(`${continuationHeader}${continuationBody}`);
+      continuationBody = chunk;
+      index++;
+      continue;
+    }
+
+    continuationBody = candidate;
+    index++;
+  }
+
+  if (continuationBody) {
+    messages.push(`${continuationHeader}${continuationBody}`);
+  }
+
+  return messages;
 }
