@@ -701,6 +701,140 @@ interface WeekdayHeatmapSlot {
   confidence: number; // presentWeight / sampleWeight (0..1)
 }
 
+interface DailyAttendanceAwardWinners {
+  earlyBirdUserId: string | null;
+  nightOwlUserId: string | null;
+  timelyTurtleUserId: string | null;
+  lazyBeaverUserId: string | null;
+  projectHopperUserId: string | null;
+}
+
+const OFFICE_START_HOUR = 10;
+const EARLY_BIRD_MIN_HOUR = 6;
+const SCRUM_REMINDER_HOUR = 10;
+const SCRUM_REMINDER_MINUTE = 40;
+
+const getDateWithTime = (
+  baseDate: Date,
+  hours: number,
+  minutes: number,
+  seconds = 0,
+  milliseconds = 0,
+) => {
+  const date = new Date(baseDate);
+  date.setHours(hours, minutes, seconds, milliseconds);
+  return date;
+};
+
+export async function getDailyAttendanceAwardWinners(
+  referenceDate = new Date(),
+): Promise<DailyAttendanceAwardWinners> {
+  const dayStart = getStartOfDay(referenceDate);
+  const dayEnd = getEndOfDay(referenceDate);
+
+  const earlyBirdCutoff = getDateWithTime(dayStart, EARLY_BIRD_MIN_HOUR, 0);
+  const officeStart = getDateWithTime(dayStart, OFFICE_START_HOUR, 0);
+  const scrumReminderTime = getDateWithTime(
+    dayStart,
+    SCRUM_REMINDER_HOUR,
+    SCRUM_REMINDER_MINUTE,
+  );
+
+  const lastNightStart = new Date(dayStart);
+  lastNightStart.setDate(lastNightStart.getDate() - 1);
+  lastNightStart.setHours(18, 0, 0, 0);
+  const lastNightEnd = getDateWithTime(dayStart, EARLY_BIRD_MIN_HOUR, 0, 0, -1);
+
+  const todayAttendances = await db.attendance.findMany({
+    where: {
+      login: {
+        gte: dayStart,
+        lte: dayEnd,
+      },
+    },
+    select: {
+      userId: true,
+      login: true,
+      workSegments: true,
+    },
+  });
+
+  const checkInsBeforeScrum = todayAttendances.filter(
+    (attendance) => attendance.login <= scrumReminderTime,
+  );
+
+  const earlyBirdCandidate = checkInsBeforeScrum
+    .filter((attendance) => attendance.login >= earlyBirdCutoff)
+    .sort((firstAttendance, secondAttendance) => {
+      return firstAttendance.login.getTime() - secondAttendance.login.getTime();
+    })[0];
+
+  const lazyBeaverCandidate = checkInsBeforeScrum
+    .slice()
+    .sort((firstAttendance, secondAttendance) => {
+      return secondAttendance.login.getTime() - firstAttendance.login.getTime();
+    })[0];
+
+  const timelyTurtleCandidate = checkInsBeforeScrum
+    .slice()
+    .sort((firstAttendance, secondAttendance) => {
+      const firstDistance = Math.abs(
+        firstAttendance.login.getTime() - officeStart.getTime(),
+      );
+      const secondDistance = Math.abs(
+        secondAttendance.login.getTime() - officeStart.getTime(),
+      );
+
+      if (firstDistance === secondDistance) {
+        return firstAttendance.login.getTime() - secondAttendance.login.getTime();
+      }
+
+      return firstDistance - secondDistance;
+    })[0];
+
+  const projectHopperCandidate = checkInsBeforeScrum
+    .filter((attendance) => attendance.workSegments.length > 1)
+    .slice()
+    .sort((firstAttendance, secondAttendance) => {
+      const segmentGap =
+        secondAttendance.workSegments.length - firstAttendance.workSegments.length;
+      if (segmentGap !== 0) {
+        return segmentGap;
+      }
+
+      return firstAttendance.login.getTime() - secondAttendance.login.getTime();
+    })[0];
+
+  const lastNightAttendances = await db.attendance.findMany({
+    where: {
+      logout: {
+        gte: lastNightStart,
+        lte: lastNightEnd,
+      },
+    },
+    select: {
+      userId: true,
+      logout: true,
+    },
+  });
+
+  const nightOwlCandidate = lastNightAttendances
+    .filter((attendance) => attendance.logout)
+    .sort((firstAttendance, secondAttendance) => {
+      const firstLogoutTime = firstAttendance.logout?.getTime() || 0;
+      const secondLogoutTime = secondAttendance.logout?.getTime() || 0;
+      return secondLogoutTime - firstLogoutTime;
+    })[0];
+
+  return {
+    earlyBirdUserId: earlyBirdCandidate?.userId || null,
+    nightOwlUserId: nightOwlCandidate?.userId || null,
+    timelyTurtleUserId: timelyTurtleCandidate?.userId || null,
+    lazyBeaverUserId: lazyBeaverCandidate?.userId || null,
+    projectHopperUserId: projectHopperCandidate?.userId || null,
+  };
+}
+
 /**
  * Build a weekday-only heatmap aggregated across Sun–Thu (Bangladesh working days).
  * - Excludes weekends (Fri–Sat in BD)

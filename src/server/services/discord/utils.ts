@@ -6,6 +6,25 @@ import { launch } from "puppeteer";
 import { getGuildMember } from ".";
 import type { Attendance } from "@prisma/client";
 
+const DAILY_AWARD_EMOJIS = ["🐦", "🦉", "🐢", "🦫", "🦘"];
+
+const isDailyAwardEmoji = (emoji: string): boolean => {
+  return DAILY_AWARD_EMOJIS.includes(emoji);
+};
+
+const getNicknameBase = (member: GuildMember): string => {
+  return member.nickname ?? member.user.displayName;
+};
+
+const removeDailyAwardEmojis = (nickname: string): string => {
+  let sanitizedNickname = nickname;
+  for (const emoji of DAILY_AWARD_EMOJIS) {
+    sanitizedNickname = sanitizedNickname.split(emoji).join("");
+  }
+
+  return sanitizedNickname.replace(/\s{2,}/g, " ").trim();
+};
+
 // Queue system for attendance image reports
 let isProcessingImageQueue = false;
 const imageReportQueue: Array<{
@@ -249,5 +268,58 @@ export async function setNameStatus(
   } catch (err) {
     console.error(err);
     return;
+  }
+}
+
+export async function setDailyAwardEmoji(id: string, emoji: string) {
+  if (!isDailyAwardEmoji(emoji)) {
+    console.error("Invalid daily award emoji:", emoji);
+    return;
+  }
+
+  const member = await getGuildMember(id);
+  if (!member || isAdmin(member)) {
+    return;
+  }
+
+  const currentNickname = getNicknameBase(member);
+  const nicknameWithoutAwards = removeDailyAwardEmojis(currentNickname);
+
+  const existingAwards = DAILY_AWARD_EMOJIS.filter((existingEmoji) =>
+    currentNickname.includes(existingEmoji),
+  );
+
+  if (!existingAwards.includes(emoji)) {
+    existingAwards.push(emoji);
+  }
+
+  const awardSuffix = existingAwards.length ? ` ${existingAwards.join(" ")}` : "";
+  const nextNickname = `${nicknameWithoutAwards}${awardSuffix}`.substring(0, 32);
+
+  try {
+    await member.setNickname(nextNickname);
+  } catch (error) {
+    console.error("Failed to set daily award emoji:", error);
+  }
+}
+
+export async function clearDailyAwardEmojisForUsers(discordIds: string[]) {
+  for (const discordId of discordIds) {
+    try {
+      const member = await getGuildMember(discordId);
+      if (!member || isAdmin(member)) {
+        continue;
+      }
+
+      const currentNickname = getNicknameBase(member);
+      const nicknameWithoutAwards = removeDailyAwardEmojis(currentNickname);
+      if (nicknameWithoutAwards === currentNickname) {
+        continue;
+      }
+
+      await member.setNickname(nicknameWithoutAwards.substring(0, 32));
+    } catch (error) {
+      console.error(`Failed to clear daily award emojis for ${discordId}:`, error);
+    }
   }
 }

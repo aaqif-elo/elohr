@@ -461,7 +461,7 @@ export const getWeatherReport = async (): Promise<string | undefined> => {
       Ensure that it is formatted in markdown to be displayed in Discord via discord.js. Don't include anything else except what's in the format.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3.1-flash-lite-preview",
         contents: [`${stringifiedWeather} ${prompt}`],
         config: {
           temperature: 1.5,
