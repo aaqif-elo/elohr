@@ -660,17 +660,27 @@ export const sendLeaveRequestNotification = async (
       }
     });
 
-    collector.on("end", async (collected) => {
-      if (collected.size === 0) {
-        // No interaction occurred, update the message
-        try {
-          await message.edit({
-            content: `**Leave Request EXPIRED**\n<@${discordId}>'s leave request ${datesDescription} has expired without action.${reason}`,
-            components: [],
-          });
-        } catch (error) {
-          console.error("Failed to update expired message:", error);
+    collector.on("end", async (_collected, endReason) => {
+      if (endReason !== "time") {
+        return;
+      }
+
+      try {
+        const latestMessage = await channel.messages.fetch(message.id);
+
+        if (latestMessage.components.length === 0) {
+          return;
         }
+
+        const cannotReviewMessage =
+          "\n\n⚠️ This request can no longer be approved or rejected.";
+
+        await latestMessage.edit({
+          content: `${latestMessage.content}${cannotReviewMessage}`,
+          components: [],
+        });
+      } catch (error) {
+        console.error("Failed to update expired leave request message:", error);
       }
     });
 
