@@ -3,7 +3,7 @@ export interface UserTranscript {
   userName: string;
   startTimeOffset: number;
   transcript: string;
-  mp3Path: string;
+  audioPath: string;
 }
 
 export interface SummaryParticipant {
@@ -47,7 +47,7 @@ export interface SnippetDiscoveryResult {
 
 export interface SessionMergeResult {
   wavPath: string;
-  mp3Path: string;
+  audioPath: string;
   totalDurationSec: number;
   trackCount: number;
   snippetCount: number;
@@ -57,7 +57,7 @@ export interface SessionMergeResult {
 export interface SnippetMergeResult {
   pcmPath: string;
   wavPath: string;
-  mp3Path: string;
+  audioPath: string;
   totalDurationSec: number;
   snippetCount: number;
   snippetWarningCount: number;

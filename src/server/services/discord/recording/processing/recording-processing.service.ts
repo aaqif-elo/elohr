@@ -9,7 +9,7 @@ import {
 import { getStatusMessage } from "../runtime/recording-status";
 import type { RecordingSession } from "../runtime/recording-types";
 import {
-  convertPcmToMp3,
+  convertPcmToOgg,
   mergeSessionAudio,
 } from "./audio-merge";
 import {
@@ -158,7 +158,7 @@ export async function processRecording(
     session.id,
   );
 
-  // Convert per-user PCM to MP3 and merge for playback
+  // Convert per-user PCM to OGG and merge for playback
   const entries = readdirSync(session.sessionPath, { withFileTypes: true });
   let hasAudio = false;
 
@@ -175,8 +175,8 @@ export async function processRecording(
       continue;
     }
 
-    const mp3Path = join(userDir, `user_${discordId}.mp3`);
-    await convertPcmToMp3(pcmPath, mp3Path);
+    const audioPath = join(userDir, `user_${discordId}.ogg`);
+    await convertPcmToOgg(pcmPath, audioPath);
     hasAudio = true;
   }
 
@@ -185,7 +185,7 @@ export async function processRecording(
   }
 
   const mergeResult = await mergeSessionAudio(session.sessionPath, "merged");
-  result.mergedAudioPath = mergeResult.mp3Path;
+  result.mergedAudioPath = mergeResult.audioPath;
 
   // Snippet-based transcription
   await updateStatusMessage(

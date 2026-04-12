@@ -32,6 +32,8 @@ const SNIPPET_MERGE_WINDOW_MS = 30_000;
 const SNIPPET_MERGE_WINDOW_BYTES = alignToFrame(
   Math.floor((SNIPPET_MERGE_WINDOW_MS / 1000) * BYTES_PER_SECOND),
 );
+const OGG_AUDIO_CODEC = "libopus";
+const OGG_AUDIO_BITRATE = "96k";
 
 function getTimelineStartByte(startMs: number): number {
   return getTimelineByteOffset(startMs);
@@ -77,27 +79,33 @@ function runFfmpeg(args: string[], actionDescription: string): Promise<void> {
   });
 }
 
-async function convertWavToMp3(wavPath: string, mp3Path: string): Promise<void> {
+async function convertWavToOgg(wavPath: string, oggPath: string): Promise<void> {
   await runFfmpeg(
     [
       "-i",
       wavPath,
       "-codec:a",
-      "libmp3lame",
-      "-qscale:a",
-      "2",
+      OGG_AUDIO_CODEC,
+      "-b:a",
+      OGG_AUDIO_BITRATE,
+      "-vbr",
+      "on",
+      "-application",
+      "audio",
+      "-compression_level",
+      "10",
       "-y",
-      mp3Path,
+      oggPath,
     ],
-    `WAV to MP3 conversion for ${wavPath}`,
+    `WAV to OGG conversion for ${wavPath}`,
   );
 }
 
-export async function convertPcmToMp3(
+export async function convertPcmToOgg(
   pcmPath: string,
-  mp3Path: string,
+  oggPath: string,
 ): Promise<void> {
-  console.log(`Converting ${pcmPath} to MP3...`);
+  console.log(`Converting ${pcmPath} to OGG...`);
   await runFfmpeg(
     [
       "-f",
@@ -109,15 +117,21 @@ export async function convertPcmToMp3(
       "-i",
       pcmPath,
       "-codec:a",
-      "libmp3lame",
-      "-qscale:a",
-      "2",
+      OGG_AUDIO_CODEC,
+      "-b:a",
+      OGG_AUDIO_BITRATE,
+      "-vbr",
+      "on",
+      "-application",
+      "audio",
+      "-compression_level",
+      "10",
       "-y",
-      mp3Path,
+      oggPath,
     ],
-    `PCM to MP3 conversion for ${pcmPath}`,
+    `PCM to OGG conversion for ${pcmPath}`,
   );
-  console.log(`Successfully converted to ${mp3Path}`);
+  console.log(`Successfully converted to ${oggPath}`);
 }
 
 function discoverSnippets(sessionPath: string): SnippetDiscoveryResult {
@@ -463,14 +477,14 @@ export async function mergeSnippetsToAudio(
   await convertRawPcmToWav(pcmPath, wavPath);
   console.log(`Wrote ${wavPath}`);
 
-  const mp3Path = join(sessionPath, `${outputPrefix}.mp3`);
-  await convertPcmToMp3(pcmPath, mp3Path);
-  console.log(`Wrote ${mp3Path}`);
+  const audioPath = join(sessionPath, `${outputPrefix}.ogg`);
+  await convertPcmToOgg(pcmPath, audioPath);
+  console.log(`Wrote ${audioPath}`);
 
   return {
     pcmPath,
     wavPath,
-    mp3Path,
+    audioPath,
     totalDurationSec: getPcmDurationSeconds(totalBytes),
     snippetCount: snippets.length,
     snippetWarningCount: warnings.length,
@@ -498,9 +512,9 @@ export async function mergeSessionAudio(
   await mixAlignedTracksToWav(mixInputs, wavPath);
   console.log(`Wrote ${wavPath}`);
 
-  const mp3Path = join(sessionPath, `${outputPrefix}.mp3`);
-  await convertWavToMp3(wavPath, mp3Path);
-  console.log(`Wrote ${mp3Path}`);
+  const audioPath = join(sessionPath, `${outputPrefix}.ogg`);
+  await convertWavToOgg(wavPath, audioPath);
+  console.log(`Wrote ${audioPath}`);
 
   const totalDurationSec = Math.max(
     ...mixInputs.map((mixInput) => mixInput.durationSec),
@@ -508,7 +522,7 @@ export async function mergeSessionAudio(
 
   return {
     wavPath,
-    mp3Path,
+    audioPath,
     totalDurationSec,
     trackCount: mixInputs.length,
     snippetCount: snippetDiscovery.snippets.length,
