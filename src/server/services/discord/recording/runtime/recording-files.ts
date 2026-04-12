@@ -2,6 +2,7 @@ import { once } from "events";
 import {
   createReadStream,
   createWriteStream,
+  existsSync,
   readdirSync,
   statSync,
   writeFileSync,
@@ -43,6 +44,7 @@ export function writeSessionTimingMetadata(session: RecordingSession): void {
 
   const timingMetadata: SessionTimingMetadata = {
     sessionId: session.id,
+    channelName: session.channelName,
     sessionStart: session.startedAt.toISOString(),
     sessionStop: stoppedAt.toISOString(),
     totalDurationMs: getSessionDurationMs(session),
@@ -203,6 +205,21 @@ export async function convertSessionPcmToWav(
         );
       } catch (error) {
         console.error(`Failed to convert ${pcmFile.fileName} to WAV:`, error);
+      }
+    }
+
+    // Convert the session-level debug merged PCM to WAV if it exists
+    const mergedPcmPath = join(sessionPath, "merged_debug.pcm");
+    if (existsSync(mergedPcmPath) && statSync(mergedPcmPath).size > 0) {
+      try {
+        await convertPcmTrackToWav(
+          mergedPcmPath,
+          join(sessionPath, "merged_debug.wav"),
+          "merged_debug.pcm",
+          targetTrackByteLength,
+        );
+      } catch (error) {
+        console.error("Failed to convert merged_debug.pcm to WAV:", error);
       }
     }
   } catch (error) {

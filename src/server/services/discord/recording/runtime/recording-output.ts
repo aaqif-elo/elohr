@@ -2,9 +2,11 @@ import {
   createWriteStream,
   existsSync,
   readFileSync,
+  readSync,
   statSync,
   unlinkSync,
   writeFileSync,
+  writeSync,
 } from "fs";
 import { join } from "path";
 import {
@@ -17,6 +19,11 @@ import {
   getPcmDurationMs,
   getTimelineOffsetMs,
 } from "../shared/audio-format";
+import {
+  createSnippetAudioMetricsAccumulator,
+  finalizeSnippetAudioMetrics,
+  updateSnippetAudioMetrics,
+} from "../shared/snippet-metrics";
 import {
   MAX_DURATION_MS,
   MIN_GAP_FILL_FLOOR_MS,
@@ -108,28 +115,30 @@ export function advanceUserAudioCursor(
   state.sessionAudioCursorMs = getTimelineOffsetMs(state.bytesWritten);
 }
 
-export function consumePendingGapPaddingMs(
+export function computeSessionAnchoredGapMs(
   state: UserAudioState,
+  sessionElapsedMs: number,
   expectedFrameMs: number,
 ): number {
-  const receiveGapMs = state.lastOpusReceiveGapMs;
-  state.lastOpusReceiveGapMs = 0;
-
-  if (state.lastDecodedAudioTime === 0 || receiveGapMs <= 0) {
+  if (state.lastDecodedAudioTime === 0) {
     return 0;
   }
 
-  const extraGapMs = receiveGapMs - expectedFrameMs;
+  const cursorLagMs = sessionElapsedMs - state.sessionAudioCursorMs;
+  if (cursorLagMs <= 0) {
+    return 0;
+  }
+
   const jitterAllowanceMs = Math.max(
     expectedFrameMs / 2,
     MIN_GAP_FILL_FLOOR_MS,
   );
 
-  if (extraGapMs <= jitterAllowanceMs) {
+  if (cursorLagMs <= jitterAllowanceMs) {
     return 0;
   }
 
-  return Math.min(extraGapMs, MAX_DURATION_MS);
+  return Math.min(cursorLagMs, MAX_DURATION_MS);
 }
 
 export function clearSnippetFinalizeTimeout(state: UserAudioState): void {
@@ -190,6 +199,7 @@ function ensureSnippetStarted(
     bytesWritten: 0,
     stream: snippetStream,
     pcmPath,
+    metricsAccumulator: createSnippetAudioMetricsAccumulator(),
   };
   state.pendingSnippetStart = false;
 }
@@ -220,6 +230,7 @@ function writeChunkToCurrentSnippet(
     );
   });
   currentSnippet.bytesWritten += chunk.length;
+  updateSnippetAudioMetrics(currentSnippet.metricsAccumulator, chunk);
 }
 
 export function writeSilencePaddingToUserTimeline(
@@ -301,8 +312,52 @@ export function writeUserAudioChunk(
       state.outputBackpressure,
     );
   });
+  mixChunkIntoDebugMergedFile(session, state, chunk);
   advanceUserAudioCursor(state, chunk.length);
   state.lastDecodedAudioTime = Date.now();
+}
+
+/**
+ * Mixes a PCM chunk into the session-level debug merged file at the user's
+ * current timeline position. Reads existing samples, sums with the new chunk
+ * (clamped to Int16 range), and writes back. Only active when DEBUG_AUDIO is on.
+ */
+function mixChunkIntoDebugMergedFile(
+  session: RecordingSession,
+  state: UserAudioState,
+  chunk: Buffer,
+): void {
+  if (session.debugMergedFd === null) {
+    return;
+  }
+
+  const byteOffset = state.bytesWritten;
+  const sampleCount = chunk.length / BYTES_PER_SAMPLE;
+
+  const existingBuf = Buffer.alloc(chunk.length, 0);
+  try {
+    readSync(session.debugMergedFd, existingBuf, 0, chunk.length, byteOffset);
+  } catch {
+    // Read past EOF returns partial/zero data — the alloc(0) handles it
+  }
+
+  const mixedBuf = Buffer.allocUnsafe(chunk.length);
+  for (let i = 0; i < sampleCount; i++) {
+    const offset = i * BYTES_PER_SAMPLE;
+    const existingSample = existingBuf.readInt16LE(offset);
+    const newSample = chunk.readInt16LE(offset);
+    const mixed = Math.max(-32768, Math.min(32767, existingSample + newSample));
+    mixedBuf.writeInt16LE(mixed, offset);
+  }
+
+  try {
+    writeSync(session.debugMergedFd, mixedBuf, 0, mixedBuf.length, byteOffset);
+  } catch (error) {
+    console.error(
+      "Failed to write to debug merged PCM:",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
 }
 
 export function finalizeCurrentSnippet(
@@ -347,12 +402,16 @@ export function finalizeCurrentSnippet(
         const endMs = getTimelineOffsetMs(
           currentSnippet.startByteOffset + snippetSize,
         );
+        const metrics = finalizeSnippetAudioMetrics(
+          currentSnippet.metricsAccumulator,
+        );
         session.speechSegments.push({
           userId,
           startMs: currentSnippet.startMs,
           endMs,
           byteStart: currentSnippet.startByteOffset,
           byteEnd: currentSnippet.startByteOffset + snippetSize,
+          metrics,
         });
 
         const wavPath = join(
@@ -364,6 +423,14 @@ export function finalizeCurrentSnippet(
         const wavHeader = buildWavHeader(snippetSize);
         const pcmData = readFileSync(currentSnippet.pcmPath);
         writeFileSync(wavPath, Buffer.concat([wavHeader, pcmData]));
+
+        session.onSnippetFinalized?.({
+          userId,
+          wavPath,
+          startMs: currentSnippet.startMs,
+          endMs,
+          metrics,
+        });
       } catch (error) {
         console.error(`Error saving snippet for user ${userId}:`, error);
       }

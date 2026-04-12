@@ -32,7 +32,7 @@ import {
 import {
   advanceUserAudioCursor,
   clearSnippetFinalizeTimeout,
-  consumePendingGapPaddingMs,
+  computeSessionAnchoredGapMs,
   createConcealmentFrame,
   scheduleSnippetFinalization,
   writeSilencePadding,
@@ -100,8 +100,6 @@ function createUserAudioState(
     oggOpusWriter,
     isSubscribed: true,
     lastActivityTime: Date.now(),
-    lastOpusReceiveTime: 0,
-    lastOpusReceiveGapMs: 0,
     lastDecodedAudioTime: 0,
     lastOpusTocByte: -1,
     isDecodeSynced: false,
@@ -227,6 +225,9 @@ function subscribeToUser(
   session.userStreams.set(userId, audioState.outputStream);
 
   audioState.outputStream.on("drain", () => {
+    if (session.isStopping) {
+      return;
+    }
     clearBackpressure(
       session,
       userId,
@@ -236,6 +237,9 @@ function subscribeToUser(
     );
   });
   audioState.outputStream.on("close", () => {
+    if (session.isStopping) {
+      return;
+    }
     clearBackpressure(
       session,
       userId,
@@ -323,7 +327,8 @@ function subscribeToUser(
         state.lastOpusTocByte,
         pcmChunk.length,
       );
-      const gapPaddingMs = consumePendingGapPaddingMs(state, expectedFrameMs);
+      const sessionElapsedMs = Date.now() - session.startedAt.getTime();
+      const gapPaddingMs = computeSessionAnchoredGapMs(state, sessionElapsedMs, expectedFrameMs);
       if (gapPaddingMs > 0) {
         const writtenSilenceBytes = writeSilencePaddingToUserTimeline(
           session,
@@ -407,7 +412,6 @@ function subscribeToUser(
         const concealmentFrame = createConcealmentFrame(state);
         writeUserAudioChunk(session, userId, state, concealmentFrame);
         state.debugStats.concealedFrames++;
-        state.lastOpusReceiveGapMs = 0;
       }
 
       if (DEBUG_AUDIO && audioState.debugStats.decodeErrors <= 5) {
@@ -458,7 +462,6 @@ function subscribeToUser(
           state.isDecodeSynced = false;
           state.consecutiveDecodeSuccesses = 0;
           state.lastOpusTocByte = -1;
-          state.lastOpusReceiveGapMs = 0;
           state.recentOpusPackets = [];
           wireDecoderHandlers(newDecoder);
           state.decoder = newDecoder;
@@ -532,13 +535,6 @@ function subscribeToUser(
     if (!state) {
       return;
     }
-
-    const receivedAt = Date.now();
-    state.lastOpusReceiveGapMs =
-      state.lastOpusReceiveTime === 0
-        ? 0
-        : receivedAt - state.lastOpusReceiveTime;
-    state.lastOpusReceiveTime = receivedAt;
 
     if (opusChunk.length > 0) {
       state.lastOpusTocByte = opusChunk[0];

@@ -4,7 +4,7 @@ import {
   joinVoiceChannel,
 } from "@discordjs/voice";
 import type { VoiceChannel } from "discord.js";
-import { createWriteStream, existsSync, mkdirSync } from "fs";
+import { closeSync, createWriteStream, existsSync, mkdirSync, openSync } from "fs";
 import { join } from "path";
 import {
   BYTES_PER_SECOND,
@@ -97,6 +97,9 @@ export async function startRecording(
     debugLogPath,
     debugLogStream: debugLogPath
       ? createWriteStream(debugLogPath, { flags: "a" })
+      : null,
+    debugMergedFd: DEBUG_AUDIO
+      ? openSync(join(sessionPath, "merged_debug.pcm"), "w+")
       : null,
     maxDurationTimeout: null,
     receiver: connection.receiver,
@@ -280,6 +283,18 @@ export async function stopRecording(
   await Promise.all(closePromises);
 
   writeSessionTimingMetadata(session);
+
+  if (session.debugMergedFd !== null) {
+    try {
+      closeSync(session.debugMergedFd);
+    } catch (error) {
+      console.error(
+        "Failed to close debug merged PCM fd:",
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+    session.debugMergedFd = null;
+  }
 
   if (session.debugLogStream) {
     await new Promise<void>((resolve) => {

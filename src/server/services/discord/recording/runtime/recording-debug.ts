@@ -117,7 +117,7 @@ export function writeSessionDebugLog(
   }
 
   const debugLogStream = session.debugLogStream;
-  if (!debugLogStream) {
+  if (!debugLogStream || debugLogStream.writableEnded) {
     return;
   }
 
