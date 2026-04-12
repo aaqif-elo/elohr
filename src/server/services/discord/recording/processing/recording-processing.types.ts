@@ -6,6 +6,11 @@ export interface UserTranscript {
   mp3Path: string;
 }
 
+export interface SummaryParticipant {
+  discordId: string;
+  userName: string;
+}
+
 export interface ProcessingResult {
   sessionId: string;
   sessionPath: string;
@@ -15,6 +20,7 @@ export interface ProcessingResult {
   summary: string | null;
   userCount: number;
   duration: number;
+  summaryParticipants: SummaryParticipant[];
   userTranscripts: UserTranscript[];
 }
 
@@ -56,4 +62,19 @@ export interface SnippetMergeResult {
   snippetCount: number;
   snippetWarningCount: number;
   chunkCount: number;
+}
+
+export interface SummaryPromptContext {
+  sessionId?: string;
+  channelName?: string;
+  participantNames: string[];
+}
+
+/** A single transcribed line anchored to the session timeline. */
+export interface TranscribedSegment {
+  userId: string;
+  /** Session-relative timestamp (ms). */
+  sessionMs: number;
+  /** Transcribed text. */
+  text: string;
 }
