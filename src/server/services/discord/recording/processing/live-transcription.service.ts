@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import type {
   RecordingSession,
@@ -13,11 +13,84 @@ import type { TranscribedSegment } from "./recording-processing.types";
 import { transcribeSnippetAudio } from "./transcription.service";
 
 interface SessionTranscriptionState {
-  segments: TranscribedSegment[];
-  pendingPromises: Promise<void>[];
+  transcriptSegmentsPath: string;
+  segmentCount: number;
+  pendingTranscriptions: Set<Promise<void>>;
 }
 
 const sessionStates = new Map<string, SessionTranscriptionState>();
+const TRANSCRIPT_SEGMENTS_FILE_NAME = "transcript.segments.jsonl";
+
+function getStringProperty(value: unknown, propertyName: string): string | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+
+  const propertyValue = Reflect.get(value, propertyName);
+  return typeof propertyValue === "string" ? propertyValue : null;
+}
+
+function getNumberProperty(value: unknown, propertyName: string): number | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+
+  const propertyValue = Reflect.get(value, propertyName);
+  return typeof propertyValue === "number" && Number.isFinite(propertyValue)
+    ? propertyValue
+    : null;
+}
+
+function ensureTranscriptSegmentsFile(sessionPath: string): string {
+  const transcriptSegmentsPath = join(sessionPath, TRANSCRIPT_SEGMENTS_FILE_NAME);
+  if (!existsSync(transcriptSegmentsPath)) {
+    writeFileSync(transcriptSegmentsPath, "", "utf-8");
+  }
+
+  return transcriptSegmentsPath;
+}
+
+export function resetSessionTranscribedSegments(sessionPath: string): void {
+  const transcriptSegmentsPath = join(sessionPath, TRANSCRIPT_SEGMENTS_FILE_NAME);
+  writeFileSync(transcriptSegmentsPath, "", "utf-8");
+}
+
+function appendSegmentsToTranscriptFile(
+  transcriptSegmentsPath: string,
+  segments: TranscribedSegment[],
+): void {
+  if (segments.length === 0) {
+    return;
+  }
+
+  const payload = `${segments.map((segment) => JSON.stringify(segment)).join("\n")}\n`;
+  appendFileSync(transcriptSegmentsPath, payload, "utf-8");
+}
+
+function parseTranscribedSegment(line: string): TranscribedSegment | null {
+  if (!line.trim()) {
+    return null;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(line);
+    const userId = getStringProperty(parsed, "userId");
+    const text = getStringProperty(parsed, "text");
+    const sessionMs = getNumberProperty(parsed, "sessionMs");
+
+    if (!userId || !text || sessionMs === null) {
+      return null;
+    }
+
+    return {
+      userId,
+      sessionMs,
+      text,
+    };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Distributes transcription lines across a snippet's time range.
@@ -65,7 +138,8 @@ async function handleSnippetTranscription(
     event.startMs,
     event.endMs,
   );
-  state.segments.push(...segments);
+  appendSegmentsToTranscriptFile(state.transcriptSegmentsPath, segments);
+  state.segmentCount += segments.length;
 }
 
 /**
@@ -74,21 +148,30 @@ async function handleSnippetTranscription(
  * finalized snippet is transcribed in the background as it is produced.
  */
 export function initLiveTranscription(session: RecordingSession): void {
+  resetSessionTranscribedSegments(session.sessionPath);
+
   const state: SessionTranscriptionState = {
-    segments: [],
-    pendingPromises: [],
+    transcriptSegmentsPath: ensureTranscriptSegmentsFile(session.sessionPath),
+    segmentCount: 0,
+    pendingTranscriptions: new Set(),
   };
 
   sessionStates.set(session.id, state);
 
   session.onSnippetFinalized = (event) => {
-    const promise = handleSnippetTranscription(state, event).catch((error) => {
-      console.error(
-        `Live transcription failed for snippet ${event.startMs}-${event.endMs}:`,
-        error,
-      );
+    const pendingTranscription = handleSnippetTranscription(state, event).catch(
+      (error) => {
+        console.error(
+          `Live transcription failed for snippet ${event.startMs}-${event.endMs}:`,
+          error,
+        );
+      },
+    );
+
+    state.pendingTranscriptions.add(pendingTranscription);
+    void pendingTranscription.finally(() => {
+      state.pendingTranscriptions.delete(pendingTranscription);
     });
-    state.pendingPromises.push(promise);
   };
 }
 
@@ -97,17 +180,37 @@ export async function waitForPendingTranscriptions(
   sessionId: string,
 ): Promise<void> {
   const state = sessionStates.get(sessionId);
-  if (!state) return;
+  if (!state) {
+    return;
+  }
 
-  await Promise.all(state.pendingPromises);
-  state.pendingPromises = [];
+  await Promise.all([...state.pendingTranscriptions]);
 }
 
-/** Get all collected transcription segments for the session. */
-export function getSessionSegments(
+export function getSessionTranscriptSegmentCount(
   sessionId: string,
+): number {
+  return sessionStates.get(sessionId)?.segmentCount ?? 0;
+}
+
+export function readSessionTranscribedSegments(
+  sessionPath: string,
 ): TranscribedSegment[] {
-  return sessionStates.get(sessionId)?.segments ?? [];
+  const transcriptSegmentsPath = ensureTranscriptSegmentsFile(sessionPath);
+  const rawContents = readFileSync(transcriptSegmentsPath, "utf-8");
+  if (!rawContents.trim()) {
+    return [];
+  }
+
+  const segments: TranscribedSegment[] = [];
+  for (const line of rawContents.split(/\r?\n/)) {
+    const segment = parseTranscribedSegment(line);
+    if (segment) {
+      segments.push(segment);
+    }
+  }
+
+  return segments;
 }
 
 /** Clean up state for a completed session. */
@@ -123,8 +226,9 @@ export function cleanupLiveTranscription(sessionId: string): void {
 export async function transcribeSnippetsOffline(
   sessionPath: string,
   speechSegments: SpeechSegment[],
-): Promise<TranscribedSegment[]> {
-  const allSegments: TranscribedSegment[] = [];
+): Promise<number> {
+  const transcriptSegmentsPath = ensureTranscriptSegmentsFile(sessionPath);
+  let transcribedSegmentCount = 0;
   const sorted = [...speechSegments].sort((a, b) => a.startMs - b.startMs);
 
   for (const segment of sorted) {
@@ -144,12 +248,19 @@ export async function transcribeSnippetsOffline(
 
     const lines = await transcribeSnippetAudio(wavPath);
 
-    if (lines.length === 0) continue;
+    if (lines.length === 0) {
+      continue;
+    }
 
-    allSegments.push(
-      ...distributeTimestamps(lines, segment.userId, segment.startMs, segment.endMs),
+    const transcribedSegments = distributeTimestamps(
+      lines,
+      segment.userId,
+      segment.startMs,
+      segment.endMs,
     );
+    appendSegmentsToTranscriptFile(transcriptSegmentsPath, transcribedSegments);
+    transcribedSegmentCount += transcribedSegments.length;
   }
 
-  return allSegments;
+  return transcribedSegmentCount;
 }

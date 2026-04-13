@@ -4,6 +4,7 @@ import { join } from "path";
 import { getUserByDiscordId } from "../../../../db";
 import { ERecordingStage } from "../../discord.enums";
 import {
+  clearRecordingLifecycle,
   getSessionDurationMs,
 } from "../runtime/recording-session.store";
 import { getStatusMessage } from "../runtime/recording-status";
@@ -14,7 +15,9 @@ import {
 } from "./audio-merge";
 import {
   cleanupLiveTranscription,
-  getSessionSegments,
+  getSessionTranscriptSegmentCount,
+  readSessionTranscribedSegments,
+  resetSessionTranscribedSegments,
   transcribeSnippetsOffline,
   waitForPendingTranscriptions,
 } from "./live-transcription.service";
@@ -38,65 +41,48 @@ import {
   generateSummary,
 } from "./transcription.service";
 
-interface QueueItem {
-  session: RecordingSession;
-  statusMessage: Message;
-  resolve: (result: ProcessingResult) => void;
-  reject: (error: Error) => void;
+interface ProcessRecordingOptions {
+  onSummaryReady?: (result: ProcessingResult) => Promise<void>;
 }
-
-const processingQueue: QueueItem[] = [];
-let isProcessing = false;
 
 function createFallbackUserName(discordId: string): string {
   return `User ${discordId.slice(0, 8)}`;
 }
 
-export async function queueRecordingForProcessing(
-  session: RecordingSession,
-  statusMessage: Message,
-): Promise<ProcessingResult> {
-  return new Promise((resolve, reject) => {
-    const item: QueueItem = {
-      session,
-      statusMessage,
-      resolve,
-      reject,
-    };
-
-    processingQueue.push(item);
-    console.log(
-      `Added session ${session.id} to processing queue. Queue length: ${processingQueue.length}`,
-    );
-
-    void processNextInQueue();
-  });
+function toError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }
 
-async function processNextInQueue(): Promise<void> {
-  if (isProcessing || processingQueue.length === 0) {
-    return;
-  }
+async function createSessionAudioArtifacts(
+  session: RecordingSession,
+): Promise<string> {
+  const entries = readdirSync(session.sessionPath, { withFileTypes: true });
+  let hasAudio = false;
 
-  isProcessing = true;
-  const item = processingQueue.shift();
-  if (!item) {
-    isProcessing = false;
-    return;
-  }
-
-  try {
-    const result = await processRecording(item.session, item.statusMessage);
-    item.resolve(result);
-  } catch (error) {
-    console.error(`Error processing session ${item.session.id}:`, error);
-    item.reject(error instanceof Error ? error : new Error(String(error)));
-  } finally {
-    isProcessing = false;
-    if (processingQueue.length > 0) {
-      void processNextInQueue();
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
     }
+
+    const discordId = entry.name;
+    const userDir = join(session.sessionPath, discordId);
+    const pcmPath = join(userDir, `user_${discordId}.pcm`);
+
+    if (!existsSync(pcmPath) || statSync(pcmPath).size <= 0) {
+      continue;
+    }
+
+    const audioPath = join(userDir, `user_${discordId}.ogg`);
+    await convertPcmToOgg(pcmPath, audioPath);
+    hasAudio = true;
   }
+
+  if (!hasAudio) {
+    throw new Error("No valid audio files found in session");
+  }
+
+  const mergeResult = await mergeSessionAudio(session.sessionPath, "merged");
+  return mergeResult.audioPath;
 }
 
 async function getUserName(discordId: string): Promise<string> {
@@ -125,6 +111,7 @@ function buildSummaryContext(
   return {
     sessionId: session.id,
     channelName: session.channelName,
+    textChannelName: session.textChannelName,
     participantNames: [...userNames.values()],
   };
 }
@@ -142,6 +129,7 @@ function buildSummaryParticipants(
 export async function processRecording(
   session: RecordingSession,
   statusMessage: Message,
+  options: ProcessRecordingOptions = {},
 ): Promise<ProcessingResult> {
   const result: ProcessingResult = {
     sessionId: session.id,
@@ -157,116 +145,116 @@ export async function processRecording(
     userTranscripts: [],
   };
 
-  await updateStatusMessage(
-    statusMessage,
-    ERecordingStage.PROCESSING,
-    session.id,
-  );
+  const audioArtifactsPromise = createSessionAudioArtifacts(session)
+    .then((mergedAudioPath) => ({ mergedAudioPath, error: null }))
+    .catch((error: unknown) => ({ mergedAudioPath: null, error: toError(error) }));
 
-  // Convert per-user PCM to OGG and merge for playback
-  const entries = readdirSync(session.sessionPath, { withFileTypes: true });
-  let hasAudio = false;
-
-  for (const entry of entries) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
-
-    const discordId = entry.name;
-    const userDir = join(session.sessionPath, discordId);
-    const pcmPath = join(userDir, `user_${discordId}.pcm`);
-
-    if (!existsSync(pcmPath) || statSync(pcmPath).size <= 0) {
-      continue;
-    }
-
-    const audioPath = join(userDir, `user_${discordId}.ogg`);
-    await convertPcmToOgg(pcmPath, audioPath);
-    hasAudio = true;
-  }
-
-  if (!hasAudio) {
-    throw new Error("No valid audio files found in session");
-  }
-
-  const mergeResult = await mergeSessionAudio(session.sessionPath, "merged");
-  result.mergedAudioPath = mergeResult.audioPath;
-
-  // Snippet-based transcription
   await updateStatusMessage(
     statusMessage,
     ERecordingStage.TRANSCRIBING,
     session.id,
   );
 
-  // Collect live transcription results (produced during recording)
-  await waitForPendingTranscriptions(session.id);
-  let allSegments: TranscribedSegment[] = getSessionSegments(session.id);
+  let processingError: Error | null = null;
 
-  // Offline fallback: if no live segments exist, transcribe from disk
-  if (allSegments.length === 0) {
-    const speechSegments =
-      session.speechSegments.length > 0
-        ? session.speechSegments
-        : discoverSegmentsFromFilesystem(session.sessionPath);
+  try {
+    await waitForPendingTranscriptions(session.id);
 
-    if (speechSegments.length === 0) {
-      console.warn(
-        `No speech segments found for session ${session.id}, skipping transcription`,
-      );
-    } else {
-      allSegments = await transcribeSnippetsOffline(
-        session.sessionPath,
-        speechSegments,
-      );
+    let transcribedSegmentCount = getSessionTranscriptSegmentCount(session.id);
+    if (transcribedSegmentCount === 0) {
+      const speechSegments =
+        session.speechSegments.length > 0
+          ? session.speechSegments
+          : discoverSegmentsFromFilesystem(session.sessionPath);
+
+      if (speechSegments.length === 0) {
+        console.warn(
+          `No speech segments found for session ${session.id}, skipping transcription`,
+        );
+      } else {
+        resetSessionTranscribedSegments(session.sessionPath);
+        transcribedSegmentCount = await transcribeSnippetsOffline(
+          session.sessionPath,
+          speechSegments,
+        );
+      }
     }
+
+    const allSegments: TranscribedSegment[] = readSessionTranscribedSegments(
+      session.sessionPath,
+    );
+    const uniqueUserIds = [
+      ...new Set([...session.userIds, ...allSegments.map((segment) => segment.userId)]),
+    ];
+    const userNames = await loadUserNames(uniqueUserIds);
+    result.userCount = uniqueUserIds.length;
+    result.summaryParticipants = buildSummaryParticipants(uniqueUserIds, userNames);
+
+    const chronologicalTranscript = createChronologicalTranscript(
+      allSegments,
+      userNames,
+    );
+    const transcriptPath = join(session.sessionPath, "transcript.txt");
+    writeFileSync(transcriptPath, chronologicalTranscript, "utf-8");
+    result.transcriptPath = transcriptPath;
+
+    console.log(`Transcription complete: ${transcribedSegmentCount} segments`);
+
+    await updateStatusMessage(
+      statusMessage,
+      ERecordingStage.SUMMARIZING,
+      session.id,
+    );
+
+    const generatedSummary = await generateSummary(
+      chronologicalTranscript,
+      session.sessionPath,
+      buildSummaryContext(session, userNames),
+    );
+    const storedSummary = createStoredSessionSummary({
+      sessionId: session.id,
+      title: generatedSummary.title,
+      summary: generatedSummary.summary,
+      channelName: session.channelName,
+      textChannelName: session.textChannelName,
+      durationSeconds: result.duration,
+      participants: result.summaryParticipants,
+    });
+
+    const summaryPath = join(session.sessionPath, SESSION_SUMMARY_FILE_NAME);
+    writeFileSync(summaryPath, `${JSON.stringify(storedSummary, null, 2)}\n`, "utf-8");
+    result.summaryPath = summaryPath;
+    result.summaryTitle = storedSummary.title;
+    result.summary = storedSummary.summary;
+
+    if (options.onSummaryReady) {
+      await options.onSummaryReady(result);
+    }
+
+    await updateStatusMessage(
+      statusMessage,
+      ERecordingStage.PROCESSING,
+      session.id,
+    );
+  } catch (error) {
+    processingError = toError(error);
   }
 
-  const uniqueUserIds = [
-    ...new Set([...session.userIds, ...allSegments.map((s) => s.userId)]),
-  ];
-  const userNames = await loadUserNames(uniqueUserIds);
-  result.summaryParticipants = buildSummaryParticipants(uniqueUserIds, userNames);
-
-  const chronologicalTranscript = createChronologicalTranscript(
-    allSegments,
-    userNames,
-  );
-  const transcriptPath = join(session.sessionPath, "transcript.txt");
-  writeFileSync(transcriptPath, chronologicalTranscript, "utf-8");
-  result.transcriptPath = transcriptPath;
-
-  console.log(
-    `Transcription complete: ${allSegments.length} segments`,
-  );
+  const audioArtifactsResult = await audioArtifactsPromise;
+  if (audioArtifactsResult.mergedAudioPath) {
+    result.mergedAudioPath = audioArtifactsResult.mergedAudioPath;
+  } else if (!processingError) {
+    processingError = audioArtifactsResult.error;
+  } else if (audioArtifactsResult.error) {
+    console.error(`Audio merge failed for session ${session.id}:`, audioArtifactsResult.error);
+  }
 
   cleanupLiveTranscription(session.id);
+  clearRecordingLifecycle(session.id);
 
-  await updateStatusMessage(
-    statusMessage,
-    ERecordingStage.SUMMARIZING,
-    session.id,
-  );
-
-  const generatedSummary = await generateSummary(
-    chronologicalTranscript,
-    session.sessionPath,
-    buildSummaryContext(session, userNames),
-  );
-  const storedSummary = createStoredSessionSummary({
-    sessionId: session.id,
-    title: generatedSummary.title,
-    summary: generatedSummary.summary,
-    channelName: session.channelName,
-    durationSeconds: result.duration,
-    participants: result.summaryParticipants,
-  });
-
-  const summaryPath = join(session.sessionPath, SESSION_SUMMARY_FILE_NAME);
-  writeFileSync(summaryPath, `${JSON.stringify(storedSummary, null, 2)}\n`, "utf-8");
-  result.summaryPath = summaryPath;
-  result.summaryTitle = storedSummary.title;
-  result.summary = storedSummary.summary;
+  if (processingError) {
+    throw processingError;
+  }
 
   await updateStatusMessage(
     statusMessage,
