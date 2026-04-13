@@ -45,6 +45,7 @@ export function writeSessionTimingMetadata(session: RecordingSession): void {
   const timingMetadata: SessionTimingMetadata = {
     sessionId: session.id,
     channelName: session.channelName,
+    textChannelName: session.textChannelName,
     sessionStart: session.startedAt.toISOString(),
     sessionStop: stoppedAt.toISOString(),
     totalDurationMs: getSessionDurationMs(session),

@@ -22,6 +22,7 @@ export interface StoredSessionSummary {
   title: string;
   summary: string;
   channelName?: string;
+  textChannelName?: string;
   durationSeconds: number;
   participantCount: number;
   participants: SummaryParticipant[];
@@ -85,6 +86,7 @@ export interface SnippetMergeResult {
 export interface SummaryPromptContext {
   sessionId?: string;
   channelName?: string;
+  textChannelName?: string;
   participantNames: string[];
 }
 

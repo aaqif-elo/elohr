@@ -447,7 +447,10 @@ function buildSummaryPrompt(
     "Context:",
     SUMMARY_DEPLOYMENT_CONTEXT,
     context.channelName?.trim()
-      ? `Discord project / meeting channel name: ${context.channelName.trim()}`
+      ? `Discord voice channel name: ${context.channelName.trim()}`
+      : null,
+    context.textChannelName?.trim()
+      ? `Discord text channel name: ${context.textChannelName.trim()}`
       : null,
     context.sessionId?.trim()
       ? `Recording session ID: ${context.sessionId.trim()}`

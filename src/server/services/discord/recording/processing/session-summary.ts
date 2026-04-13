@@ -50,6 +50,7 @@ export function createStoredSessionSummary(input: {
   title: string;
   summary: string;
   channelName?: string;
+  textChannelName?: string;
   durationSeconds: number;
   participants: SummaryParticipant[];
 }): StoredSessionSummary {
@@ -59,6 +60,7 @@ export function createStoredSessionSummary(input: {
     title: input.title.trim(),
     summary: input.summary.trim(),
     channelName: input.channelName?.trim() || undefined,
+    textChannelName: input.textChannelName?.trim() || undefined,
     durationSeconds: Math.max(0, Math.floor(input.durationSeconds)),
     participantCount: input.participants.length,
     participants: input.participants,
@@ -87,6 +89,8 @@ export function parseStoredSessionSummary(rawJson: string): StoredSessionSummary
         : undefined,
     );
     const channelName = getStringProperty(parsed, "channelName") ?? undefined;
+    const textChannelName =
+      getStringProperty(parsed, "textChannelName") ?? undefined;
 
     return {
       version: version === 1 ? 1 : 1,
@@ -94,6 +98,7 @@ export function parseStoredSessionSummary(rawJson: string): StoredSessionSummary
       title,
       summary,
       channelName,
+      textChannelName,
       durationSeconds,
       participantCount: participantCount ?? participants.length,
       participants,
