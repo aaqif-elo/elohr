@@ -17,23 +17,21 @@ export enum EAuthCommands {
   HR = "hr",
 }
 
-export enum EMeetingCommands {
-  MEETING = "meeting",
-}
-
 export enum EAvailabilityCommands {
   AVAILABILITY = "availability",
 }
 
-// Participant option names for the /meeting command
-enum EMeetingParticipantOptions {
-  PARTICIPANT1 = "participant1",
-  PARTICIPANT2 = "participant2",
-  PARTICIPANT3 = "participant3",
-  PARTICIPANT4 = "participant4",
-  PARTICIPANT5 = "participant5",
+export enum ERecordingCommands {
+  RECORD = "record",
 }
 
-// Convenience list for iteration in builders/handlers
-export const MEETING_PARTICIPANT_OPTION_NAMES: readonly string[] =
-  Object.values(EMeetingParticipantOptions);
+export enum ERecordingStage {
+  STARTED = "started",
+  STOPPED = "stopped",
+  QUEUED = "queued",
+  PROCESSING = "processing",
+  TRANSCRIBING = "transcribing",
+  SUMMARIZING = "summarizing",
+  COMPLETE = "complete",
+  ERROR = "error",
+}
