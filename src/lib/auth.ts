@@ -3,6 +3,18 @@ import { api } from "./api";
 
 export const LOCAL_STORAGE_KEY = "authJWT";
 
+export function getStoredAuthToken(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  return window.localStorage.getItem(LOCAL_STORAGE_KEY) ?? "";
+}
+
+export function hasStoredAuthToken(): boolean {
+  return Boolean(getStoredAuthToken());
+}
+
 export const loginWithStoredJWT = async (storedAuthJwt: string) => {
   try {
     const trpcUser = await api.auth.loginWithStoredJWT.query(storedAuthJwt);

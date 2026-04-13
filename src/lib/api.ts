@@ -5,17 +5,9 @@ import {
   loggerLink,
   splitLink,
 } from "@trpc/client";
-import type { AppRouter } from "../server/api/root";
-import { LOCAL_STORAGE_KEY } from "./auth";
 import { EventSourcePolyfill } from "event-source-polyfill";
-
-const getStoredAuthToken = () => {
-  if (typeof window === "undefined") {
-    return "";
-  }
-
-  return window.localStorage.getItem(LOCAL_STORAGE_KEY) ?? "";
-};
+import type { AppRouter } from "../server/api/root";
+import { getStoredAuthToken } from "./auth";
 
 const getBaseUrl = () => {
   if (typeof window !== "undefined") return "";
