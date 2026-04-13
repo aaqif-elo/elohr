@@ -4,6 +4,16 @@ const activeSessions = new Map<string, RecordingSession>();
 const SESSION_ID_REGEX =
   /^(?<year>\d{4})-(?<month>\d{2})-(?<day>\d{2})T(?<hour>\d{2})-(?<minute>\d{2})-(?<second>\d{2})_(?<random>[a-z0-9]{6})$/;
 
+type RecordingLifecycleStage = "recording" | "processing";
+
+interface RecordingLifecycleState {
+  guildId: string;
+  sessionId: string;
+  stage: RecordingLifecycleStage;
+}
+
+let currentRecordingLifecycle: RecordingLifecycleState | null = null;
+
 export function isSessionId(value: string): boolean {
   return SESSION_ID_REGEX.test(value);
 }
@@ -48,6 +58,10 @@ export function getActiveSession(
   return activeSessions.get(guildId);
 }
 
+export function getCurrentRecordingLifecycle(): RecordingLifecycleState | null {
+  return currentRecordingLifecycle;
+}
+
 export function hasActiveSession(guildId: string): boolean {
   return activeSessions.has(guildId);
 }
@@ -58,4 +72,40 @@ export function setActiveSession(session: RecordingSession): void {
 
 export function deleteActiveSession(guildId: string): void {
   activeSessions.delete(guildId);
+}
+
+export function beginRecordingLifecycle(
+  session: Pick<RecordingSession, "guildId" | "id">,
+): void {
+  if (currentRecordingLifecycle) {
+    throw new Error(
+      `Recording session ${currentRecordingLifecycle.sessionId} is already ${currentRecordingLifecycle.stage}`,
+    );
+  }
+
+  currentRecordingLifecycle = {
+    guildId: session.guildId,
+    sessionId: session.id,
+    stage: "recording",
+  };
+}
+
+export function setRecordingLifecycleStage(
+  sessionId: string,
+  stage: RecordingLifecycleStage,
+): void {
+  if (!currentRecordingLifecycle || currentRecordingLifecycle.sessionId !== sessionId) {
+    return;
+  }
+
+  currentRecordingLifecycle = {
+    ...currentRecordingLifecycle,
+    stage,
+  };
+}
+
+export function clearRecordingLifecycle(sessionId: string): void {
+  if (currentRecordingLifecycle?.sessionId === sessionId) {
+    currentRecordingLifecycle = null;
+  }
 }

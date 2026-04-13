@@ -9,11 +9,12 @@ export {
 } from "./processing/audio-merge";
 export {
   initLiveTranscription,
+  readSessionTranscribedSegments,
+  resetSessionTranscribedSegments,
   transcribeSnippetsOffline,
 } from "./processing/live-transcription.service";
 export {
   processRecording,
-  queueRecordingForProcessing,
 } from "./processing/recording-processing.service";
 export {
   discoverSegmentsFromFilesystem,
@@ -33,10 +34,18 @@ export {
   stopRecording,
 } from "./runtime/recording-runtime.service";
 export {
+  BOT_ALONE_GRACE_PERIOD_MS,
+  NO_ACTIVITY_GRACE_PERIOD_MS,
+  STARTER_RETURN_GRACE_PERIOD_MS,
+  handleRecordingVoiceStateUpdate,
+} from "./runtime/recording-auto-stop";
+export {
+  getCurrentRecordingLifecycle,
   getActiveSession,
   hasActiveSession,
 } from "./runtime/recording-session.store";
 export { getStatusMessage } from "./runtime/recording-status";
 export type {
+  RecordingAutoStopReason,
   RecordingSession,
 } from "./runtime/recording-types";

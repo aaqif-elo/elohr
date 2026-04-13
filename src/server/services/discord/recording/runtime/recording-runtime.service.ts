@@ -12,6 +12,10 @@ import {
   getTimelineByteOffset,
 } from "../shared/audio-format";
 import {
+  clearAutoStopMonitoring,
+  initializeAutoStopMonitoring,
+} from "./recording-auto-stop";
+import {
   DEBUG_AUDIO,
   MAX_DURATION_MINS,
   MAX_DURATION_MS,
@@ -31,21 +35,34 @@ import {
 } from "./recording-output";
 import { initializeOpusDiagnostics } from "./recording-opus";
 import {
+  beginRecordingLifecycle,
+  clearRecordingLifecycle,
   createSessionId,
   deleteActiveSession,
   getActiveSession,
+  getCurrentRecordingLifecycle,
   getSessionDurationMs,
   hasActiveSession,
+  setRecordingLifecycleStage,
   setActiveSession,
 } from "./recording-session.store";
 import { setupAudioReceiver } from "./recording-pipeline";
-import type { RecordingSession } from "./recording-types";
+import type {
+  RecordingAutoStopReason,
+  RecordingSession,
+} from "./recording-types";
 
 initializeOpusDiagnostics();
+
+interface StartRecordingOptions {
+  textChannelName?: string;
+  onAutoStop?: (reason: RecordingAutoStopReason) => Promise<void>;
+}
 
 export async function startRecording(
   voiceChannel: VoiceChannel,
   startedBy: string,
+  options: StartRecordingOptions = {},
 ): Promise<RecordingSession> {
   const guildId = voiceChannel.guild.id;
 
@@ -53,79 +70,105 @@ export async function startRecording(
     throw new Error("Already recording in this server");
   }
 
+  const currentRecordingLifecycle = getCurrentRecordingLifecycle();
+  if (currentRecordingLifecycle) {
+    const lifecycleMessage =
+      currentRecordingLifecycle.stage === "processing"
+        ? `Recording session ${currentRecordingLifecycle.sessionId} is still processing`
+        : `Recording session ${currentRecordingLifecycle.sessionId} is already active`;
+    throw new Error(lifecycleMessage);
+  }
+
   const sessionId = createSessionId();
   const sessionPath = join(RECORDINGS_PATH, sessionId);
   const debugLogPath = DEBUG_AUDIO ? join(sessionPath, "debug.log") : null;
 
-  if (!existsSync(RECORDINGS_PATH)) {
-    mkdirSync(RECORDINGS_PATH, { recursive: true });
-  }
-  mkdirSync(sessionPath, { recursive: true });
+  beginRecordingLifecycle({ guildId, id: sessionId });
 
-  const connection = joinVoiceChannel({
-    channelId: voiceChannel.id,
-    guildId,
-    adapterCreator: voiceChannel.guild.voiceAdapterCreator,
-    selfDeaf: false,
-    selfMute: true,
-  });
+  let connection: ReturnType<typeof joinVoiceChannel> | null = null;
 
   try {
-    await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
-  } catch (error) {
-    connection.destroy();
-    throw new Error("Failed to join voice channel within 30 seconds", {
-      cause: error,
+    if (!existsSync(RECORDINGS_PATH)) {
+      mkdirSync(RECORDINGS_PATH, { recursive: true });
+    }
+    mkdirSync(sessionPath, { recursive: true });
+
+    connection = joinVoiceChannel({
+      channelId: voiceChannel.id,
+      guildId,
+      adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+      selfDeaf: false,
+      selfMute: true,
     });
+
+    try {
+      await entersState(connection, VoiceConnectionStatus.Ready, 30_000);
+    } catch (error) {
+      throw new Error("Failed to join voice channel within 30 seconds", {
+        cause: error,
+      });
+    }
+
+    const session: RecordingSession = {
+      id: sessionId,
+      guildId,
+      channelId: voiceChannel.id,
+      channelName: voiceChannel.name,
+      textChannelName: options.textChannelName?.trim() || undefined,
+      startedAt: new Date(),
+      stoppedAt: null,
+      startedBy,
+      connection,
+      userStreams: new Map(),
+      userAudioStates: new Map(),
+      userIds: new Set(),
+      userStartTimes: new Map(),
+      speechSegments: [],
+      sessionPath,
+      debugLogPath,
+      debugLogStream: debugLogPath
+        ? createWriteStream(debugLogPath, { flags: "a" })
+        : null,
+      debugMergedFd: DEBUG_AUDIO
+        ? openSync(join(sessionPath, "merged_debug.pcm"), "w+")
+        : null,
+      lastVoiceActivityAt: Date.now(),
+      maxDurationTimeout: null,
+      starterAbsentTimeout: null,
+      botAloneTimeout: null,
+      inactivityMonitorInterval: null,
+      receiver: connection.receiver,
+      isStopping: false,
+      autoStopInProgress: false,
+      onAutoStop: options.onAutoStop,
+    };
+
+    setupAudioReceiver(connection.receiver, session);
+
+    session.maxDurationTimeout = setTimeout(() => {
+      console.log(
+        `Recording ${sessionId} reached max duration of ${MAX_DURATION_MINS} minutes`,
+      );
+    }, MAX_DURATION_MS);
+
+    setActiveSession(session);
+    initializeAutoStopMonitoring(session, voiceChannel);
+
+    if (DEBUG_AUDIO && session.debugLogPath) {
+      writeSessionDebugLog(
+        session,
+        "log",
+        `[DEBUG] Session debug logging started at ${session.debugLogPath}`,
+      );
+    }
+
+    console.log(`Started recording session ${sessionId} in ${voiceChannel.name}`);
+    return session;
+  } catch (error) {
+    connection?.destroy();
+    clearRecordingLifecycle(sessionId);
+    throw error instanceof Error ? error : new Error(String(error));
   }
-
-  const session: RecordingSession = {
-    id: sessionId,
-    guildId,
-    channelId: voiceChannel.id,
-    channelName: voiceChannel.name,
-    startedAt: new Date(),
-    stoppedAt: null,
-    startedBy,
-    connection,
-    userStreams: new Map(),
-    userAudioStates: new Map(),
-    userIds: new Set(),
-    userStartTimes: new Map(),
-    speechSegments: [],
-    sessionPath,
-    debugLogPath,
-    debugLogStream: debugLogPath
-      ? createWriteStream(debugLogPath, { flags: "a" })
-      : null,
-    debugMergedFd: DEBUG_AUDIO
-      ? openSync(join(sessionPath, "merged_debug.pcm"), "w+")
-      : null,
-    maxDurationTimeout: null,
-    receiver: connection.receiver,
-    isStopping: false,
-  };
-
-  setupAudioReceiver(connection.receiver, session);
-
-  session.maxDurationTimeout = setTimeout(() => {
-    console.log(
-      `Recording ${sessionId} reached max duration of ${MAX_DURATION_MINS} minutes`,
-    );
-  }, MAX_DURATION_MS);
-
-  setActiveSession(session);
-
-  if (DEBUG_AUDIO && session.debugLogPath) {
-    writeSessionDebugLog(
-      session,
-      "log",
-      `[DEBUG] Session debug logging started at ${session.debugLogPath}`,
-    );
-  }
-
-  console.log(`Started recording session ${sessionId} in ${voiceChannel.name}`);
-  return session;
 }
 
 export async function stopRecording(
@@ -136,8 +179,13 @@ export async function stopRecording(
     return null;
   }
 
+  if (session.isStopping) {
+    throw new Error("Recording is already stopping");
+  }
+
   session.isStopping = true;
   session.stoppedAt = new Date();
+  clearAutoStopMonitoring(session);
 
   const sessionDurationMs = getSessionDurationMs(session);
   const targetTrackByteLength = getTimelineByteOffset(sessionDurationMs);
@@ -309,6 +357,7 @@ export async function stopRecording(
   session.userAudioStates.clear();
   session.connection.destroy();
   deleteActiveSession(guildId);
+  setRecordingLifecycleStage(session.id, "processing");
 
   console.log(`Stopped recording session ${session.id}`);
   return session;

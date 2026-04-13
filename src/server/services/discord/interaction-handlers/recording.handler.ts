@@ -1,24 +1,35 @@
 import type {
   ChatInputCommandInteraction,
   CacheType,
-  GuildMember,
+  Client,
+  Message,
   VoiceChannel} from "discord.js";
 import {
   ChannelType,
+  GuildMember,
 } from "discord.js";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { ERecordingStage } from "../discord.enums";
 import {
+  BOT_ALONE_GRACE_PERIOD_MS,
+  NO_ACTIVITY_GRACE_PERIOD_MS,
+  STARTER_RETURN_GRACE_PERIOD_MS,
   getActiveSession,
+  getCurrentRecordingLifecycle,
   getStatusMessage,
   hasActiveSession,
   initLiveTranscription,
-  queueRecordingForProcessing,
+  processRecording,
   startRecording,
   stopRecording,
 } from "../recording";
+import type { RecordingAutoStopReason } from "../recording";
 import type { SummaryParticipant } from "../recording/processing/recording-processing.types";
+import {
+  logInteractionAckTiming,
+  runInteractionResponse,
+} from "./interaction-response.utils";
 
 // Path to permissions file
 const PERMISSIONS_FILE = join(process.cwd(), "recording-permissions.json");
@@ -26,6 +37,13 @@ const PERMISSIONS_FILE = join(process.cwd(), "recording-permissions.json");
 interface RecordingPermissions {
   allowedRoles: string[];
   allowedUsers: string[];
+}
+
+interface AutomaticStopOptions {
+  client: Client;
+  guildId: string;
+  channelId: string;
+  reason: RecordingAutoStopReason;
 }
 
 /**
@@ -41,6 +59,11 @@ function loadPermissions(): RecordingPermissions {
     console.error("Error loading recording permissions:", error);
   }
   return { allowedRoles: [], allowedUsers: [] };
+}
+
+function hasAdminRole(member: GuildMember): boolean {
+  const adminRoleId = process.env.ADMIN_ROLE_ID;
+  return Boolean(adminRoleId && member.roles.cache.has(adminRoleId));
 }
 
 /**
@@ -61,13 +84,169 @@ function hasPermission(member: GuildMember): boolean {
     }
   }
 
-  // Check for admin role from environment
-  const adminRoleId = process.env.ADMIN_ROLE_ID;
-  if (adminRoleId && member.roles.cache.has(adminRoleId)) {
-    return true;
+  return hasAdminRole(member);
+}
+
+function isVoiceChannel(
+  channel: GuildMember["voice"]["channel"],
+): channel is VoiceChannel {
+  return channel?.type === ChannelType.GuildVoice;
+}
+
+function getInteractionTextChannelName(
+  interaction: ChatInputCommandInteraction<CacheType>,
+): string | undefined {
+  const channel = interaction.channel;
+  if (
+    !channel ||
+    !channel.isTextBased() ||
+    !("name" in channel) ||
+    typeof channel.name !== "string"
+  ) {
+    return;
   }
 
-  return false;
+  const channelName = channel.name.trim();
+  return channelName || undefined;
+}
+
+function getRecordingCommandBlockedMessage(
+  sessionId: string,
+  stage: "recording" | "processing",
+): string {
+  return stage === "processing"
+    ? `❌ Recording commands are unavailable while session \`${sessionId}\` finishes processing.`
+    : `❌ Recording commands are unavailable while session \`${sessionId}\` is still active in another server.`;
+}
+
+function getRecordingAlreadyStoppingMessage(sessionId: string): string {
+  return `⏹️ Recording \`${sessionId}\` is already stopping. Processing will begin shortly.`;
+}
+
+function formatDurationForMessage(durationMs: number): string {
+  const totalSeconds = Math.floor(durationMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (minutes > 0 && seconds > 0) {
+    return `${minutes} minute${minutes === 1 ? "" : "s"} ${seconds} second${seconds === 1 ? "" : "s"}`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  }
+
+  return `${seconds} second${seconds === 1 ? "" : "s"}`;
+}
+
+function getAutomaticStopMessage(
+  reason: RecordingAutoStopReason,
+  startedBy: string,
+): string {
+  switch (reason) {
+    case "starter-absent":
+      return `⚠️ Recording stopped automatically because <@${startedBy}> left the voice channel and did not return within ${formatDurationForMessage(STARTER_RETURN_GRACE_PERIOD_MS)}.`;
+    case "bot-alone":
+      return `⚠️ Recording stopped automatically because the bot was alone in the voice channel for ${formatDurationForMessage(BOT_ALONE_GRACE_PERIOD_MS)}.`;
+    case "inactive":
+      return `⚠️ Recording stopped automatically because no voice activity was detected for ${formatDurationForMessage(NO_ACTIVITY_GRACE_PERIOD_MS)}.`;
+    default:
+      return "⚠️ Recording stopped automatically.";
+  }
+}
+
+async function sendStatusMessageToChannel(
+  client: Client,
+  channelId: string,
+  content: string,
+): Promise<Message | null> {
+  const channel = await client.channels.fetch(channelId);
+  if (!channel || !channel.isTextBased() || !("send" in channel)) {
+    return null;
+  }
+
+  return channel.send({ content });
+}
+
+async function processStoppedRecording(
+  statusMessage: Message,
+  stoppedSession: NonNullable<Awaited<ReturnType<typeof stopRecording>>>,
+): Promise<void> {
+  try {
+    await processRecording(
+      stoppedSession,
+      statusMessage,
+      {
+        onSummaryReady: async (result) => {
+          if (!result.summary) {
+            return;
+          }
+
+          const summaryContents = formatSummaryForDiscord(result);
+          for (const summaryContent of summaryContents) {
+            await statusMessage.reply({
+              content: summaryContent,
+            });
+          }
+        },
+      },
+    );
+  } catch (error) {
+    console.error("Error processing recording:", error);
+    await statusMessage.edit({
+      content: getStatusMessage(
+        ERecordingStage.ERROR,
+        stoppedSession.id,
+        error instanceof Error ? error.message : "Processing failed",
+      ),
+    });
+  }
+}
+
+async function stopAndProcessRecording(
+  guildId: string,
+  statusMessage: Message,
+  createStoppedMessage: (sessionId: string, startedBy: string) => string,
+): Promise<void> {
+  const stoppedSession = await stopRecording(guildId);
+
+  if (!stoppedSession) {
+    await statusMessage.edit({
+      content: "❌ Failed to stop recording - session not found.",
+    });
+    return;
+  }
+
+  await statusMessage.edit({
+    content: createStoppedMessage(stoppedSession.id, stoppedSession.startedBy),
+  });
+
+  await processStoppedRecording(statusMessage, stoppedSession);
+}
+
+async function handleAutomaticStop(
+  options: AutomaticStopOptions,
+): Promise<void> {
+  const activeSession = getActiveSession(options.guildId);
+  if (!activeSession || activeSession.isStopping) {
+    return;
+  }
+
+  const statusMessage = await sendStatusMessageToChannel(
+    options.client,
+    options.channelId,
+    `⚠️ Automatic stop triggered for recording \`${activeSession.id}\`. Finalizing recording...`,
+  );
+
+  if (!statusMessage) {
+    throw new Error("Failed to send automatic recording stop status message");
+  }
+
+  await stopAndProcessRecording(
+    options.guildId,
+    statusMessage,
+    (sessionId, startedBy) => `${getAutomaticStopMessage(options.reason, startedBy)}\n\n${getStatusMessage(ERecordingStage.STOPPED, sessionId)}`,
+  );
 }
 
 /**
@@ -76,8 +255,6 @@ function hasPermission(member: GuildMember): boolean {
 export async function handleRecordingCommand(
   interaction: ChatInputCommandInteraction<CacheType>,
 ): Promise<void> {
-  const subcommand = interaction.options.getSubcommand();
-
   // Must be in a guild
   if (!interaction.guild || !interaction.member) {
     await interaction.reply({
@@ -87,7 +264,15 @@ export async function handleRecordingCommand(
     return;
   }
 
-  const member = interaction.member as GuildMember;
+  if (!(interaction.member instanceof GuildMember)) {
+    await interaction.reply({
+      content: "❌ Failed to resolve your server membership for this command.",
+      flags: "Ephemeral",
+    });
+    return;
+  }
+
+  const member = interaction.member;
 
   // Check permissions
   if (!hasPermission(member)) {
@@ -99,15 +284,46 @@ export async function handleRecordingCommand(
     return;
   }
 
-  if (subcommand === "start") {
-    await handleStartRecording(interaction, member);
-  } else if (subcommand === "stop") {
-    await handleStopRecording(interaction, member);
+  const activeSession = interaction.guildId
+    ? getActiveSession(interaction.guildId)
+    : undefined;
+  if (activeSession?.isStopping) {
+    await interaction.reply({
+      content: getRecordingAlreadyStoppingMessage(activeSession.id),
+      flags: "Ephemeral",
+    });
+    return;
   }
+
+  const currentRecordingLifecycle = getCurrentRecordingLifecycle();
+  if (
+    interaction.guildId &&
+    currentRecordingLifecycle &&
+    (
+      currentRecordingLifecycle.stage === "processing" ||
+      currentRecordingLifecycle.guildId !== interaction.guildId
+    )
+  ) {
+    await interaction.reply({
+      content: getRecordingCommandBlockedMessage(
+        currentRecordingLifecycle.sessionId,
+        currentRecordingLifecycle.stage,
+      ),
+      flags: "Ephemeral",
+    });
+    return;
+  }
+
+  if (activeSession) {
+    await handleStopRecording(interaction, member);
+    return;
+  }
+
+  await handleStartRecording(interaction, member);
 }
 
 /**
- * Handle /record start
+ * Handle /record when no recording is active
  */
 async function handleStartRecording(
   interaction: ChatInputCommandInteraction<CacheType>,
@@ -140,7 +356,7 @@ async function handleStartRecording(
   }
 
   // Must be a regular voice channel (not stage)
-  if (voiceChannel.type !== ChannelType.GuildVoice) {
+  if (!isVoiceChannel(voiceChannel)) {
     await interaction.reply({
       content: "❌ Recording is only supported in regular voice channels.",
       flags: "Ephemeral",
@@ -149,13 +365,38 @@ async function handleStartRecording(
   }
 
   // Defer reply since joining might take a moment
-  await interaction.deferReply();
+  logInteractionAckTiming(interaction, {
+    phase: "record-start-deferReply",
+    subcommand: "start",
+  });
+  const deferReplyResult = await runInteractionResponse(
+    interaction,
+    () => interaction.deferReply(),
+    {
+      phase: "record-start-deferReply",
+      subcommand: "start",
+    },
+  );
+  if (!deferReplyResult.ok) {
+    return;
+  }
 
   try {
     // Start recording
     const session = await startRecording(
-      voiceChannel as VoiceChannel,
+      voiceChannel,
       member.id,
+      {
+        textChannelName: getInteractionTextChannelName(interaction),
+        onAutoStop: async (reason) => {
+          await handleAutomaticStop({
+            client: interaction.client,
+            guildId,
+            channelId: interaction.channelId,
+            reason,
+          });
+        },
+      },
     );
 
     // Begin transcribing snippets as they are produced
@@ -181,7 +422,7 @@ async function handleStartRecording(
 }
 
 /**
- * Handle /record stop
+ * Handle /record toggle when a recording is already active
  */
 async function handleStopRecording(
   interaction: ChatInputCommandInteraction<CacheType>,
@@ -205,8 +446,7 @@ async function handleStopRecording(
   const session = getActiveSession(guildId);
 
   // Only the person who started or admins can stop
-  const adminRoleId = process.env.ADMIN_ROLE_ID;
-  const isAdmin = adminRoleId && member.roles.cache.has(adminRoleId);
+  const isAdmin = hasAdminRole(member);
   const isStarter = session?.startedBy === member.id;
 
   if (!isStarter && !isAdmin) {
@@ -218,50 +458,32 @@ async function handleStopRecording(
   }
 
   // Defer reply since processing will take time
-  await interaction.deferReply();
+  logInteractionAckTiming(interaction, {
+    phase: "record-stop-deferReply",
+    subcommand: "stop",
+  });
+  const deferReplyResult = await runInteractionResponse(
+    interaction,
+    () => interaction.deferReply(),
+    {
+      phase: "record-stop-deferReply",
+      subcommand: "stop",
+    },
+  );
+  if (!deferReplyResult.ok) {
+    return;
+  }
 
   try {
-    // Stop recording
-    const stoppedSession = await stopRecording(guildId);
-
-    if (!stoppedSession) {
-      await interaction.editReply({
-        content: "❌ Failed to stop recording - session not found.",
-      });
-      return;
-    }
-
-    // Update status to stopped/queued
     const statusMessage = await interaction.editReply({
-      content: getStatusMessage(ERecordingStage.STOPPED, stoppedSession.id),
+      content: "⏹️ Stopping recording...",
     });
 
-    // Queue for processing
-    try {
-      const result = await queueRecordingForProcessing(
-        stoppedSession,
-        statusMessage,
-      );
-
-      // Post the summary
-      if (result.summary) {
-        const summaryContents = formatSummaryForDiscord(result);
-        for (const summaryContent of summaryContents) {
-          await interaction.followUp({
-            content: summaryContent,
-          });
-        }
-      }
-    } catch (error) {
-      console.error("Error processing recording:", error);
-      await statusMessage.edit({
-        content: getStatusMessage(
-          ERecordingStage.ERROR,
-          stoppedSession.id,
-          error instanceof Error ? error.message : "Processing failed",
-        ),
-      });
-    }
+    await stopAndProcessRecording(
+      guildId,
+      statusMessage,
+      (sessionId) => getStatusMessage(ERecordingStage.STOPPED, sessionId),
+    );
   } catch (error) {
     console.error("Error stopping recording:", error);
     await interaction.editReply({

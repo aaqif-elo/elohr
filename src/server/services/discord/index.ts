@@ -15,6 +15,7 @@ import {
 import { availabilityCommandBody } from "./commands";
 
 import { interactionHandler } from "./interaction-handlers";
+import { handleRecordingVoiceStateUpdate } from "./recording";
 import { handleVoiceStateChange } from "./voice-channel-hook.service";
 import { setNameStatus } from "./utils";
 import { startCronJobs } from "./cron-jobs";
@@ -124,6 +125,8 @@ function setupEventHandlers() {
     
     // Setup voice state update handler
     discordClient.on("voiceStateUpdate", (oldState, newState) => {
+      handleRecordingVoiceStateUpdate(oldState, newState);
+
       if (production) {
         handleVoiceStateChange(
           oldState,

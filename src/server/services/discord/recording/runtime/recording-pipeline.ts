@@ -296,6 +296,7 @@ function subscribeToUser(
       }
 
       state.lastActivityTime = Date.now();
+      session.lastVoiceActivityAt = Date.now();
       state.debugStats.pcmFramesDecoded++;
       state.debugStats.pcmBytesDecoded += pcmChunk.length;
       state.debugStats.lastPcmFrameSize = pcmChunk.length;
@@ -574,6 +575,7 @@ export function setupAudioReceiver(
 
     if (existingState?.isSubscribed) {
       existingState.lastActivityTime = Date.now();
+      session.lastVoiceActivityAt = Date.now();
       if (!existingState.currentSnippet) {
         existingState.pendingSnippetStart = true;
       }
@@ -585,6 +587,7 @@ export function setupAudioReceiver(
     const newState = session.userAudioStates.get(userId);
     if (newState) {
       newState.lastActivityTime = Date.now();
+      session.lastVoiceActivityAt = Date.now();
       newState.pendingSnippetStart = true;
     }
   });
