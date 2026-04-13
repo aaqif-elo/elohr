@@ -9,6 +9,10 @@ import {
   decideSnippetTranscriptionPolicy,
   getSnippetAudioMetricsFromWav,
 } from "../shared/snippet-metrics";
+import {
+  cleanupPreparedSnippetWav,
+  ensureSnippetWavForSegment,
+} from "./snippet-batcher";
 import type { TranscribedSegment } from "./recording-processing.types";
 import { transcribeSnippetAudio } from "./transcription.service";
 
@@ -234,32 +238,35 @@ export async function transcribeSnippetsOffline(
   for (const segment of sorted) {
     const durationMs = segment.endMs - segment.startMs;
 
-    const wavPath = join(
-      sessionPath,
-      segment.userId,
-      "snippets",
-      `snippet_${segment.startMs}_${segment.endMs}.wav`,
-    );
-    if (!existsSync(wavPath)) continue;
-
-    const metrics = segment.metrics ?? getSnippetAudioMetricsFromWav(readFileSync(wavPath));
-    const policy = decideSnippetTranscriptionPolicy(durationMs, metrics);
-    if (!policy.shouldTranscribe) continue;
-
-    const lines = await transcribeSnippetAudio(wavPath);
-
-    if (lines.length === 0) {
+    const preparedSnippetWav = ensureSnippetWavForSegment(sessionPath, segment);
+    if (!preparedSnippetWav) {
       continue;
     }
 
-    const transcribedSegments = distributeTimestamps(
-      lines,
-      segment.userId,
-      segment.startMs,
-      segment.endMs,
-    );
-    appendSegmentsToTranscriptFile(transcriptSegmentsPath, transcribedSegments);
-    transcribedSegmentCount += transcribedSegments.length;
+    try {
+      const metrics = segment.metrics ?? getSnippetAudioMetricsFromWav(readFileSync(preparedSnippetWav.wavPath));
+      const policy = decideSnippetTranscriptionPolicy(durationMs, metrics);
+      if (!policy.shouldTranscribe) {
+        continue;
+      }
+
+      const lines = await transcribeSnippetAudio(preparedSnippetWav.wavPath);
+
+      if (lines.length === 0) {
+        continue;
+      }
+
+      const transcribedSegments = distributeTimestamps(
+        lines,
+        segment.userId,
+        segment.startMs,
+        segment.endMs,
+      );
+      appendSegmentsToTranscriptFile(transcriptSegmentsPath, transcribedSegments);
+      transcribedSegmentCount += transcribedSegments.length;
+    } finally {
+      cleanupPreparedSnippetWav(preparedSnippetWav);
+    }
   }
 
   return transcribedSegmentCount;

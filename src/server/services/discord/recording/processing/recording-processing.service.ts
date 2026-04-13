@@ -1,5 +1,5 @@
 import type { Message } from "discord.js";
-import { existsSync, readdirSync, statSync, writeFileSync } from "fs";
+import { existsSync, readdirSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import { getUserByDiscordId } from "../../../../db";
 import { ERecordingStage } from "../../discord.enums";
@@ -10,7 +10,6 @@ import {
 import { getStatusMessage } from "../runtime/recording-status";
 import type { RecordingSession } from "../runtime/recording-types";
 import {
-  convertPcmToOgg,
   mergeSessionAudio,
 } from "./audio-merge";
 import {
@@ -28,6 +27,7 @@ import type {
   TranscribedSegment,
 } from "./recording-processing.types";
 import {
+  cleanupSessionSnippetWavs,
   discoverSegmentsFromFilesystem,
 } from "./snippet-batcher";
 import {
@@ -56,33 +56,55 @@ function toError(error: unknown): Error {
 async function createSessionAudioArtifacts(
   session: RecordingSession,
 ): Promise<string> {
-  const entries = readdirSync(session.sessionPath, { withFileTypes: true });
-  let hasAudio = false;
+  const mergeResult = await mergeSessionAudio(session.sessionPath, "merged");
+  return mergeResult.audioPath;
+}
 
-  for (const entry of entries) {
+function deleteFileIfPresent(filePath: string): boolean {
+  if (!existsSync(filePath)) {
+    return false;
+  }
+
+  try {
+    unlinkSync(filePath);
+    return true;
+  } catch (error) {
+    console.error(`Failed to delete obsolete artifact ${filePath}:`, error);
+    return false;
+  }
+}
+
+function cleanupObsoleteSessionArtifacts(sessionPath: string): void {
+  let deletedFullTrackArtifactCount = 0;
+
+  for (const entry of readdirSync(sessionPath, { withFileTypes: true })) {
     if (!entry.isDirectory()) {
       continue;
     }
 
-    const discordId = entry.name;
-    const userDir = join(session.sessionPath, discordId);
-    const pcmPath = join(userDir, `user_${discordId}.pcm`);
-
-    if (!existsSync(pcmPath) || statSync(pcmPath).size <= 0) {
-      continue;
+    const userDir = join(sessionPath, entry.name);
+    for (const extension of [".ogg", ".wav"]) {
+      const artifactPath = join(userDir, `user_${entry.name}${extension}`);
+      if (deleteFileIfPresent(artifactPath)) {
+        deletedFullTrackArtifactCount++;
+      }
     }
-
-    const audioPath = join(userDir, `user_${discordId}.ogg`);
-    await convertPcmToOgg(pcmPath, audioPath);
-    hasAudio = true;
   }
 
-  if (!hasAudio) {
-    throw new Error("No valid audio files found in session");
+  for (const topLevelFileName of ["merged.wav", "merged_debug.wav"]) {
+    if (deleteFileIfPresent(join(sessionPath, topLevelFileName))) {
+      deletedFullTrackArtifactCount++;
+    }
   }
 
-  const mergeResult = await mergeSessionAudio(session.sessionPath, "merged");
-  return mergeResult.audioPath;
+  const deletedSnippetWavCount = cleanupSessionSnippetWavs(sessionPath);
+  if (deletedFullTrackArtifactCount === 0 && deletedSnippetWavCount === 0) {
+    return;
+  }
+
+  console.log(
+    `Cleaned up ${deletedFullTrackArtifactCount} obsolete full-track artifact(s) and ${deletedSnippetWavCount} snippet WAV file(s)`,
+  );
 }
 
 async function getUserName(discordId: string): Promise<string> {
@@ -247,6 +269,10 @@ export async function processRecording(
     processingError = audioArtifactsResult.error;
   } else if (audioArtifactsResult.error) {
     console.error(`Audio merge failed for session ${session.id}:`, audioArtifactsResult.error);
+  }
+
+  if (!processingError) {
+    cleanupObsoleteSessionArtifacts(session.sessionPath);
   }
 
   cleanupLiveTranscription(session.id);

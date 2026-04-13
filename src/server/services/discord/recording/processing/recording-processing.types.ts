@@ -65,7 +65,7 @@ export interface SnippetDiscoveryResult {
 }
 
 export interface SessionMergeResult {
-  wavPath: string;
+  wavPath: string | null;
   audioPath: string;
   totalDurationSec: number;
   trackCount: number;

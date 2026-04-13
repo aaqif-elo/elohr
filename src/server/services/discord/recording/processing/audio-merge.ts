@@ -79,29 +79,7 @@ function runFfmpeg(args: string[], actionDescription: string): Promise<void> {
   });
 }
 
-async function convertWavToOgg(wavPath: string, oggPath: string): Promise<void> {
-  await runFfmpeg(
-    [
-      "-i",
-      wavPath,
-      "-codec:a",
-      OGG_AUDIO_CODEC,
-      "-b:a",
-      OGG_AUDIO_BITRATE,
-      "-vbr",
-      "on",
-      "-application",
-      "audio",
-      "-compression_level",
-      "10",
-      "-y",
-      oggPath,
-    ],
-    `WAV to OGG conversion for ${wavPath}`,
-  );
-}
-
-export async function convertPcmToOgg(
+async function convertPcmToOgg(
   pcmPath: string,
   oggPath: string,
 ): Promise<void> {
@@ -365,9 +343,9 @@ function requireSnippetPcm(pcmPath: string): Buffer {
   return readFileSync(pcmPath);
 }
 
-async function mixAlignedTracksToWav(
+async function mixAlignedTracksToOgg(
   mixInputs: SessionMixInput[],
-  wavPath: string,
+  oggPath: string,
 ): Promise<void> {
   const ffmpegArgs: string[] = [];
 
@@ -397,12 +375,20 @@ async function mixAlignedTracksToWav(
       filterGraph,
       "-map",
       `[${outputLabel}]`,
-      "-c:a",
-      "pcm_s16le",
+      "-codec:a",
+      OGG_AUDIO_CODEC,
+      "-b:a",
+      OGG_AUDIO_BITRATE,
+      "-vbr",
+      "on",
+      "-application",
+      "audio",
+      "-compression_level",
+      "10",
       "-y",
-      wavPath,
+      oggPath,
     ],
-    `aligned track mix to ${wavPath}`,
+    `aligned track mix to ${oggPath}`,
   );
 }
 
@@ -508,12 +494,8 @@ export async function mergeSessionAudio(
     `Mixing ${mixInputs.length} aligned user track(s) with ffmpeg`,
   );
 
-  const wavPath = join(sessionPath, `${outputPrefix}.wav`);
-  await mixAlignedTracksToWav(mixInputs, wavPath);
-  console.log(`Wrote ${wavPath}`);
-
   const audioPath = join(sessionPath, `${outputPrefix}.ogg`);
-  await convertWavToOgg(wavPath, audioPath);
+  await mixAlignedTracksToOgg(mixInputs, audioPath);
   console.log(`Wrote ${audioPath}`);
 
   const totalDurationSec = Math.max(
@@ -521,7 +503,7 @@ export async function mergeSessionAudio(
   );
 
   return {
-    wavPath,
+    wavPath: null,
     audioPath,
     totalDurationSec,
     trackCount: mixInputs.length,

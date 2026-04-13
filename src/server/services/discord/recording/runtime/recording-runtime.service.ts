@@ -26,7 +26,6 @@ import {
   writeSessionDebugLog,
 } from "./recording-debug";
 import {
-  convertSessionPcmToWav,
   writeSessionTimingMetadata,
 } from "./recording-files";
 import {
@@ -350,8 +349,6 @@ export async function stopRecording(
     });
     session.debugLogStream = null;
   }
-
-  await convertSessionPcmToWav(session.sessionPath, targetTrackByteLength);
 
   session.userStreams.clear();
   session.userAudioStates.clear();
