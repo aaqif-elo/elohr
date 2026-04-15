@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7-labs
-FROM node:20.20.0-slim AS base
+FROM node:20.20.0-bullseye-slim AS base
 ENV PNPM_HOME="/usr/local/share/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable \
@@ -44,7 +44,7 @@ RUN cp pnpm-workspace.yaml ./.output/server/pnpm-workspace.yaml
 RUN cp -r node_modules/.prisma ./.output/server/node_modules/prisma
 
 FROM build AS prod-deps
-RUN pnpm prune --prod
+RUN pnpm prune --prod --ignore-scripts
 
 FROM base AS runner
 ENV NODE_ENV=production
