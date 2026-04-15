@@ -1,6 +1,6 @@
 {
   "name": "elo-hr",
-  "version": "1.4.1",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "nodemon",

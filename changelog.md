@@ -2,6 +2,32 @@
 
 All notable changes to this project are documented below.
 
+## v2.0.0 [2026-04-15]
+
+Major update focused on Discord voice recordings, personalized attendance insights, and a simplified workflow after retiring the earlier meeting scheduling flow.
+
+### Added
+
+- `/record` Discord command to start and stop voice-session recordings with automatic stop safeguards and live processing status updates.
+- Voice recordings workspace with protected `/recordings` pages for browsing sessions, reviewing participants, and downloading merged audio, per-user audio, transcripts, and AI-generated summaries.
+- `/wrapped` attendance recap with annual stats, project insights, break patterns, time-personality highlights, badges, and summary slides.
+
+### Changed
+
+- Attendance automation now assigns daily Discord award emojis, includes award winners in the morning scrum message, and sends the admin attendance report weekly on Thursdays instead of daily.
+- Recording summaries now support structured session metadata, including titles, participant lists, and durations, while remaining compatible with legacy `summary.txt` outputs.
+- Deployment and container runtime standardized around Node.js 20; Docker now installs Chromium for Puppeteer reporting and FFmpeg for audio processing.
+- Prisma client generation now includes `linux-arm64-openssl-3.0.x` for broader Linux deployment compatibility.
+
+### Removed
+
+- Meeting scheduling, invite reminders, and related admin-side APIs from the active Discord and TRPC workflow.
+
+### Chore
+
+- Added `lint`, `typecheck`, `knip`, and `husky` workflows to tighten pre-release code quality checks.
+- Refreshed core dependencies across SolidStart, TRPC, Prisma, Discord, Puppeteer, and supporting tooling.
+
 ## v1.4.1 [2025-11-17]
 
 ### Fixed
