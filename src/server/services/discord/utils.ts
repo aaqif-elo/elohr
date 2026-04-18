@@ -6,19 +6,19 @@ import { launch } from "puppeteer";
 import { getGuildMember } from ".";
 import type { Attendance } from "@prisma/client";
 
-const DAILY_AWARD_EMOJIS = ["🐦", "🦉", "🐢", "🦫", "🦘"];
+const ATTENDANCE_AWARD_EMOJIS = ["🐦", "🦉", "🐢", "🦫", "🦘"];
 
-const isDailyAwardEmoji = (emoji: string): boolean => {
-  return DAILY_AWARD_EMOJIS.includes(emoji);
+const isAttendanceAwardEmoji = (emoji: string): boolean => {
+  return ATTENDANCE_AWARD_EMOJIS.includes(emoji);
 };
 
 const getNicknameBase = (member: GuildMember): string => {
   return member.nickname ?? member.user.displayName;
 };
 
-const removeDailyAwardEmojis = (nickname: string): string => {
+const removeAttendanceAwardEmojis = (nickname: string): string => {
   let sanitizedNickname = nickname;
-  for (const emoji of DAILY_AWARD_EMOJIS) {
+  for (const emoji of ATTENDANCE_AWARD_EMOJIS) {
     sanitizedNickname = sanitizedNickname.split(emoji).join("");
   }
 
@@ -271,9 +271,9 @@ export async function setNameStatus(
   }
 }
 
-export async function setDailyAwardEmoji(id: string, emoji: string) {
-  if (!isDailyAwardEmoji(emoji)) {
-    console.error("Invalid daily award emoji:", emoji);
+export async function setAttendanceAwardEmoji(id: string, emoji: string) {
+  if (!isAttendanceAwardEmoji(emoji)) {
+    console.error("Invalid attendance award emoji:", emoji);
     return;
   }
 
@@ -283,9 +283,9 @@ export async function setDailyAwardEmoji(id: string, emoji: string) {
   }
 
   const currentNickname = getNicknameBase(member);
-  const nicknameWithoutAwards = removeDailyAwardEmojis(currentNickname);
+  const nicknameWithoutAwards = removeAttendanceAwardEmojis(currentNickname);
 
-  const existingAwards = DAILY_AWARD_EMOJIS.filter((existingEmoji) =>
+  const existingAwards = ATTENDANCE_AWARD_EMOJIS.filter((existingEmoji) =>
     currentNickname.includes(existingEmoji),
   );
 
@@ -299,11 +299,11 @@ export async function setDailyAwardEmoji(id: string, emoji: string) {
   try {
     await member.setNickname(nextNickname);
   } catch (error) {
-    console.error("Failed to set daily award emoji:", error);
+    console.error("Failed to set attendance award emoji:", error);
   }
 }
 
-export async function clearDailyAwardEmojisForUsers(discordIds: string[]) {
+export async function clearAttendanceAwardEmojisForUsers(discordIds: string[]) {
   for (const discordId of discordIds) {
     try {
       const member = await getGuildMember(discordId);
@@ -312,14 +312,14 @@ export async function clearDailyAwardEmojisForUsers(discordIds: string[]) {
       }
 
       const currentNickname = getNicknameBase(member);
-      const nicknameWithoutAwards = removeDailyAwardEmojis(currentNickname);
+      const nicknameWithoutAwards = removeAttendanceAwardEmojis(currentNickname);
       if (nicknameWithoutAwards === currentNickname) {
         continue;
       }
 
       await member.setNickname(nicknameWithoutAwards.substring(0, 32));
     } catch (error) {
-      console.error(`Failed to clear daily award emojis for ${discordId}:`, error);
+      console.error(`Failed to clear attendance award emojis for ${discordId}:`, error);
     }
   }
 }

@@ -2,7 +2,7 @@ import { CronJob } from "cron";
 import type { Client, TextChannel } from "discord.js";
 import {
   getAllActiveEmployeeDiscordIds,
-  getDailyAttendanceAwardWinners,
+  getWeeklyAttendanceAwardWinners,
   getDiscordIdsFromUserIds,
   getNextHoliday,
   getUsersOnLeave,
@@ -10,8 +10,8 @@ import {
   syncHolidays,
 } from "../../db";
 import {
-  clearDailyAwardEmojisForUsers,
-  setDailyAwardEmoji,
+  clearAttendanceAwardEmojisForUsers,
+  setAttendanceAwardEmoji,
 } from "./utils";
 import {
   announceHoliday,
@@ -47,7 +47,7 @@ const generalChannelID = production
 if (!generalChannelID)
   throw new Error("ANNOUNCEMENTS_CHANNEL_ID is not defined");
 
-interface DailyAwardDefinition {
+interface AttendanceAwardDefinition {
   title: string;
   emoji: string;
   userId: string | null;
@@ -108,13 +108,6 @@ export const startCronJobs = async (discordClient: Client<boolean>) => {
     // Capture day before async work — logout may span past midnight
     const isThursday = new Date().getDay() === 4;
 
-    try {
-      const allActiveDiscordIds = await getAllActiveEmployeeDiscordIds();
-      await clearDailyAwardEmojisForUsers(allActiveDiscordIds);
-    } catch (error) {
-      console.error("Failed to clear daily award emojis:", error);
-    }
-
     await autoLogoutUsersWhoAreStillLoggedIn(discordClient);
 
     if (isThursday) {
@@ -157,89 +150,99 @@ export const startCronJobs = async (discordClient: Client<boolean>) => {
     const usersOnLeave = await getUsersOnLeave();
     const userIdDiscordIdObjects = await getDiscordIdsFromUserIds(usersOnLeave);
 
-    const awardWinners = await getDailyAttendanceAwardWinners();
-    const uniqueWinnerUserIds = Array.from(
-      new Set(
-        [
-          awardWinners.earlyBirdUserId,
-          awardWinners.nightOwlUserId,
-          awardWinners.timelyTurtleUserId,
-          awardWinners.lazyBeaverUserId,
-          awardWinners.projectHopperUserId,
-        ].filter((userId): userId is string => Boolean(userId)),
-      ),
-    );
-
-    const winnerDiscordIdObjects = uniqueWinnerUserIds.length
-      ? await getDiscordIdsFromUserIds(uniqueWinnerUserIds)
-      : [];
-    const winnerDiscordIdMap = new Map<string, string>(
-      winnerDiscordIdObjects.map((winner) => [winner.id, winner.discordId]),
-    );
-
     const now = new Date();
     const todayAtTen = new Date(now);
     todayAtTen.setHours(10, 0, 0, 0);
 
-    const dailyAwards: DailyAwardDefinition[] = [
-      {
-        title: "Early Bird",
-        emoji: "🐦",
-        userId: awardWinners.earlyBirdUserId,
-        detail: "First check-in after 6:00 AM",
-      },
-      {
-        title: "Night Owl",
-        emoji: "🦉",
-        userId: awardWinners.nightOwlUserId,
-        detail: "Latest logout between 6:00 PM and 5:59 AM",
-      },
-      {
-        title: "Timely Turtle",
-        emoji: "🐢",
-        userId: awardWinners.timelyTurtleUserId,
-        detail: `Closest check-in to ${formatTimeForDiscord(todayAtTen)}`,
-      },
-      {
-        title: "Lazy Beaver",
-        emoji: "🦫",
-        userId: awardWinners.lazyBeaverUserId,
-        detail: "Latest check-in before scrum reminder",
-      },
-      {
-        title: "Project Hopper",
-        emoji: "🦘",
-        userId: awardWinners.projectHopperUserId,
-        detail: "Most project switches this morning",
-      },
-    ];
+    let awardAnnouncementLines = "";
+    if (now.getDay() === 0) {
+      const awardWinners = await getWeeklyAttendanceAwardWinners(now);
+      const uniqueWinnerUserIds = Array.from(
+        new Set(
+          [
+            awardWinners.earlyBirdUserId,
+            awardWinners.nightOwlUserId,
+            awardWinners.timelyTurtleUserId,
+            awardWinners.lazyBeaverUserId,
+            awardWinners.projectHopperUserId,
+          ].filter((userId): userId is string => Boolean(userId)),
+        ),
+      );
 
-    const awardAnnouncementLines = dailyAwards
-      .map((award) => {
+      const winnerDiscordIdObjects = uniqueWinnerUserIds.length
+        ? await getDiscordIdsFromUserIds(uniqueWinnerUserIds)
+        : [];
+      const winnerDiscordIdMap = new Map<string, string>(
+        winnerDiscordIdObjects.map((winner) => [winner.id, winner.discordId]),
+      );
+
+      const weeklyAwards: AttendanceAwardDefinition[] = [
+        {
+          title: "Early Bird",
+          emoji: "🐦",
+          userId: awardWinners.earlyBirdUserId,
+          detail: "Earliest median login time between 6:00 AM and 10:00 AM last week",
+        },
+        {
+          title: "Night Owl",
+          emoji: "🦉",
+          userId: awardWinners.nightOwlUserId,
+          detail: "Most active hours between 12:00 AM and 5:59 AM last week",
+        },
+        {
+          title: "Timely Turtle",
+          emoji: "🐢",
+          userId: awardWinners.timelyTurtleUserId,
+          detail: `Least variance in login times around ${formatTimeForDiscord(todayAtTen)} last week`,
+        },
+        {
+          title: "Lazy Beaver",
+          emoji: "🦫",
+          userId: awardWinners.lazyBeaverUserId,
+          detail: "Latest median login time after 10:00 AM last week",
+        },
+        {
+          title: "Project Hopper",
+          emoji: "🦘",
+          userId: awardWinners.projectHopperUserId,
+          detail: "Most project switches during the entire week",
+        },
+      ];
+
+      awardAnnouncementLines = weeklyAwards
+        .map((award) => {
+          if (!award.userId) {
+            return `${award.emoji} **${award.title}**: _No winner this week_`;
+          }
+
+          const winnerDiscordId = winnerDiscordIdMap.get(award.userId);
+          if (!winnerDiscordId) {
+            return `${award.emoji} **${award.title}**: _No winner this week_`;
+          }
+
+          const awardDetail = award.detail ? ` (${award.detail})` : "";
+          return `${award.emoji} **${award.title}**: <@${winnerDiscordId}>${awardDetail}`;
+        })
+        .join("\n");
+
+      try {
+        const allActiveDiscordIds = await getAllActiveEmployeeDiscordIds();
+        await clearAttendanceAwardEmojisForUsers(allActiveDiscordIds);
+      } catch (error) {
+        console.error("Failed to clear attendance award emojis:", error);
+      }
+
+      for (const award of weeklyAwards) {
         if (!award.userId) {
-          return `${award.emoji} **${award.title}**: _No winner today_`;
+          continue;
         }
-
         const winnerDiscordId = winnerDiscordIdMap.get(award.userId);
         if (!winnerDiscordId) {
-          return `${award.emoji} **${award.title}**: _No winner today_`;
+          continue;
         }
 
-        const awardDetail = award.detail ? ` (${award.detail})` : "";
-        return `${award.emoji} **${award.title}**: <@${winnerDiscordId}>${awardDetail}`;
-      })
-      .join("\n");
-
-    for (const award of dailyAwards) {
-      if (!award.userId) {
-        continue;
+        await setAttendanceAwardEmoji(winnerDiscordId, award.emoji);
       }
-      const winnerDiscordId = winnerDiscordIdMap.get(award.userId);
-      if (!winnerDiscordId) {
-        continue;
-      }
-
-      await setDailyAwardEmoji(winnerDiscordId, award.emoji);
     }
 
     console.log(usersOnLeave);
@@ -258,7 +261,7 @@ export const startCronJobs = async (discordClient: Client<boolean>) => {
     }
     generalChannel.send({
       content: `@everyone\n${weatherReport}${
-        awardAnnouncementLines ? `\n\n**Today's Attendance Awards**\n${awardAnnouncementLines}` : ``
+        awardAnnouncementLines ? `\n\n**Last Week's Attendance Awards**\n${awardAnnouncementLines}` : ``
       }${
         usersOnLeave.length > 0 ? `\n\n${usersOnLeaveAnnouncement}` : ``
       }`,

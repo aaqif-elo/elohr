@@ -701,18 +701,11 @@ interface WeekdayHeatmapSlot {
   confidence: number; // presentWeight / sampleWeight (0..1)
 }
 
-interface DailyAttendanceAwardWinners {
-  earlyBirdUserId: string | null;
-  nightOwlUserId: string | null;
-  timelyTurtleUserId: string | null;
-  lazyBeaverUserId: string | null;
-  projectHopperUserId: string | null;
-}
-
 const OFFICE_START_HOUR = 10;
 const EARLY_BIRD_MIN_HOUR = 6;
-const SCRUM_REMINDER_HOUR = 10;
-const SCRUM_REMINDER_MINUTE = 40;
+
+const EARLY_BIRD_CUTOFF_IN_MS = EARLY_BIRD_MIN_HOUR * 60 * 60 * 1000;
+const OFFICE_START_TIME_IN_MS = OFFICE_START_HOUR * 60 * 60 * 1000;
 
 const getDateWithTime = (
   baseDate: Date,
@@ -726,112 +719,366 @@ const getDateWithTime = (
   return date;
 };
 
-export async function getDailyAttendanceAwardWinners(
-  referenceDate = new Date(),
-): Promise<DailyAttendanceAwardWinners> {
-  const dayStart = getStartOfDay(referenceDate);
-  const dayEnd = getEndOfDay(referenceDate);
+interface WeeklyAttendanceAwardWinners {
+  earlyBirdUserId: string | null;
+  nightOwlUserId: string | null;
+  timelyTurtleUserId: string | null;
+  lazyBeaverUserId: string | null;
+  projectHopperUserId: string | null;
+}
 
-  const earlyBirdCutoff = getDateWithTime(dayStart, EARLY_BIRD_MIN_HOUR, 0);
-  const officeStart = getDateWithTime(dayStart, OFFICE_START_HOUR, 0);
-  const scrumReminderTime = getDateWithTime(
-    dayStart,
-    SCRUM_REMINDER_HOUR,
-    SCRUM_REMINDER_MINUTE,
+interface WeeklyAttendanceAwardMetrics {
+  userId: string;
+  loginTimes: number[];
+  earlyBirdLoginTimes: number[];
+  lazyBeaverLoginTimes: number[];
+  nightOwlActiveMs: number;
+  projectSwitchCount: number;
+}
+
+const getMostRecentCompletedWeekDateRange = (referenceDate: Date) => {
+  const currentWeekDateRange = getWeekDateRange(referenceDate);
+
+  if (referenceDate.getDay() >= 5) {
+    return currentWeekDateRange;
+  }
+
+  const previousWeekStart = new Date(currentWeekDateRange.start);
+  previousWeekStart.setDate(previousWeekStart.getDate() - 7);
+
+  const previousWeekEnd = new Date(currentWeekDateRange.end);
+  previousWeekEnd.setDate(previousWeekEnd.getDate() - 7);
+
+  return {
+    start: previousWeekStart,
+    end: previousWeekEnd,
+  };
+};
+
+const getTimeOfDayInMilliseconds = (date: Date) => {
+  return (
+    ((date.getHours() * 60 + date.getMinutes()) * 60 + date.getSeconds()) *
+      1000 +
+    date.getMilliseconds()
+  );
+};
+
+const getMedian = (values: number[]): number | null => {
+  if (!values.length) {
+    return null;
+  }
+
+  const sortedValues = [...values].sort((firstValue, secondValue) => {
+    return firstValue - secondValue;
+  });
+  const middleIndex = Math.floor(sortedValues.length / 2);
+
+  if (sortedValues.length % 2 === 0) {
+    return (sortedValues[middleIndex - 1] + sortedValues[middleIndex]) / 2;
+  }
+
+  return sortedValues[middleIndex] ?? null;
+};
+
+const getAverageSquaredDistanceFromTarget = (
+  values: number[],
+  target: number,
+): number | null => {
+  if (!values.length) {
+    return null;
+  }
+
+  const totalSquaredDistance = values.reduce((sum, value) => {
+    return sum + (value - target) ** 2;
+  }, 0);
+
+  return totalSquaredDistance / values.length;
+};
+
+const getOverlapDurationMs = (
+  start: Date,
+  end: Date,
+  rangeStart: Date,
+  rangeEnd: Date,
+): number => {
+  const overlapStart = Math.max(start.getTime(), rangeStart.getTime());
+  const overlapEnd = Math.min(end.getTime(), rangeEnd.getTime());
+
+  return Math.max(0, overlapEnd - overlapStart);
+};
+
+const getProjectSwitchCount = (workSegments: Attendance["workSegments"]): number => {
+  let previousProject: string | null = null;
+  let projectSwitchCount = 0;
+
+  for (const segment of workSegments) {
+    if (previousProject && previousProject !== segment.project) {
+      projectSwitchCount++;
+    }
+
+    previousProject = segment.project;
+  }
+
+  return projectSwitchCount;
+};
+
+const getNightOwlActiveMsForAttendance = (
+  attendance: Pick<Attendance, "login" | "logout" | "workSegments">,
+): number => {
+  let activeMs = 0;
+  const nightOwlWindowStart = getStartOfDay(attendance.login);
+  const nightOwlWindowEnd = getDateWithTime(
+    attendance.login,
+    EARLY_BIRD_MIN_HOUR,
+    0,
   );
 
-  const lastNightStart = new Date(dayStart);
-  lastNightStart.setDate(lastNightStart.getDate() - 1);
-  lastNightStart.setHours(18, 0, 0, 0);
-  const lastNightEnd = getDateWithTime(dayStart, EARLY_BIRD_MIN_HOUR, 0, 0, -1);
+  for (const segment of attendance.workSegments) {
+    const segmentStart = new Date(segment.start);
+    const segmentEnd = new Date(segment.end ?? attendance.logout ?? segmentStart);
 
-  const todayAttendances = await db.attendance.findMany({
+    activeMs += getOverlapDurationMs(
+      segmentStart,
+      segmentEnd,
+      nightOwlWindowStart,
+      nightOwlWindowEnd,
+    );
+  }
+
+  return activeMs;
+};
+
+const buildRankedAwardUserIds = <Candidate extends { userId: string }>(
+  candidates: Candidate[],
+): string[] => {
+  return candidates.map((candidate) => candidate.userId);
+};
+
+const pickNextAwardWinner = (
+  rankedUserIds: string[],
+  awardedUserIds: Set<string>,
+): string | null => {
+  const winnerUserId =
+    rankedUserIds.find((userId) => !awardedUserIds.has(userId)) ?? null;
+
+  if (winnerUserId) {
+    awardedUserIds.add(winnerUserId);
+  }
+
+  return winnerUserId;
+};
+
+export async function getWeeklyAttendanceAwardWinners(
+  referenceDate = new Date(),
+): Promise<WeeklyAttendanceAwardWinners> {
+  const completedWeekDateRange = getMostRecentCompletedWeekDateRange(referenceDate);
+
+  const weeklyAttendances = await db.attendance.findMany({
     where: {
       login: {
-        gte: dayStart,
-        lte: dayEnd,
+        gte: completedWeekDateRange.start,
+        lte: completedWeekDateRange.end,
       },
     },
     select: {
       userId: true,
       login: true,
+      logout: true,
       workSegments: true,
     },
   });
 
-  const checkInsBeforeScrum = todayAttendances.filter(
-    (attendance) => attendance.login <= scrumReminderTime,
+  const weeklyAwardMetricsByUserId = new Map<string, WeeklyAttendanceAwardMetrics>();
+
+  for (const attendance of weeklyAttendances) {
+    const loginTimeOfDay = getTimeOfDayInMilliseconds(attendance.login);
+    const userMetrics = weeklyAwardMetricsByUserId.get(attendance.userId) ?? {
+      userId: attendance.userId,
+      loginTimes: [],
+      earlyBirdLoginTimes: [],
+      lazyBeaverLoginTimes: [],
+      nightOwlActiveMs: 0,
+      projectSwitchCount: 0,
+    };
+
+    userMetrics.loginTimes.push(loginTimeOfDay);
+
+    if (
+      loginTimeOfDay >= EARLY_BIRD_CUTOFF_IN_MS &&
+      loginTimeOfDay <= OFFICE_START_TIME_IN_MS
+    ) {
+      userMetrics.earlyBirdLoginTimes.push(loginTimeOfDay);
+    }
+
+    if (loginTimeOfDay > OFFICE_START_TIME_IN_MS) {
+      userMetrics.lazyBeaverLoginTimes.push(loginTimeOfDay);
+    }
+
+    userMetrics.nightOwlActiveMs += getNightOwlActiveMsForAttendance(
+      attendance,
+    );
+    userMetrics.projectSwitchCount += getProjectSwitchCount(attendance.workSegments);
+
+    weeklyAwardMetricsByUserId.set(attendance.userId, userMetrics);
+  }
+
+  const weeklyAwardMetrics = Array.from(weeklyAwardMetricsByUserId.values());
+
+  const earlyBirdCandidates = buildRankedAwardUserIds(
+    weeklyAwardMetrics
+      .map((userMetrics) => {
+        return {
+          userId: userMetrics.userId,
+          medianLoginTime: getMedian(userMetrics.earlyBirdLoginTimes),
+          sampleCount: userMetrics.earlyBirdLoginTimes.length,
+        };
+      })
+      .filter(
+        (
+          candidate,
+        ): candidate is {
+          userId: string;
+          medianLoginTime: number;
+          sampleCount: number;
+        } => candidate.medianLoginTime !== null,
+      )
+      .sort((firstCandidate, secondCandidate) => {
+        if (firstCandidate.medianLoginTime !== secondCandidate.medianLoginTime) {
+          return firstCandidate.medianLoginTime - secondCandidate.medianLoginTime;
+        }
+
+        if (firstCandidate.sampleCount !== secondCandidate.sampleCount) {
+          return secondCandidate.sampleCount - firstCandidate.sampleCount;
+        }
+
+        return firstCandidate.userId.localeCompare(secondCandidate.userId);
+      }),
   );
 
-  const earlyBirdCandidate = checkInsBeforeScrum
-    .filter((attendance) => attendance.login >= earlyBirdCutoff)
-    .sort((firstAttendance, secondAttendance) => {
-      return firstAttendance.login.getTime() - secondAttendance.login.getTime();
-    })[0];
+  const nightOwlCandidates = buildRankedAwardUserIds(
+    weeklyAwardMetrics
+      .filter((userMetrics) => userMetrics.nightOwlActiveMs > 0)
+      .sort((firstCandidate, secondCandidate) => {
+        if (firstCandidate.nightOwlActiveMs !== secondCandidate.nightOwlActiveMs) {
+          return secondCandidate.nightOwlActiveMs - firstCandidate.nightOwlActiveMs;
+        }
 
-  const lazyBeaverCandidate = checkInsBeforeScrum
-    .slice()
-    .sort((firstAttendance, secondAttendance) => {
-      return secondAttendance.login.getTime() - firstAttendance.login.getTime();
-    })[0];
+        return firstCandidate.userId.localeCompare(secondCandidate.userId);
+      }),
+  );
 
-  const timelyTurtleCandidate = checkInsBeforeScrum
-    .slice()
-    .sort((firstAttendance, secondAttendance) => {
-      const firstDistance = Math.abs(
-        firstAttendance.login.getTime() - officeStart.getTime(),
-      );
-      const secondDistance = Math.abs(
-        secondAttendance.login.getTime() - officeStart.getTime(),
-      );
+  const timelyTurtleCandidates = buildRankedAwardUserIds(
+    weeklyAwardMetrics
+      .map((userMetrics) => {
+        return {
+          userId: userMetrics.userId,
+          varianceAroundOfficeStart: getAverageSquaredDistanceFromTarget(
+            userMetrics.loginTimes,
+            OFFICE_START_TIME_IN_MS,
+          ),
+          sampleCount: userMetrics.loginTimes.length,
+        };
+      })
+      .filter(
+        (
+          candidate,
+        ): candidate is {
+          userId: string;
+          varianceAroundOfficeStart: number;
+          sampleCount: number;
+        } => candidate.varianceAroundOfficeStart !== null,
+      )
+      .sort((firstCandidate, secondCandidate) => {
+        if (
+          firstCandidate.varianceAroundOfficeStart !==
+          secondCandidate.varianceAroundOfficeStart
+        ) {
+          return (
+            firstCandidate.varianceAroundOfficeStart -
+            secondCandidate.varianceAroundOfficeStart
+          );
+        }
 
-      if (firstDistance === secondDistance) {
-        return firstAttendance.login.getTime() - secondAttendance.login.getTime();
-      }
+        if (firstCandidate.sampleCount !== secondCandidate.sampleCount) {
+          return secondCandidate.sampleCount - firstCandidate.sampleCount;
+        }
 
-      return firstDistance - secondDistance;
-    })[0];
+        return firstCandidate.userId.localeCompare(secondCandidate.userId);
+      }),
+  );
 
-  const projectHopperCandidate = checkInsBeforeScrum
-    .filter((attendance) => attendance.workSegments.length > 1)
-    .slice()
-    .sort((firstAttendance, secondAttendance) => {
-      const segmentGap =
-        secondAttendance.workSegments.length - firstAttendance.workSegments.length;
-      if (segmentGap !== 0) {
-        return segmentGap;
-      }
+  const lazyBeaverCandidates = buildRankedAwardUserIds(
+    weeklyAwardMetrics
+      .map((userMetrics) => {
+        return {
+          userId: userMetrics.userId,
+          medianLoginTime: getMedian(userMetrics.lazyBeaverLoginTimes),
+          sampleCount: userMetrics.lazyBeaverLoginTimes.length,
+        };
+      })
+      .filter(
+        (
+          candidate,
+        ): candidate is {
+          userId: string;
+          medianLoginTime: number;
+          sampleCount: number;
+        } => candidate.medianLoginTime !== null,
+      )
+      .sort((firstCandidate, secondCandidate) => {
+        if (firstCandidate.medianLoginTime !== secondCandidate.medianLoginTime) {
+          return secondCandidate.medianLoginTime - firstCandidate.medianLoginTime;
+        }
 
-      return firstAttendance.login.getTime() - secondAttendance.login.getTime();
-    })[0];
+        if (firstCandidate.sampleCount !== secondCandidate.sampleCount) {
+          return secondCandidate.sampleCount - firstCandidate.sampleCount;
+        }
 
-  const lastNightAttendances = await db.attendance.findMany({
-    where: {
-      logout: {
-        gte: lastNightStart,
-        lte: lastNightEnd,
-      },
-    },
-    select: {
-      userId: true,
-      logout: true,
-    },
-  });
+        return firstCandidate.userId.localeCompare(secondCandidate.userId);
+      }),
+  );
 
-  const nightOwlCandidate = lastNightAttendances
-    .filter((attendance) => attendance.logout)
-    .sort((firstAttendance, secondAttendance) => {
-      const firstLogoutTime = firstAttendance.logout?.getTime() || 0;
-      const secondLogoutTime = secondAttendance.logout?.getTime() || 0;
-      return secondLogoutTime - firstLogoutTime;
-    })[0];
+  const projectHopperCandidates = buildRankedAwardUserIds(
+    weeklyAwardMetrics
+      .filter((userMetrics) => userMetrics.projectSwitchCount > 0)
+      .sort((firstCandidate, secondCandidate) => {
+        if (
+          firstCandidate.projectSwitchCount !== secondCandidate.projectSwitchCount
+        ) {
+          return (
+            secondCandidate.projectSwitchCount -
+            firstCandidate.projectSwitchCount
+          );
+        }
+
+        return firstCandidate.userId.localeCompare(secondCandidate.userId);
+      }),
+  );
+
+  const awardedUserIds = new Set<string>();
+
+  // Award precedence matches the Sunday announcement order.
+  const earlyBirdUserId = pickNextAwardWinner(earlyBirdCandidates, awardedUserIds);
+  const nightOwlUserId = pickNextAwardWinner(nightOwlCandidates, awardedUserIds);
+  const timelyTurtleUserId = pickNextAwardWinner(
+    timelyTurtleCandidates,
+    awardedUserIds,
+  );
+  const lazyBeaverUserId = pickNextAwardWinner(
+    lazyBeaverCandidates,
+    awardedUserIds,
+  );
+  const projectHopperUserId = pickNextAwardWinner(
+    projectHopperCandidates,
+    awardedUserIds,
+  );
 
   return {
-    earlyBirdUserId: earlyBirdCandidate?.userId || null,
-    nightOwlUserId: nightOwlCandidate?.userId || null,
-    timelyTurtleUserId: timelyTurtleCandidate?.userId || null,
-    lazyBeaverUserId: lazyBeaverCandidate?.userId || null,
-    projectHopperUserId: projectHopperCandidate?.userId || null,
+    earlyBirdUserId,
+    nightOwlUserId,
+    timelyTurtleUserId,
+    lazyBeaverUserId,
+    projectHopperUserId,
   };
 }
 
