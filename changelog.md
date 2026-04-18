@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented below.
 
+## v2.1.0 [2026-05-20]
+
+### Changed
+
+- Updated attendance awards to reflect weekly rankings based on consistency and multiple metrics, replacing the previous daily one-off winners.
+
 ## v2.0.0 [2026-04-15]
 
 Major update focused on Discord voice recordings, personalized attendance insights, and a simplified workflow after retiring the earlier meeting scheduling flow.
