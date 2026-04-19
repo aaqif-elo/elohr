@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented below.
 
+## v2.1.1 [2026-04-20]
+
+### Fixed
+
+- Restored the protected recordings web experience with `/recordings` list and detail pages for browsing session metadata, participants, summaries, and transcripts.
+- Added authenticated recording file downloads for merged audio, per-user audio, transcripts, and summaries through the recordings UI.
+- Prevented Discord bot voice-state updates and unlinked users from triggering attendance errors or unhandled `User not found` rejections during recording-related voice events.
+- Excluded admin users from weekly attendance award winner selection.
+
+### Changed
+
+- Reduced noisy recording pipeline debug logging during audio processing.
+
 ## v2.1.0 [2026-04-18]
 
 ### Changed
