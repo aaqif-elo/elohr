@@ -127,11 +127,13 @@ function setupEventHandlers() {
       handleRecordingVoiceStateUpdate(oldState, newState);
 
       if (production) {
-        handleVoiceStateChange(
+        void handleVoiceStateChange(
           oldState,
           newState,
           sendAttendanceChangeMessageAndSetStatus
-        );
+        ).catch((error) => {
+          console.error("Error handling attendance voice state change:", error);
+        });
       }
     });
   });

@@ -209,6 +209,9 @@ export const handleVoiceStateChange = async (
   postTransitionState: VoiceState,
   attendanceChangeCallBack: (msg: string, userDiscordId: string) => void
 ) => {
+  const member = postTransitionState.member ?? preTransitionState.member;
+  if (member?.user.bot) return;
+
   const isSameChannel =
     preTransitionState.channelId === postTransitionState.channelId;
   if (isSameChannel) return;
@@ -219,8 +222,16 @@ export const handleVoiceStateChange = async (
   )
     return;
 
-  const user = await getUserByDiscordId(postTransitionState.id);
-  if (!user) return;
+  let user: User;
+  try {
+    user = await getUserByDiscordId(postTransitionState.id);
+  } catch (error) {
+    if (error instanceof Error && error.message === "User not found") {
+      return;
+    }
+
+    throw error;
+  }
 
   // Clear any existing timeout for this user first
   if (pendingTimeouts[user.id] !== undefined) {
