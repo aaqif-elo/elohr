@@ -11,7 +11,13 @@ services:
     environment:
       NODE_ENV: production
       PORT: ${PORT:-2500}
+      RECORDINGS_PATH: /app/recordings
       VITE_TEAM_TZ: ${VITE_TEAM_TZ:-UTC}
     ports:
       - "${PORT:-2500}:2500"
+    volumes:
+      - recordings-data:/app/recordings
     restart: unless-stopped
+
+volumes:
+  recordings-data:

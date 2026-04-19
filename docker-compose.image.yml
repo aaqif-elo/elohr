@@ -7,6 +7,12 @@ services:
     environment:
       NODE_ENV: production
       PORT: ${PORT:-2500}
+      RECORDINGS_PATH: /app/recordings
     ports:
       - "${PORT:-2500}:2500"
+    volumes:
+      - recordings-data:/app/recordings
     restart: unless-stopped
+
+volumes:
+  recordings-data:
