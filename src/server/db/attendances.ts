@@ -1,4 +1,4 @@
-import type { Attendance } from "@prisma/client";
+import { UserRoleTypes, type Attendance } from "@prisma/client";
 import { db, ONE_DAY_IN_MS } from ".";
 import { getStartOfDay, getEndOfDay } from "./util";
 import EventEmitter from "events";
@@ -875,6 +875,16 @@ export async function getWeeklyAttendanceAwardWinners(
 
   const weeklyAttendances = await db.attendance.findMany({
     where: {
+      user: {
+        is: {
+          isAdmin: false,
+          NOT: {
+            roles: {
+              has: UserRoleTypes.ADMIN,
+            },
+          },
+        },
+      },
       login: {
         gte: completedWeekDateRange.start,
         lte: completedWeekDateRange.end,

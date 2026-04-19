@@ -82,10 +82,6 @@ function writeSilencePaddingBytes(
     bytesWritten += chunkSize;
   }
 
-  console.log(
-    `Wrote ${silenceBytes} bytes (~${getPcmDurationMs(silenceBytes).toFixed(1)}ms) of silence padding for user ${userId}`,
-  );
-
   return bytesWritten;
 }
 
