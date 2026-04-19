@@ -75,6 +75,8 @@ RUN apt-get update && apt-get install -y \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+COPY --from=prod-deps /app/package.json ./package.json
+COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=prod-deps /app/.output .
 EXPOSE 2500
 CMD ["node", "./server/index.mjs"]

@@ -58,16 +58,10 @@ export const attendanceRouter = createTRPCRouter({
     const controller = new AbortController();
 
     // Clean up any existing subscription for this user
-    const hadPrevious = cleanupExistingSubscription(userId);
-    if (hadPrevious) {
-      console.log(`Cleaned up previous subscription for user ${userId}`);
-    }
+    cleanupExistingSubscription(userId);
 
     // Register the new subscription
     registerSubscription(userId, controller);
-
-    // Log subscription start
-    console.log(`User ${userId} subscribing to attendance changes`);
 
     // Create a function to filter events for this specific user
     function* maybeYield(attendance: Attendance) {
@@ -83,7 +77,6 @@ export const attendanceRouter = createTRPCRouter({
       if (cleanupDone) return;
       cleanupDone = true;
 
-      console.log(`Final cleanup for user ${userId}`);
       activeSubscriptions.delete(userId);
     };
 
@@ -95,13 +88,6 @@ export const attendanceRouter = createTRPCRouter({
       });
 
       try {
-        // First log the current count for debugging
-        console.log(
-          `Current listener count: ${attendanceEvents.listenerCount(
-            "attendanceUpdated"
-          )}`
-        );
-
         // Create the iterable with its own signal
         for await (const [data] of attendanceEvents.toIterable(
           "attendanceUpdated",
@@ -109,17 +95,10 @@ export const attendanceRouter = createTRPCRouter({
             signal: AbortSignal.any([opts.signal, controller.signal]),
           }
         )) {
-          console.log(`Received attendance data for user: ${data.userId}`);
           yield* maybeYield(data);
         }
       } finally {
-        console.log(`User ${userId} subscription ended`);
         performCleanup();
-        console.log(
-          `Remaining listeners: ${attendanceEvents.listenerCount(
-            "attendanceUpdated"
-          )}`
-        );
       }
     }
   }),

@@ -242,7 +242,6 @@ export async function setNameStatus(
   id: string, // The Discord Id (UUID) for the user
 ) {
   if (!isValidTag(status)) {
-    console.error("Invalid ", status);
     // Reject if the status tag is invalid
     return;
   }

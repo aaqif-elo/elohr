@@ -114,7 +114,6 @@ const sendAttendanceChangeMessageAndSetStatus = (
     return;
   }
   channel.send(`<@${userDiscordId}> ${message}`);
-  console.log(message.slice(0, 2).trim(), message);
   setNameStatus(message.slice(0, 2).trim(), userDiscordId);
 };
 
