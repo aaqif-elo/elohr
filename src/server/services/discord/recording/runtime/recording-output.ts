@@ -16,7 +16,6 @@ import {
   BYTES_PER_SECOND,
   EXPECTED_PCM_FRAME_SIZE,
   ZERO_BUFFER,
-  getPcmDurationMs,
   getTimelineOffsetMs,
 } from "../shared/audio-format";
 import {
@@ -63,7 +62,6 @@ export function createConcealmentFrame(state: UserAudioState): Buffer {
 function writeSilencePaddingBytes(
   outputStream: UserAudioState["outputStream"],
   silenceByteCount: number,
-  userId: string,
   onBackpressure?: () => void,
 ): number {
   const silenceBytes = alignToFrame(Math.max(0, silenceByteCount));
@@ -88,13 +86,11 @@ function writeSilencePaddingBytes(
 export function writeSilencePadding(
   outputStream: UserAudioState["outputStream"],
   silenceDurationMs: number,
-  userId: string,
   onBackpressure?: () => void,
 ): number {
   return writeSilencePaddingBytes(
     outputStream,
     Math.floor((silenceDurationMs / 1000) * BYTES_PER_SECOND),
-    userId,
     onBackpressure,
   );
 }
@@ -238,7 +234,6 @@ export function writeSilencePaddingToUserTimeline(
   const silenceBytes = writeSilencePadding(
     state.outputStream,
     silenceDurationMs,
-    userId,
     () => {
       markBackpressure(
         session,
@@ -270,7 +265,6 @@ export function writeTrailingSilenceToSessionEnd(
   const writtenSilenceBytes = writeSilencePaddingBytes(
     state.outputStream,
     trailingSilenceBytes,
-    userId,
     () => {
       markBackpressure(
         session,

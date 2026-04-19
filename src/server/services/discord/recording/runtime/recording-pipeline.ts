@@ -215,7 +215,6 @@ function subscribeToUser(
       const initialSilenceBytes = writeSilencePadding(
         audioState.outputStream,
         currentMeetingTimeMs,
-        userId,
       );
       advanceUserAudioCursor(audioState, initialSilenceBytes);
     }
