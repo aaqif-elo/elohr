@@ -6,24 +6,6 @@ import { launch } from "puppeteer";
 import { getGuildMember } from ".";
 import type { Attendance } from "@prisma/client";
 
-const ATTENDANCE_AWARD_EMOJIS = ["🐦", "🦉", "🐢", "🦫", "🦘"];
-
-const isAttendanceAwardEmoji = (emoji: string): boolean => {
-  return ATTENDANCE_AWARD_EMOJIS.includes(emoji);
-};
-
-const getNicknameBase = (member: GuildMember): string => {
-  return member.nickname ?? member.user.displayName;
-};
-
-const removeAttendanceAwardEmojis = (nickname: string): string => {
-  let sanitizedNickname = nickname;
-  for (const emoji of ATTENDANCE_AWARD_EMOJIS) {
-    sanitizedNickname = sanitizedNickname.split(emoji).join("");
-  }
-
-  return sanitizedNickname.replace(/\s{2,}/g, " ").trim();
-};
 
 // Queue system for attendance image reports
 let isProcessingImageQueue = false;
@@ -202,28 +184,19 @@ async function getAttendanceStatsImageInternal(
   return Buffer.from(buffer);
 }
 
-// Checks if the nickname contains any of the status tags
+// Checks if the nickname starts with the available status tag
 function hasStatus(nickname: string | null): boolean {
   if (!nickname) {
     return false;
   }
   return (
-    nickname.match(new RegExp(`^${process.env.STATUS_TAG_AVAILABLE}`, "g")) !==
-      null || // Check if the nickname starts with STATUS_TAG_AVAILABLE
-    nickname.match(
-      new RegExp(`^${process.env.STATUS_TAG_UNAVAILABLE}`, "g"),
-    ) !== null || // Check if the nickname starts with STATUS_TAG_UNAVAILABLE
-    nickname.match(new RegExp(`^${process.env.STATUS_TAG_BREAK}`, "g")) !== null // Check if the nickname starts with STATUS_TAG_BREAK
+    nickname.match(new RegExp(`^${process.env.STATUS_TAG_AVAILABLE}`, "g")) !== null
   );
 }
 
-// Checks if the provided status tag is valid
+// Only STATUS_TAG_AVAILABLE is a valid tag in hourly mode
 function isValidTag(statusTag: string): boolean {
-  return (
-    statusTag === process.env.STATUS_TAG_AVAILABLE || // Check if the statusTag equals STATUS_TAG_AVAILABLE
-    statusTag === process.env.STATUS_TAG_UNAVAILABLE || // Check if the statusTag equals STATUS_TAG_UNAVAILABLE
-    statusTag === process.env.STATUS_TAG_BREAK // Check if the statusTag equals STATUS_TAG_BREAK
-  );
+  return statusTag === process.env.STATUS_TAG_AVAILABLE;
 }
 
 // Given a Discord GuildMember
@@ -270,55 +243,22 @@ export async function setNameStatus(
   }
 }
 
-export async function setAttendanceAwardEmoji(id: string, emoji: string) {
-  if (!isAttendanceAwardEmoji(emoji)) {
-    console.error("Invalid attendance award emoji:", emoji);
-    return;
-  }
-
+export async function clearNameStatus(id: string) {
   const member = await getGuildMember(id);
-  if (!member || isAdmin(member)) {
+
+  if (!member) {
+    console.error("Member not found");
     return;
   }
 
-  const currentNickname = getNicknameBase(member);
-  const nicknameWithoutAwards = removeAttendanceAwardEmojis(currentNickname);
+  if (isAdmin(member)) return;
 
-  const existingAwards = ATTENDANCE_AWARD_EMOJIS.filter((existingEmoji) =>
-    currentNickname.includes(existingEmoji),
-  );
-
-  if (!existingAwards.includes(emoji)) {
-    existingAwards.push(emoji);
-  }
-
-  const awardSuffix = existingAwards.length ? ` ${existingAwards.join(" ")}` : "";
-  const nextNickname = `${nicknameWithoutAwards}${awardSuffix}`.substring(0, 32);
+  const current = member.nickname ?? member.user.displayName;
+  if (!hasStatus(current)) return;
 
   try {
-    await member.setNickname(nextNickname);
-  } catch (error) {
-    console.error("Failed to set attendance award emoji:", error);
-  }
-}
-
-export async function clearAttendanceAwardEmojisForUsers(discordIds: string[]) {
-  for (const discordId of discordIds) {
-    try {
-      const member = await getGuildMember(discordId);
-      if (!member || isAdmin(member)) {
-        continue;
-      }
-
-      const currentNickname = getNicknameBase(member);
-      const nicknameWithoutAwards = removeAttendanceAwardEmojis(currentNickname);
-      if (nicknameWithoutAwards === currentNickname) {
-        continue;
-      }
-
-      await member.setNickname(nicknameWithoutAwards.substring(0, 32));
-    } catch (error) {
-      console.error(`Failed to clear attendance award emojis for ${discordId}:`, error);
-    }
+    await member.setNickname(current.substring(1).trim().substring(0, 32));
+  } catch (err) {
+    console.error(err);
   }
 }
