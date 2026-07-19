@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup, onMount, Show, For } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type {
   UserState} from "../../store";
 import {
@@ -23,87 +23,6 @@ import EmployeeList from "./EmployeeList";
 import { CircularTimeTracking } from "./CircularTimeTracker";
 import { generateTimeSegments } from "../../store/utils";
 import type { TrpcAttendanceSummary } from "../../types/attendance";
-import { HolidayModal } from "./HolidayModal";
-import toast from "solid-toast";
-
-// Update LeaveRequestModal to accept array of dates
-const LeaveRequestModal = (props: {
-  isOpen: boolean;
-  dates: Date[];
-  onClose: () => void;
-  onConfirm: (dates: Date[], reason: string) => void;
-}) => {
-  const [reason, setReason] = createSignal("");
-  const isReasonRequired = () => props.dates.length > 2;
-
-  const handleSubmit = (e: Event) => {
-    e.preventDefault();
-    if (isReasonRequired() && !reason()) {
-      toast.error("Reason is required for leave requests longer than 2 days");
-      return;
-    }
-    props.onConfirm(props.dates, reason());
-    setReason(""); // Reset the form
-  };
-
-  return (
-    <Show when={props.isOpen}>
-    <div class="bg-opacity-50 fixed inset-0 z-50 flex items-center justify-center bg-black">
-      <div class="w-full max-w-md rounded-lg bg-white p-6 shadow-xl dark:bg-neutral-800">
-        <h2 class="mb-4 text-xl font-bold">Request Leave</h2>
-        <div class="mb-4">
-          <p class="font-medium">Selected Dates ({props.dates.length} days):</p>
-          <div class="mt-2 max-h-40 overflow-auto rounded border p-2">
-            <For each={props.dates}>{(date) => (
-              <div class="py-1">
-                <span class="font-medium text-blue-600 dark:text-blue-400">
-                  {date.toLocaleDateString("en-US", { weekday: "long" })}
-                </span>{" "}
-                -{" "}
-                {date.toLocaleDateString("en-US", {
-                  year: "numeric",
-                  month: "short",
-                  day: "numeric",
-                })}
-              </div>
-            )}</For>
-          </div>
-        </div>
-        <form onSubmit={handleSubmit}>
-          <div class="mb-4">
-            <label class="mb-2 block text-sm font-medium" for="reason">
-              Reason {isReasonRequired() ? "(required)" : "(optional)"}
-            </label>
-            <textarea
-              id="reason"
-              value={reason()}
-              onInput={(e) => setReason(e.currentTarget.value)}
-              class="w-full rounded-lg border p-2.5 text-sm"
-              placeholder="Enter reason for leave request"
-            />
-          </div>
-          <div class="flex justify-end space-x-2">
-            <button
-              type="button"
-              onClick={() => props.onClose()}
-              class="rounded-lg border px-5 py-2.5 text-sm font-medium"
-            >
-              Cancel
-            </button>
-            <button
-              disabled={isReasonRequired() && !reason()}
-              type="submit"
-              class="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400 disabled:opacity-50"
-            >
-              Submit Request
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-    </Show>
-  );
-};
 
 export const AttendanceWrapper = (props: { date: Date }) => {
   const user = () => getUser();
@@ -117,24 +36,10 @@ export const AttendanceWrapper = (props: { date: Date }) => {
     null
   );
 
-  // Add a signal to store holiday highlights
-  const [holidayHighlights, setHolidayHighlights] = createSignal<
-    Record<string, DateHighlight>
-  >({});
-
   // Consolidate all date highlights
   const [dateHighlights, setDateHighlights] = createSignal<
     Record<string, DateHighlight>
   >({});
-
-  // Add these signals inside the AttendanceWrapper component
-  const [holidayModalOpen, setHolidayModalOpen] = createSignal(false);
-  const [selectedHolidayDate, setSelectedHolidayDate] =
-    createSignal<Date | null>(null);
-
-  // Simplified state for leave request
-  const [leaveModalOpen, setLeaveModalOpen] = createSignal(false);
-  const [selectedLeaveDates, setSelectedLeaveDates] = createSignal<Date[]>([]);
 
   // Function to format date as YYYY-MM-DD for highlight keys
   const formatDateToYYYYMMDD = (date: Date): string => {
@@ -144,94 +49,24 @@ export const AttendanceWrapper = (props: { date: Date }) => {
     )}-${String(date.getDate()).padStart(2, "0")}`;
   };
 
-  // Function to update highlights based on summary and holidays
+  // Function to update highlights based on summary
   const updateHighlights = () => {
-    const highlights: Record<string, DateHighlight> = {
-      ...holidayHighlights(),
-    };
+    const highlights: Record<string, DateHighlight> = {};
     const currentSummary = user()?.attendanceSummary;
 
-    // Extract worked dates for checking against holidays and weekends
-    const workedDates: Date[] = currentSummary?.stats.workedDates || [];
-    const workedDateStrings = workedDates.map((date) =>
-      formatDateToYYYYMMDD(date)
-    );
-
     if (currentSummary) {
-      // Update holiday colors if they were worked days
-      Object.keys(highlights).forEach((dateString) => {
-        const highlight = highlights[dateString];
-        if (highlight.isHoliday && workedDateStrings.includes(dateString)) {
-          // Change color to green for worked holidays
-          highlights[dateString] = {
-            ...highlight,
-            color: Legends.workedHolidaysOrWeekends,
-            description: `${highlight.description} (Working)`,
-          };
-        }
-      });
-
       // Add weekend highlights if they are worked days
+      const workedDates: Date[] = currentSummary.stats.workedDates || [];
       workedDates.forEach((date) => {
         const day = date.getDay();
-        // Check if it's a weekend (Friday=5, Saturday=6 based on weekendDays prop)
         if (day === 5 || day === 6) {
           const dateString = formatDateToYYYYMMDD(date);
-          // Skip if this date already has a highlight (like a holiday)
-          if (!highlights[dateString]) {
-            highlights[dateString] = {
-              color: Legends.workedHolidaysOrWeekends,
-              description: "Working on Weekend",
-            };
-          }
+          highlights[dateString] = {
+            color: Legends.workedHolidaysOrWeekends,
+            description: "Working on Weekend",
+          };
         }
       });
-
-      // Process detailed leave information first
-      if (currentSummary.stats.leaveInfo) {
-        currentSummary.stats.leaveInfo.forEach((leaveInfo) => {
-          const dateString = formatDateToYYYYMMDD(leaveInfo.date);
-
-          // Create descriptive text
-          let description = "On Leave";
-          let descriptionDetails = "";
-
-          // Add reason if available
-          if (leaveInfo.reason) {
-            description = `On Leave (${leaveInfo.reason})`;
-          }
-
-          // Add approval details if available
-          if (leaveInfo.approved && leaveInfo.approvedDate) {
-            const approvalDate = leaveInfo.approvedDate.toLocaleDateString(
-              "en-US",
-              {
-                year: "numeric",
-                month: "short",
-                day: "numeric",
-              }
-            );
-            descriptionDetails = `Approved on ${approvalDate}`;
-          }
-
-          highlights[dateString] = {
-            color: Legends.leaves,
-            description,
-            descriptionDetails: descriptionDetails || undefined,
-            isLeave: true,
-          };
-        });
-      } else {
-        // Fallback to original implementation if leaveInfo is not available
-        currentSummary.stats.leaveDates.forEach((date) => {
-          const dateString = formatDateToYYYYMMDD(date);
-          highlights[dateString] = {
-            color: Legends.leaves,
-            description: "On Leave",
-            isLeave: true,
-          };
-        });
-      }
 
       // Add absent dates
       currentSummary.stats.absentDates.forEach((date) => {
@@ -250,13 +85,6 @@ export const AttendanceWrapper = (props: { date: Date }) => {
   // Update highlights when user summary changes
   createEffect(() => {
     if (user()?.attendanceSummary) {
-      updateHighlights();
-    }
-  });
-
-  // Merge holiday highlights when they are fetched
-  createEffect(() => {
-    if (Object.keys(holidayHighlights()).length > 0) {
       updateHighlights();
     }
   });
@@ -302,68 +130,6 @@ export const AttendanceWrapper = (props: { date: Date }) => {
     }
   };
 
-  // Function to fetch holidays for a specific year
-  const fetchHolidays = async (year?: string) => {
-    try {
-      const holidays = await api.holidays.getHolidaysForYear.query({
-        year: year || props.date.getFullYear().toString(),
-      });
-
-      // Format holidays for the calendar
-      const highlights: Record<string, DateHighlight> = {};
-
-      holidays.forEach((holiday) => {
-        // Get the effective date (either overriden or original)
-        const effectiveDate = holiday.overridenDate || holiday.originalDate;
-
-        // Convert to Date object if it's a string
-        const dateObj = new Date(effectiveDate);
-
-        // Format date as YYYY-MM-DD
-        const dateString = formatDateToYYYYMMDD(dateObj);
-
-        // Create base description details
-        let details = holiday.description || "";
-
-        // Add original date info if the holiday was shifted
-        if (holiday.overridenDate) {
-          const originalDate = new Date(holiday.originalDate);
-          const formattedOriginalDate = originalDate.toLocaleDateString(
-            "en-US",
-            {
-              weekday: "long",
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            }
-          );
-
-          // Add original date information to description details
-          details = details
-            ? `${details}\n\nOriginal date: ${formattedOriginalDate}`
-            : `Original date: ${formattedOriginalDate}`;
-        }
-
-        // Add announcement status to tooltip details
-        if (holiday.announcementSent) {
-          details = `${details}\n\nAnnouncement sent`;
-        }
-
-        highlights[dateString] = {
-          color: Legends.holidays,
-          description: holiday.name,
-          // Store additional information that can be used in the tooltip
-          descriptionDetails: details || undefined,
-          isHoliday: true,
-        };
-      });
-
-      setHolidayHighlights(highlights);
-    } catch (err) {
-      console.error("Failed to fetch holidays:", err);
-    }
-  };
-
   // We'll fetch the attendance for the chosen date
   const fetchAttendance = async (theDate: Date) => {
     setLoadingAttendance(true);
@@ -401,7 +167,6 @@ export const AttendanceWrapper = (props: { date: Date }) => {
 
   onMount(() => {
     fetchAttendance(props.date);
-    fetchHolidays();
   });
 
   onMount(() => {
@@ -483,144 +248,6 @@ export const AttendanceWrapper = (props: { date: Date }) => {
     }
   });
 
-  // Function to refresh calendar data - used after operations
-  const refreshCalendarData = async (date?: Date) => {
-    const targetDate = date || props.date;
-    await Promise.all([
-      fetchHolidays(targetDate.getFullYear().toString()),
-      fetchAttendance(targetDate),
-    ]);
-  };
-
-  // Handler for completed leave selection from Calendar
-  const handleLeaveRequestComplete = (dates: Date[]) => {
-    setSelectedLeaveDates(dates);
-    setLeaveModalOpen(true);
-  };
-
-  // Submit the leave request
-  const handleLeaveConfirm = async (dates: Date[], reason: string) => {
-    setLeaveModalOpen(false);
-    setLoadingAttendance(true);
-
-    try {
-      // Call API to request leave with multiple dates
-      await api.leaves.requestLeave.mutate({
-        dates: dates.map((date) => date.toISOString()),
-        reason: reason || undefined,
-      });
-
-      // Refresh calendar data
-      await refreshCalendarData();
-      toast.success("Leave request submitted successfully");
-    } catch (error) {
-      console.error("Failed to request leave:", error);
-      toast.error("Failed to request leave. Please try again.");
-    } finally {
-      setLoadingAttendance(false);
-    }
-  };
-
-  // Handle leave cancellation
-  const handleCancelLeave = async (date: Date) => {
-    try {
-      setLoadingAttendance(true);
-      await api.leaves.cancelLeave.mutate({ date: date.toISOString() });
-      toast.success("Leave request cancelled successfully");
-      refreshCalendarData();
-    } catch (err) {
-      console.error("Failed to cancel leave", err);
-      toast.error("Failed to cancel leave request");
-    }
-  };
-
-  const handleConvertToHoliday = async (date: Date) => {
-    const dateToUse = new Date(date);
-    dateToUse.setHours(date.getHours() - date.getTimezoneOffset() / 60);
-    setLoadingAttendance(true);
-    try {
-      setSelectedHolidayDate(dateToUse);
-      setHolidayModalOpen(true);
-    } finally {
-      setLoadingAttendance(false);
-    }
-  };
-
-  const handleConvertToWorkday = async (date: Date) => {
-    setLoadingAttendance(true);
-    try {
-      const dateToUse = new Date(date);
-      dateToUse.setHours(date.getHours() - date.getTimezoneOffset() / 60);
-      // Call API to convert back to workday
-      await api.holidays.convertToWorkday.mutate({
-        date: dateToUse.toISOString(),
-      });
-
-      // Refetch holidays and attendance after change
-      await refreshCalendarData(date);
-      toast.success(`Successfully converted to workday`);
-    } catch (error) {
-      console.error("Failed to convert to workday:", error);
-      toast.error("Failed to convert to workday. Please try again.");
-    } finally {
-      setLoadingAttendance(false);
-    }
-  };
-
-  const handleShiftHoliday = async (originalDate: Date, newDate: Date) => {
-    setLoadingAttendance(true);
-    try {
-      const originalDateToUse = new Date(originalDate);
-      originalDateToUse.setHours(
-        originalDate.getHours() - originalDate.getTimezoneOffset() / 60
-      );
-      const newDateToUse = new Date(newDate);
-      newDateToUse.setHours(newDate.getHours() - newDate.getTimezoneOffset() / 60);
-      // Call API to shift the holiday from original date to new date
-      await api.holidays.shiftHoliday.mutate({
-        originalDate: originalDateToUse.toISOString(),
-        newDate: newDateToUse.toISOString(),
-      });
-
-      // Refresh calendar data to show the shifted holiday
-      await refreshCalendarData(newDate);
-      toast.success("Holiday shifted successfully");
-    } catch (error) {
-      console.error("Failed to shift holiday:", error);
-      toast.error("Failed to shift holiday. Please try again.");
-    } finally {
-      setLoadingAttendance(false);
-    }
-  };
-
-  const handleHolidayConfirm = async (name: string, description: string) => {
-    // Close the modal
-    setHolidayModalOpen(false);
-    if (!selectedHolidayDate()) return;
-
-    const holidayDate = selectedHolidayDate();
-    if (!holidayDate) return;
-
-    setLoadingAttendance(true);
-    try {
-      // Call API to convert to holiday with user-provided values
-      await api.holidays.convertToHoliday.mutate({
-        date: holidayDate.toISOString(),
-        name: name,
-        description: description || undefined,
-      });
-
-      // Refetch holidays and attendance after change
-      await refreshCalendarData(holidayDate);
-      toast.success(`Successfully created holiday: ${name}`);
-    } catch (error) {
-      console.error("Failed to convert to holiday:", error);
-      toast.error("Failed to create holiday. Please try again.");
-    } finally {
-      setLoadingAttendance(false);
-    }
-  };
-
   return (
     <div class="h-full">
       {/* Main responsive grid container */}
@@ -643,15 +270,9 @@ export const AttendanceWrapper = (props: { date: Date }) => {
               summary()
                 ? {
                     absences: summary()?.stats.daysAbsent ?? 0,
-                    leavesTaken: summary()?.stats.daysOnLeave ?? 0,
                   }
                 : undefined
             }
-            onLeaveRequestComplete={handleLeaveRequestComplete}
-            onCancelLeave={handleCancelLeave}
-            onConvertToHoliday={handleConvertToHoliday}
-            onConvertToWorkday={handleConvertToWorkday}
-            onShiftHoliday={handleShiftHoliday}
           />
         </div>
 
@@ -694,20 +315,6 @@ export const AttendanceWrapper = (props: { date: Date }) => {
           </Show>
         </div>
       </div>
-      <Show when={leaveModalOpen()}>
-        <LeaveRequestModal
-          isOpen={true}
-          dates={selectedLeaveDates()}
-          onClose={() => setLeaveModalOpen(false)}
-          onConfirm={handleLeaveConfirm}
-        />
-      </Show>
-      <HolidayModal
-        isOpen={holidayModalOpen()}
-        onClose={() => setHolidayModalOpen(false)}
-        onConfirm={handleHolidayConfirm}
-        date={selectedHolidayDate() || new Date()}
-      />
     </div>
   );
 };

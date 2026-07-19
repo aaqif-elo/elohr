@@ -1,29 +1,16 @@
 import {
   createSignal,
   createMemo,
-  createEffect,
   Show,
   For,
   on,
   onMount,
-  onCleanup,
 } from "solid-js";
 import { createStore } from "solid-js/store";
 import "./Calendar.css";
 import { getSystemTheme } from "./utils";
 import { SpinningCircles } from "../SpinningCircles";
 
-// Add imports for dropdown menu icon
-import { FiMoreVertical } from "solid-icons/fi";
-import { UserRoleTypes } from "@prisma/client";
-import { getUser } from "../../store";
-import toast from "solid-toast";
-
-// Menu item type for our dropdown
-type MenuAction = {
-  label: string;
-  action: (date: Date) => void | Promise<void>;
-};
 
 type CalendarDateParts = {
   day: number;
@@ -34,27 +21,21 @@ type CalendarDateParts = {
 
 
 export enum Legends {
-  workedHolidaysOrWeekends = "#4CAF50", // Green for worked holidays
-  leaves = "#FFA726", // Orange for leaves
+  workedHolidaysOrWeekends = "#4CAF50", // Green for worked weekends
   absences = "#E53935", // Red for absences
-  holidays = "#9C27B0", // Purple for holidays
   others = "#9e9e9e", // Grey for other dates
 }
 
 export type DateHighlight = {
   color: Legends;
   description: string;
-  descriptionDetails?: string; // Added field for detailed description
-  isHoliday?: boolean; // Added isHoliday flag to identify holidays
-  isAbsence?: boolean; // Add flag for absences
-  isLeave?: boolean; // Add flag for leaves taken
+  descriptionDetails?: string;
+  isAbsence?: boolean;
 };
 
-// Updated MonthStats to only include stats we can't calculate
 type MonthStats = {
   absences: number;
-  leavesTaken: number;
-  [key: string]: number; // Allow for custom stats
+  [key: string]: number;
 };
 
 type HRCalendarProps = {
@@ -90,19 +71,6 @@ type HRCalendarProps = {
    */
   loading?: boolean;
 
-  // Add new props for context menu actions
-  onConvertToHoliday?: (date: Date) => void | Promise<void>;
-  onConvertToWorkday?: (date: Date) => void | Promise<void>;
-  onShiftHoliday?: (originalDate: Date, newDate: Date) => void | Promise<void>;
-
-  // Add new prop for cancelling leave
-  onCancelLeave?: (date: Date) => void | Promise<void>;
-
-  /**
-   * Callback when user completes leave date selection
-   * Receives array of selected dates
-   */
-  onLeaveRequestComplete?: (dates: Date[]) => void;
 };
 
 export function HRCalendar(props: HRCalendarProps) {
@@ -127,33 +95,6 @@ export function HRCalendar(props: HRCalendarProps) {
     null
   );
 
-  // New state for dropdown menu
-  const [menuOpen, setMenuOpen] = createSignal<{
-    date: Date;
-    x: number;
-    y: number;
-  } | null>(null);
-
-  // Add new state for shift holiday mode
-  const [shiftHolidayMode, setShiftHolidayMode] = createSignal(false);
-  const [holidayToShift, setHolidayToShift] = createSignal<{
-    date: Date;
-    name: string;
-  } | null>(null);
-
-  // Add new state for leave selection
-  const [leaveSelectionMode, setLeaveSelectionMode] = createSignal(false);
-  const [selectedLeaveDates, setSelectedLeaveDates] = createSignal<Date[]>([]);
-
-  // Add these new state variables near your other state definitions
-  const [longPressTimer, setLongPressTimer] = createSignal<NodeJS.Timeout | null>(null);
-  const [longPressActive, setLongPressActive] = createSignal<boolean>(false);
-
-  // Check if user is admin
-  const isUserAdmin = () => {
-    const user = getUser();
-    return user?.roles.includes(UserRoleTypes.ADMIN) || false;
-  };
 
   // Check if a date is in the future or today
   function isCurrentOrFuture(
@@ -167,279 +108,18 @@ export function HRCalendar(props: HRCalendarProps) {
     return date >= today;
   }
 
-  // Helper function to format date as YYYY-MM-DD
-  function formatDateToYYYYMMDD(date: Date): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  }
-
-  // Get available menu actions for a date
-  function getMenuActions(date: Date): MenuAction[] {
-    const actions: MenuAction[] = [];
-    const currentDate = new Date();
-    currentDate.setHours(0, 0, 0, 0);
-    const isPastDate = date < currentDate;
-    const formattedDate = formatDateToYYYYMMDD(date);
-    const highlight = props.dateHighlights?.[formattedDate];
-
-    const isHolidayDate = highlight?.isHoliday === true;
-    const isWeekendDate = isWeekend(
-      date.getDate(),
-      date.getMonth(),
-      date.getFullYear()
-    );
-
-    // Replace onRequestLeave with internal handler
-    if (!isPastDate && !isHolidayDate && !isWeekendDate) {
-      actions.push({
-        label: "Request Leave",
-        action: () => {
-          // Start leave selection mode
-          setSelectedLeaveDates([date]);
-          setLeaveSelectionMode(true);
-        },
-      });
-    }
-
-    // Add cancel leave action for dates with existing leave requests
-    if (props.onCancelLeave && !isPastDate) {
-      if (highlight?.isLeave) {
-        actions.push({
-          label: "Cancel leave request",
-          action: async (date) => {
-            props.onCancelLeave?.(date);
-          },
-        });
-      }
-    }
-
-    // Admin-only actions
-    if (isUserAdmin()) {
-      // Add holiday and workday conversion options if it's a future date
-      if (!isPastDate) {
-        // Allow converting to holiday if it's not already a holiday
-        if (!isHolidayDate && props.onConvertToHoliday) {
-          actions.push({
-            label: "Mark as holiday",
-            action: props.onConvertToHoliday,
-          });
-        }
-
-        // Allow converting to workday if it's currently a holiday
-        if (isHolidayDate && props.onConvertToWorkday) {
-          actions.push({
-            label: "Mark as regular workday",
-            action: props.onConvertToWorkday,
-          });
-        }
-
-        // Allow shifting holiday if it's currently a holiday
-        if (isHolidayDate && props.onShiftHoliday) {
-          actions.push({
-            label: "Shift holiday to another date",
-            action: (date) => {
-              setHolidayToShift({
-                date,
-                name: highlight?.description || "Holiday",
-              });
-              setShiftHolidayMode(true);
-            },
-          });
-        }
-      }
-    }
-
-    return actions;
-  }
-
-  // Open menu dropdown
-  function openMenu(e: MouseEvent | { clientX: number; clientY: number }, day: number, month: number, year: number) {
-    // Check if stopPropagation exists before calling it
-    if ('stopPropagation' in e && typeof e.stopPropagation === 'function') {
-      e.stopPropagation();
-    }
-    
-    const date = new Date(year, month, day);
-  
-    // Check if menu is already open for this date
-    const currentMenu = menuOpen();
-    if (
-      currentMenu &&
-      currentMenu.date.getDate() === date.getDate() &&
-      currentMenu.date.getMonth() === date.getMonth() &&
-      currentMenu.date.getFullYear() === date.getFullYear()
-    ) {
-      // If clicking the same date's menu icon again, close the menu
-      closeMenu();
-    } else {
-      // Open menu for a new date
-      setMenuOpen({
-        date,
-        x: e.clientX,
-        y: e.clientY,
-      });
-    }
-  }
-
-  // Close menu dropdown
-  function closeMenu() {
-    setMenuOpen(null);
-  }
-
-  // Add global click handler to close menu when clicking outside
-  createEffect(() => {
-    if (menuOpen()) {
-      const handleOutsideClick = (e: MouseEvent) => {
-        // Check if click target is part of the menu
-        const menuElement = document.querySelector(".day-menu-dropdown");
-        if (menuElement && !menuElement.contains(e.target as Node)) {
-          closeMenu();
-        }
-      };
-
-      // Add the event listener to document
-      document.addEventListener("click", handleOutsideClick);
-
-      // Clean up when menu closes
-      onCleanup(() => {
-        document.removeEventListener("click", handleOutsideClick);
-      });
-    }
-  });
-
-  // Handle menu action
-  function handleMenuAction(action: MenuAction) {
-    const menu = menuOpen();
-    if (menu) {
-      action.action(menu.date);
-      closeMenu();
-    }
-  }
-
-  // Add function to check if a date is valid for shifting to
-  function isValidWorkDay(day: number, month: number, year: number): boolean {
-    // Must be a future date or today
-    if (!isCurrentOrFuture(day, month, year)) {
-      return false;
-    }
-
-    // Must not be a weekend
-    if (isWeekend(day, month, year)) {
-      return false;
-    }
-
-    // Must not be a holiday already
-    if (isHoliday(day, month, year)) {
-      return false;
-    }
-
-    return true;
-  }
-
-  // Add function to toggle date selection
-  function toggleDateSelection(date: Date) {
-    setSelectedLeaveDates((prev) => {
-      const dateStr = formatDateToYYYYMMDD(date);
-      const existingIndex = prev.findIndex(
-        (d) => formatDateToYYYYMMDD(d) === dateStr
-      );
-
-      if (existingIndex >= 0) {
-        // Remove date if already selected
-        return [
-          ...prev.slice(0, existingIndex),
-          ...prev.slice(existingIndex + 1),
-        ];
-      } else {
-        // Add date if not selected
-        return [...prev, date];
-      }
-    });
-  }
-
-  // Modify handleSelectDate to handle shift holiday mode
+  // Handle date selection
   function handleSelectDate(day: number, month: number, year: number) {
-    if (shiftHolidayMode() || leaveSelectionMode()) {
-      // If we're in shift mode, check if this is a valid target
-      if (isValidWorkDay(day, month, year)) {
-        const newDate = new Date(year, month, day);
-        if (shiftHolidayMode()) {
-          // Complete the shift with both dates
-          const holiday = holidayToShift();
-          if (holiday && props.onShiftHoliday) {
-            props.onShiftHoliday(holiday.date, newDate);
-          }
-          // Exit shift mode
-          setShiftHolidayMode(false);
-          setHolidayToShift(null);
-        } else {
-          // Toggle date selection for leave mode
-          toggleDateSelection(newDate);
-        }
-      }
-      // Do nothing if invalid target during shift mode
-      return;
-    }
-
-    // Regular date selection logic
     const newDate = new Date(year, month, day);
     setSelectedDate(newDate);
     props.onSelect?.(newDate);
 
-    // If selected date is not in current month view, update the view
     if (
       month !== currentDate().getMonth() ||
       year !== currentDate().getFullYear()
     ) {
       setCurrentDate(newDate);
     }
-  }
-
-  // Add ESC key handler to cancel shift mode
-  createEffect(() => {
-    if (shiftHolidayMode()) {
-      const handleEscKey = (e: KeyboardEvent) => {
-        if (e.key === "Escape") {
-          setShiftHolidayMode(false);
-          setHolidayToShift(null);
-        }
-      };
-
-      window.addEventListener("keydown", handleEscKey);
-
-      onCleanup(() => {
-        window.removeEventListener("keydown", handleEscKey);
-      });
-    }
-  });
-
-  // Add completion handlers
-  function completeLeaveSelection() {
-    const dates = selectedLeaveDates();
-    if (dates.length === 0) {
-      toast.error("Please select at least one date for leave");
-      return;
-    }
-
-    // Sort dates chronologically
-    const sortedDates = [...dates].sort((a, b) => a.getTime() - b.getTime());
-
-    // Send selected dates to parent component
-    props.onLeaveRequestComplete?.(sortedDates);
-
-    // Reset selection state
-    resetLeaveSelection();
-  }
-
-  function cancelLeaveSelection() {
-    resetLeaveSelection();
-  }
-
-  function resetLeaveSelection() {
-    setLeaveSelectionMode(false);
-    setSelectedLeaveDates([]);
   }
 
   // Update theme if system preference changes
@@ -468,21 +148,6 @@ export function HRCalendar(props: HRCalendarProps) {
     // Get total days in the month
     const totalDaysInMonth = new Date(year, month + 1, 0).getDate();
 
-    // Count holidays in the month
-    let holidays = 0;
-    if (props.dateHighlights) {
-      for (let day = 1; day <= totalDaysInMonth; day++) {
-        const dateString = `${year}-${String(month + 1).padStart(
-          2,
-          "0"
-        )}-${String(day).padStart(2, "0")}`;
-        const highlight = props.dateHighlights[dateString];
-        if (highlight && highlight.isHoliday) {
-          holidays++;
-        }
-      }
-    }
-
     // Count weekend days
     let weekends = 0;
     for (let day = 1; day <= totalDaysInMonth; day++) {
@@ -493,7 +158,7 @@ export function HRCalendar(props: HRCalendarProps) {
     }
 
     // Calculate total working days
-    const totalWorkingDays = totalDaysInMonth - holidays - weekends;
+    const totalWorkingDays = totalDaysInMonth - weekends;
 
     // Calculate working days till now
     const today = new Date();
@@ -505,17 +170,7 @@ export function HRCalendar(props: HRCalendarProps) {
 
       for (let day = 1; day <= currentDay; day++) {
         const date = new Date(year, month, day);
-        const dateString = `${year}-${String(month + 1).padStart(
-          2,
-          "0"
-        )}-${String(day).padStart(2, "0")}`;
-        const highlight = props.dateHighlights?.[dateString];
-
-        // Skip weekends and holidays
-        if (
-          !weekendDays().includes(date.getDay()) &&
-          !(highlight && highlight.isHoliday)
-        ) {
+        if (!weekendDays().includes(date.getDay())) {
           workingDaysTillNow++;
         }
       }
@@ -533,7 +188,6 @@ export function HRCalendar(props: HRCalendarProps) {
     return {
       totalWorkingDays,
       workingDaysTillNow,
-      holidays,
     };
   });
 
@@ -627,29 +281,13 @@ export function HRCalendar(props: HRCalendarProps) {
     return props.dateHighlights[dateString];
   }
 
-  // Helper functions to determine if a date belongs to a specific category
-  function isHoliday(day: number, month: number, year: number): boolean {
-    const highlight = getHighlight(day, month, year);
-    return !!highlight?.isHoliday;
-  }
-
   function isAbsence(day: number, month: number, year: number): boolean {
     const highlight = getHighlight(day, month, year);
     return !!highlight?.isAbsence;
   }
 
-  function isLeave(day: number, month: number, year: number): boolean {
-    const highlight = getHighlight(day, month, year);
-    return !!highlight?.isLeave;
-  }
-
   function isWorkingDay(day: number, month: number, year: number): boolean {
-    return (
-      !isWeekend(day, month, year) &&
-      !isHoliday(day, month, year) &&
-      !isAbsence(day, month, year) &&
-      !isLeave(day, month, year)
-    );
+    return !isWeekend(day, month, year) && !isAbsence(day, month, year);
   }
 
   function isWorkingDayTillNow(
@@ -677,8 +315,6 @@ export function HRCalendar(props: HRCalendarProps) {
     if (!category) return false;
 
     switch (category) {
-      case "holidays":
-        return isHoliday(day, month, year);
       case "workingDays":
         return isWorkingDay(day, month, year);
       case "workingDaysTillNow":
@@ -687,8 +323,6 @@ export function HRCalendar(props: HRCalendarProps) {
         return isWeekend(day, month, year);
       case "absences":
         return isAbsence(day, month, year);
-      case "leavesTaken":
-        return isLeave(day, month, year);
       default:
         return false;
     }
@@ -763,10 +397,6 @@ export function HRCalendar(props: HRCalendarProps) {
     if (highlight) {
       if (highlight.isAbsence) {
         setHoveredCategory("absences");
-      } else if (highlight.isHoliday) {
-        setHoveredCategory("holidays");
-      } else if (highlight.isLeave) {
-        setHoveredCategory("leavesTaken");
       }
 
       // Format the tooltip text with the description on a second line
@@ -808,50 +438,8 @@ export function HRCalendar(props: HRCalendarProps) {
     }
   }
 
-  // Add these helper functions for detecting long press
-  function handleTouchStart(e: TouchEvent, dayInfo: CalendarDateParts) {
-    if (props.loading || shiftHolidayMode() || leaveSelectionMode()) return;
-    
-    // Clear any existing timer
-    const currentLongPressTimer = longPressTimer();
-    if (currentLongPressTimer) {
-      clearTimeout(currentLongPressTimer);
-    }
-    
-    // Set new timer for long press (700ms is a good duration)
-    const timer = setTimeout(() => {
-      setLongPressActive(true);
-      // Open menu at the touch position
-      openMenu(
-        { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY } as MouseEvent,
-        dayInfo.day,
-        dayInfo.month,
-        dayInfo.year
-      );
-    }, 700);
-    
-    setLongPressTimer(timer);
-  }
-
-  function handleTouchEnd() {
-    // Clear timer if touch ends before long press is triggered
-    const currentLongPressTimer = longPressTimer();
-    if (currentLongPressTimer) {
-      clearTimeout(currentLongPressTimer);
-      setLongPressTimer(null);
-    }
-    
-    // Reset long press state after a brief delay to allow menu to process click
-    if (longPressActive()) {
-      setTimeout(() => {
-        setLongPressActive(false);
-      }, 300);
-    }
-  }
-
-  // Modify your day click handler to prevent normal clicks from firing during long press
   function handleDayClick(dayInfo: CalendarDateParts) {
-    if (props.loading || longPressActive()) return;
+    if (props.loading) return;
     handleSelectDate(dayInfo.day, dayInfo.month, dayInfo.year);
   }
 
@@ -887,36 +475,6 @@ export function HRCalendar(props: HRCalendarProps) {
     <div
       class={`hr-calendar ${theme() === "dark" ? "dark-mode" : "light-mode"}`}
     >
-      {/* Leave selection mode prompt */}
-      <Show when={leaveSelectionMode()}>
-        <div class="shift-holiday-prompt">
-          <div>
-            <span>
-              Select dates for leave request ({selectedLeaveDates().length}{" "}
-              selected)
-            </span>
-            <div class="text-xs opacity-80">
-              Click on dates to select/deselect
-            </div>
-          </div>
-          <div class="flex gap-2">
-            <button
-              type="button"
-              onClick={cancelLeaveSelection}
-              class="shift-cancel-btn"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={completeLeaveSelection}
-              class="shift-cancel-btn"
-            >
-              Done
-            </button>
-          </div>
-        </div>
-      </Show>
       <div class="hr-calendar-container">
         {/* Stats section */}
         <div class="hr-calendar-stats">
@@ -936,58 +494,19 @@ export function HRCalendar(props: HRCalendarProps) {
               color={Legends.workedHolidaysOrWeekends}
             />
             
-            <StatItem 
-              category="holidays"
-              label="Holidays"
-              value={calculatedStats().holidays}
-              color={Legends.holidays}
-            />
-            
-            <StatItem 
+            <StatItem
               category="absences"
               label="Absences"
               value={props.monthStats?.absences || 0}
               color={Legends.absences}
             />
-            
-            <StatItem 
-              category="leavesTaken"
-              label="Leaves Taken"
-              value={props.monthStats?.leavesTaken || 0}
-              color={Legends.leaves}
-            />
           </div>
 
-          {/* Add shift mode indicator in stats panel */}
-          <Show when={shiftHolidayMode()}>
-            <div class="shift-status-indicator">
-              <p>Shifting holiday: "{holidayToShift()?.name}"</p>
-              <p class="shift-instructions">
-                Navigate to any month and select a valid date
-              </p>
-              <button
-                type="button"
-                class="shift-cancel-btn"
-                onClick={() => {
-                  setShiftHolidayMode(false);
-                  setHolidayToShift(null);
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          </Show>
         </div>
 
         <div class="hr-calendar-main">
           {/* Keep existing header and weekdays sections */}
           <div class="hr-calendar-header">
-            {/* Move the shift prompt here instead of at the top level */}
-            <Show when={shiftHolidayMode()}>
-              <div class="shift-holiday-indicator">
-                Shifting: "{holidayToShift()?.name}"
-              </div>
-            </Show>
             <div class="hr-calendar-navigation">
               <button
                 type="button"
@@ -1058,33 +577,6 @@ export function HRCalendar(props: HRCalendarProps) {
                   dayInfo.month,
                   dayInfo.year
                 );
-                const isAnnounced = highlight?.descriptionDetails
-                  ?.toLowerCase()
-                  ?.includes("announce");
-                const showMenuIcon = createMemo(() => {
-                  return (
-                    !isWeekendDay &&
-                    isFutureOrToday &&
-                    !(shiftHolidayMode() || leaveSelectionMode())
-                  );
-                });
-                const isValidTarget = createMemo(() => {
-                  if (
-                    !isValidWorkDay(dayInfo.day, dayInfo.month, dayInfo.year)
-                  ) {
-                    return false;
-                  }
-                  return shiftHolidayMode() || leaveSelectionMode();
-                });
-
-                const isSelectedForLeave = createMemo(() => {
-                  return selectedLeaveDates().some(
-                    (date) =>
-                      date.getDate() === dayInfo.day &&
-                      date.getMonth() === dayInfo.month &&
-                      date.getFullYear() === dayInfo.year
-                  );
-                });
                 return (
                   <div
                     class="hr-calendar-day"
@@ -1099,12 +591,8 @@ export function HRCalendar(props: HRCalendarProps) {
                       today: isToday(dayInfo.day, dayInfo.month, dayInfo.year),
                       weekend: isWeekendDay,
                       highlighted: !!highlight,
-                      holiday: highlight?.isHoliday,
                       absence: highlight?.isAbsence,
-                      leave: highlight?.isLeave,
                       past: !isFutureOrToday,
-                      announced: isAnnounced,
-                      // Other existing classes...
                       "hover-highlight": matchesHoveredCategory(
                         dayInfo.day,
                         dayInfo.month,
@@ -1118,12 +606,6 @@ export function HRCalendar(props: HRCalendarProps) {
                           dayInfo.year
                         ) &&
                         !isWeekendDay,
-                      "has-menu": showMenuIcon(), // Hide menu during shift mode
-                      "shift-target": isValidTarget(), // Highlight valid shift targets
-                      "shift-invalid":
-                        (shiftHolidayMode() || leaveSelectionMode()) &&
-                        !isValidTarget(), // Dim invalid targets during shift
-                      "leave-selected": isSelectedForLeave(),
                     }}
                     style={{
                       "background-color": highlight
@@ -1132,35 +614,10 @@ export function HRCalendar(props: HRCalendarProps) {
                       "border-color": highlight ? highlight.color : undefined,
                     }}
                     onClick={() => handleDayClick(dayInfo)}
-                    onTouchStart={(e) => handleTouchStart(e, dayInfo)}
-                    onTouchEnd={handleTouchEnd}
-                    onTouchCancel={handleTouchEnd}
                     onMouseOver={(e) => handleDayMouseOver(e, dayInfo)}
                     onMouseOut={hideTooltip}
                   >
                     {dayInfo.day}
-
-                    {/* Add announcement indicator for holidays */}
-                    {isAnnounced && highlight?.isHoliday && (
-                      <div
-                        class="announcement-indicator"
-                        title="Holiday announced to team"
-                      >
-                        📢
-                      </div>
-                    )}
-
-                    {/* Menu icon for non-weekend future/today dates */}
-                    {showMenuIcon() && (
-                      <div
-                        class="day-menu-icon"
-                        onClick={(e) =>
-                          openMenu(e, dayInfo.day, dayInfo.month, dayInfo.year)
-                        }
-                      >
-                        <FiMoreVertical />
-                      </div>
-                    )}
                   </div>
                 );
               }}
@@ -1169,27 +626,7 @@ export function HRCalendar(props: HRCalendarProps) {
         </div>
       </div>
 
-      {/* Add dropdown menu */}
-      <Show when={menuOpen()}>
-        <div
-          class="day-menu-dropdown"
-          style={{
-            left: `${menuOpen()?.x}px`,
-            top: `${menuOpen()?.y}px`,
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <ul>
-            <For each={getMenuActions(menuOpen()?.date ?? new Date())}>
-              {(action) => (
-                <li onClick={() => handleMenuAction(action)}>{action.label}</li>
-              )}
-            </For>
-          </ul>
-        </div>
-      </Show>
-
-      {/* Keep existing loading overlay and tooltip */}
+      {/* Loading overlay and tooltip */}
       <Show when={props.loading}>
         <div class="hr-calendar-loading-overlay">
           <SpinningCircles />

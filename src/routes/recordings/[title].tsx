@@ -221,15 +221,15 @@ function RecordingDetailsContent() {
 
     const sessionId = routeSessionId();
     if (sessionId) {
-      return availableSessions.find((session) => session.id === sessionId) ?? null;
+      return availableSessions.find((session: RecordingSession) => session.id === sessionId) ?? null;
     }
 
-    return availableSessions.find((session) => matchesRecordingTitle(session, routeTitle())) ?? null;
+    return availableSessions.find((session: RecordingSession) => matchesRecordingTitle(session, routeTitle())) ?? null;
   };
 
   const [transcript] = createResource(
     () => currentSession()?.id ?? null,
-    async (sessionId) => {
+    async (sessionId: string) => {
       if (!sessionId) {
         return null;
       }
@@ -239,7 +239,7 @@ function RecordingDetailsContent() {
   );
   const [summary] = createResource<StoredSessionSummary | null, string | null>(
     () => currentSession()?.id ?? null,
-    async (sessionId) => {
+    async (sessionId: string | null) => {
       if (!sessionId) {
         return null;
       }
@@ -249,8 +249,8 @@ function RecordingDetailsContent() {
   );
 
   const canDeleteRecordings = () => getUser()?.roles.includes(UserRoleTypes.ADMIN) ?? false;
-  const sessionDownloadFiles = () => currentSession()?.files.filter((file) => file.type !== "user_audio") ?? [];
-  const userAudioFiles = () => currentSession()?.files.filter((file) => file.type === "user_audio") ?? [];
+  const sessionDownloadFiles = () => currentSession()?.files.filter((file: RecordingFile) => file.type !== "user_audio") ?? [];
+  const userAudioFiles = () => currentSession()?.files.filter((file: RecordingFile) => file.type === "user_audio") ?? [];
 
   const closeDeleteDialog = () => {
     if (deletingSessionId()) {

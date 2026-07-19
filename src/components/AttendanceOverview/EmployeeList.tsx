@@ -69,11 +69,11 @@ const EmployeeList: Component<EmployeeListProps> = props => {
     // Median login and logout times
     const loginTimes = users
       .map(user => user.attendance.loggedInTime)
-      .filter((t) => t !== null && t !== undefined)
+      .filter((t): t is Date => t !== null && t !== undefined)
       .sort((a, b) => a.getTime() - b.getTime());
     const logoutTimes = users
       .map(user => user.attendance.loggedOutTime)
-      .filter((t) => t !== null && t !== undefined)
+      .filter((t): t is Date => t !== null && t !== undefined)
       .sort((a, b) => a.getTime() - b.getTime());
 
     const medianLoginTime =
