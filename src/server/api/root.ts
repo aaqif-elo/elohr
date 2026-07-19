@@ -3,7 +3,6 @@ import {
   attendanceRouter,
   authRouter,
   holidaysRouter,
-  leavesRouter,
   recordingsRouter,
 } from "./routers";
 import { createTRPCRouter } from "./trpc";
@@ -13,7 +12,6 @@ export const appRouter = createTRPCRouter({
   attendance: attendanceRouter,
   admin: adminRouter,
   holidays: holidaysRouter,
-  leaves: leavesRouter,
   recordings: recordingsRouter,
 });
 
