@@ -259,37 +259,14 @@ export const getAttendancesInDateRange = async (
   });
 };
 
-/**
- * Count working days between two dates (excluding weekends and holidays)
- * @param startDate The start date
- * @param endDate The end date
- * @param holidays Array of holiday dates to exclude
- * @returns Number of working days
- */
-export const countWorkingDays = (
-  startDate: Date,
-  endDate: Date,
-  holidays: Date[] = [],
-): number => {
+export const countWorkingDays = (startDate: Date, endDate: Date): number => {
   let count = 0;
   const currentDate = new Date(startDate);
 
-  // Create a set of holiday dates for faster lookup
-  const holidaySet = new Set(
-    holidays.map((date) => new Date(date).toISOString().split("T")[0]),
-  );
-
-  // Loop through each day in the range
   while (currentDate <= endDate) {
-    const dayOfWeek = currentDate.getDay();
-    const dateString = currentDate.toISOString().split("T")[0];
-
-    // Skip Bangladesh weekends (Fri=5, Sat=6) and holidays
-    if (!isWeekendBD(dayOfWeek) && !holidaySet.has(dateString)) {
+    if (!isWeekendBD(currentDate.getDay())) {
       count++;
     }
-
-    // Move to next day
     currentDate.setDate(currentDate.getDate() + 1);
   }
 
@@ -535,7 +512,6 @@ interface WeekdayHeatmapSlot {
 /**
  * Build a weekday-only heatmap aggregated across Sun–Thu (Bangladesh working days).
  * - Excludes weekends (Fri–Sat in BD)
- * - Excludes active holidays (original or overridden date)
  * - Uses exponential recency weighting (half-life)
  * - Default slot = 30 minutes
  */

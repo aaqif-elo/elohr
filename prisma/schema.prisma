@@ -31,11 +31,6 @@ enum ContractType {
   INTERN      @map("Intern")
 }
 
-enum HolidayType {
-  NATIONAL      @map("National Holiday")
-  INTERNAL      @map("Internal Holiday")
-}
-
 enum AssociatedObjectType {
   LEAVE_REQUEST @map("LeaveRequest")
 }
@@ -162,23 +157,6 @@ model DeploymentAnnouncement {
   @@map("deploymentannouncements")
 }
 
-model Holiday {
-  id               String      @id @default(auto()) @map("_id") @db.ObjectId
-  name             String
-  originalDate     DateTime
-  overridenDate    DateTime?
-  description      String?
-  type             HolidayType
-  dayOfWeek        Int // 0-6 representing Sunday-Saturday
-  isWeekend        Boolean
-  isActive         Boolean     @default(true)
-  announcementSent Boolean     @default(false)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("holidays")
-}
 
 model Meeting {
   id            String           @id @default(auto()) @map("_id") @db.ObjectId

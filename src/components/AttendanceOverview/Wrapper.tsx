@@ -62,7 +62,7 @@ export const AttendanceWrapper = (props: { date: Date }) => {
         if (day === 5 || day === 6) {
           const dateString = formatDateToYYYYMMDD(date);
           highlights[dateString] = {
-            color: Legends.workedHolidaysOrWeekends,
+            color: Legends.workedWeekends,
             description: "Working on Weekend",
           };
         }

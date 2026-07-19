@@ -21,7 +21,7 @@ type CalendarDateParts = {
 
 
 export enum Legends {
-  workedHolidaysOrWeekends = "#4CAF50", // Green for worked weekends
+  workedWeekends = "#4CAF50",
   absences = "#E53935", // Red for absences
   others = "#9e9e9e", // Grey for other dates
 }
@@ -491,7 +491,7 @@ export function HRCalendar(props: HRCalendarProps) {
               category="workingDaysTillNow"
               label="Working Days (Till Now)"
               value={calculatedStats().workingDaysTillNow}
-              color={Legends.workedHolidaysOrWeekends}
+              color={Legends.workedWeekends}
             />
             
             <StatItem
