@@ -1,7 +1,5 @@
 import type { CacheType, ChatInputCommandInteraction } from "discord.js";
-import { handleAdminCommand } from "./admin.handler";
-import { EAuthCommands, ELeaveCommands, EAvailabilityCommands, ERecordingCommands } from "../discord.enums";
-import { handleLeaveCommand } from "./leave.handler";
+import { EAuthCommands, EAvailabilityCommands, ERecordingCommands } from "../discord.enums";
 import { handleAuthCommand } from "./auth.handler";
 import { handleAvailabilityCommand } from "./availability.handler";
 import { handleRecordingCommand } from "./recording.handler";
@@ -47,13 +45,14 @@ export const interactionHandler = async (
     }
 
     if (interaction.channelId === attendanceChannelID) {
-      if (ELeaveCommands.REQUEST_LEAVE === interaction.commandName) {
-        await handleLeaveCommand(interaction);
-      } else if (EAuthCommands.HR === interaction.commandName) {
+      if (EAuthCommands.HR === interaction.commandName) {
         await handleAuthCommand(interaction);
       }
     } else if (interaction.channelId === process.env.ADMIN_CHANNEL_ID) {
-      await handleAdminCommand(interaction);
+      await interaction.reply({
+        content: `<@${interaction.user.id}> ❌ Invalid command!`,
+        flags: "Ephemeral",
+      });
     } else {
       if (production) {
         await interaction.reply({

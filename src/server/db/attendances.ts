@@ -1,4 +1,4 @@
-import { UserRoleTypes, type Attendance } from "@prisma/client";
+import { type Attendance, type Leave } from "@prisma/client";
 import { db, ONE_DAY_IN_MS } from ".";
 import { getStartOfDay, getEndOfDay } from "./util";
 import EventEmitter from "events";
@@ -325,7 +325,7 @@ const getLoggedInAttendance = async (userId: string, date = new Date()) => {
  * @param day The date to check (default is today)
  * @returns True if the user can take a break, or the start time of the last break
  */
-export const canBreak = async (userId: string, day: Date | null = null) => {
+const canBreak = async (userId: string, day: Date | null = null) => {
   const breakFound = await db.attendance.findFirst({
     where: {
       userId,
@@ -355,104 +355,6 @@ export const canBreak = async (userId: string, day: Date | null = null) => {
   return lastBreak.end === null ? lastBreak.start : true;
 };
 
-/**
- * Start a break for a user
- * @param userId The user's ID
- * @param reason The reason for the break (default is empty string)
- * @returns The start time of the break
- */
-export const breakStart = async (userId: string, reason: string = "") => {
-  const breakStartTime = new Date();
-  const attendance = await getLoggedInAttendance(userId);
-
-  if (!attendance) {
-    return null;
-  }
-
-  // End the latest work segment if still open
-  if (attendance.workSegments.length > 0) {
-    const lastSeg = attendance.workSegments[attendance.workSegments.length - 1];
-    if (!lastSeg.end) {
-      lastSeg.end = breakStartTime;
-      lastSeg.length_ms = breakStartTime.getTime() - lastSeg.start.getTime();
-    }
-  }
-
-  // Now proceed with your existing logic for break:
-  attendance.breaks.push({
-    start: breakStartTime,
-    reason,
-    end: null,
-    length_ms: null,
-  });
-
-  await db.attendance.update({
-    where: {
-      id: attendance.id,
-    },
-    data: {
-      breaks: attendance.breaks,
-      workSegments: attendance.workSegments,
-    },
-  });
-
-  attendanceEvents.emit("attendanceUpdated", attendance);
-  return breakStartTime;
-};
-
-/**
- * End a break for a user
- * @param userId The user's ID
- * @param project The project the user is working on (optional)
- * @returns Null if no break is found, otherwise a string announcing the end of the break
- */
-export const breakEnd = async (userId: string, project?: string) => {
-  const attendance = await getLoggedInAttendance(userId);
-
-  if (!attendance) {
-    return null;
-  }
-
-  const lastBreak = attendance.breaks[attendance.breaks.length - 1];
-  if (!lastBreak || lastBreak.end) {
-    return null;
-  }
-
-  lastBreak.end = new Date();
-  lastBreak.length_ms = lastBreak.end.getTime() - lastBreak.start.getTime();
-
-  // If a project is provided, add it to the work segments
-  if (project) {
-    attendance.workSegments.push({
-      start: lastBreak.end,
-      end: null,
-      project,
-      length_ms: null,
-    });
-  }
-
-  // Update the attendance record in the database
-  await db.attendance.update({
-    where: {
-      id: attendance.id,
-    },
-    data: {
-      breaks: attendance.breaks,
-      workSegments: attendance.workSegments,
-    },
-  });
-
-  let prefix: string;
-  if (!lastBreak.reason) {
-    prefix = "Break";
-  } else {
-    prefix = lastBreak.reason + " break";
-  }
-  attendanceEvents.emit("attendanceUpdated", attendance);
-  return `${prefix} for ${Math.round(
-    lastBreak.length_ms / (1000 * 60),
-  )} minutes ended at ${lastBreak.end.toLocaleTimeString()}`;
-};
 
 /**
  * Get today's login time for a user
@@ -539,23 +441,6 @@ export const logout = async (userId: string) => {
   };
 };
 
-/**
- * Check if the user can break or resume
- * @param userId The user's ID
- * @returns An error message if the user cannot break or resume, otherwise true
- */
-export const canBreakOrResume = async (userId: string) => {
-  const attendance = await getLoggedInAttendance(userId);
-  if (!attendance) {
-    return "❌ You are not logged in.";
-  }
-
-  if (attendance.logout) {
-    return "❌ You have already logged out.";
-  }
-
-  return true;
-};
 
 /**
  * Log in a user
@@ -590,61 +475,6 @@ export const login = async (userId: string, project: string) => {
   return newAttendance;
 };
 
-/**
- * Check if the user is on a break
- * @param userId The user's ID
- * @returns A boolean indicating if the user is on a break
- */
-export const isOnBreak = async (userId: string) => {
-  const attendance = await getLoggedInAttendance(userId);
-  if (!attendance) {
-    return false;
-  }
-
-  const lastBreak = attendance.breaks[attendance.breaks.length - 1];
-  return lastBreak && !lastBreak.end;
-};
-
-/**
- * Switch the current project for a user
- * @param userId The user's ID
- * @param project The project name
- * @returns A boolean indicating if the project switch was successful
- */
-export const switchProject = async (userId: string, project: string) => {
-  const attendance = await getLoggedInAttendance(userId);
-  if (!attendance) {
-    return false;
-  }
-
-  // End the latest work segment if still open
-  if (attendance.workSegments.length > 0) {
-    const lastSeg = attendance.workSegments[attendance.workSegments.length - 1];
-    if (!lastSeg.end) {
-      lastSeg.end = new Date();
-      lastSeg.length_ms = lastSeg.end.getTime() - lastSeg.start.getTime();
-    }
-  }
-
-  // Add a new work segment with the new project
-  attendance.workSegments.push({
-    start: new Date(),
-    end: null,
-    project,
-    length_ms: null,
-  });
-
-  await db.attendance.update({
-    where: {
-      id: attendance.id,
-    },
-    data: {
-      workSegments: attendance.workSegments,
-    },
-  });
-  attendanceEvents.emit("attendanceUpdated", attendance);
-  return true;
-};
 
 /**
  * Get all users who are currently logged in
@@ -701,396 +531,6 @@ interface WeekdayHeatmapSlot {
   confidence: number; // presentWeight / sampleWeight (0..1)
 }
 
-const OFFICE_START_HOUR = 10;
-const EARLY_BIRD_MIN_HOUR = 6;
-
-const EARLY_BIRD_CUTOFF_IN_MS = EARLY_BIRD_MIN_HOUR * 60 * 60 * 1000;
-const OFFICE_START_TIME_IN_MS = OFFICE_START_HOUR * 60 * 60 * 1000;
-
-const getDateWithTime = (
-  baseDate: Date,
-  hours: number,
-  minutes: number,
-  seconds = 0,
-  milliseconds = 0,
-) => {
-  const date = new Date(baseDate);
-  date.setHours(hours, minutes, seconds, milliseconds);
-  return date;
-};
-
-interface WeeklyAttendanceAwardWinners {
-  earlyBirdUserId: string | null;
-  nightOwlUserId: string | null;
-  timelyTurtleUserId: string | null;
-  lazyBeaverUserId: string | null;
-  projectHopperUserId: string | null;
-}
-
-interface WeeklyAttendanceAwardMetrics {
-  userId: string;
-  loginTimes: number[];
-  earlyBirdLoginTimes: number[];
-  lazyBeaverLoginTimes: number[];
-  nightOwlActiveMs: number;
-  projectSwitchCount: number;
-}
-
-const getMostRecentCompletedWeekDateRange = (referenceDate: Date) => {
-  const currentWeekDateRange = getWeekDateRange(referenceDate);
-
-  if (referenceDate.getDay() >= 5) {
-    return currentWeekDateRange;
-  }
-
-  const previousWeekStart = new Date(currentWeekDateRange.start);
-  previousWeekStart.setDate(previousWeekStart.getDate() - 7);
-
-  const previousWeekEnd = new Date(currentWeekDateRange.end);
-  previousWeekEnd.setDate(previousWeekEnd.getDate() - 7);
-
-  return {
-    start: previousWeekStart,
-    end: previousWeekEnd,
-  };
-};
-
-const getTimeOfDayInMilliseconds = (date: Date) => {
-  return (
-    ((date.getHours() * 60 + date.getMinutes()) * 60 + date.getSeconds()) *
-      1000 +
-    date.getMilliseconds()
-  );
-};
-
-const getMedian = (values: number[]): number | null => {
-  if (!values.length) {
-    return null;
-  }
-
-  const sortedValues = [...values].sort((firstValue, secondValue) => {
-    return firstValue - secondValue;
-  });
-  const middleIndex = Math.floor(sortedValues.length / 2);
-
-  if (sortedValues.length % 2 === 0) {
-    return (sortedValues[middleIndex - 1] + sortedValues[middleIndex]) / 2;
-  }
-
-  return sortedValues[middleIndex] ?? null;
-};
-
-const getAverageSquaredDistanceFromTarget = (
-  values: number[],
-  target: number,
-): number | null => {
-  if (!values.length) {
-    return null;
-  }
-
-  const totalSquaredDistance = values.reduce((sum, value) => {
-    return sum + (value - target) ** 2;
-  }, 0);
-
-  return totalSquaredDistance / values.length;
-};
-
-const getOverlapDurationMs = (
-  start: Date,
-  end: Date,
-  rangeStart: Date,
-  rangeEnd: Date,
-): number => {
-  const overlapStart = Math.max(start.getTime(), rangeStart.getTime());
-  const overlapEnd = Math.min(end.getTime(), rangeEnd.getTime());
-
-  return Math.max(0, overlapEnd - overlapStart);
-};
-
-const getProjectSwitchCount = (workSegments: Attendance["workSegments"]): number => {
-  let previousProject: string | null = null;
-  let projectSwitchCount = 0;
-
-  for (const segment of workSegments) {
-    if (previousProject && previousProject !== segment.project) {
-      projectSwitchCount++;
-    }
-
-    previousProject = segment.project;
-  }
-
-  return projectSwitchCount;
-};
-
-const getNightOwlActiveMsForAttendance = (
-  attendance: Pick<Attendance, "login" | "logout" | "workSegments">,
-): number => {
-  let activeMs = 0;
-  const nightOwlWindowStart = getStartOfDay(attendance.login);
-  const nightOwlWindowEnd = getDateWithTime(
-    attendance.login,
-    EARLY_BIRD_MIN_HOUR,
-    0,
-  );
-
-  for (const segment of attendance.workSegments) {
-    const segmentStart = new Date(segment.start);
-    const segmentEnd = new Date(segment.end ?? attendance.logout ?? segmentStart);
-
-    activeMs += getOverlapDurationMs(
-      segmentStart,
-      segmentEnd,
-      nightOwlWindowStart,
-      nightOwlWindowEnd,
-    );
-  }
-
-  return activeMs;
-};
-
-const buildRankedAwardUserIds = <Candidate extends { userId: string }>(
-  candidates: Candidate[],
-): string[] => {
-  return candidates.map((candidate) => candidate.userId);
-};
-
-const pickNextAwardWinner = (
-  rankedUserIds: string[],
-  awardedUserIds: Set<string>,
-): string | null => {
-  const winnerUserId =
-    rankedUserIds.find((userId) => !awardedUserIds.has(userId)) ?? null;
-
-  if (winnerUserId) {
-    awardedUserIds.add(winnerUserId);
-  }
-
-  return winnerUserId;
-};
-
-export async function getWeeklyAttendanceAwardWinners(
-  referenceDate = new Date(),
-): Promise<WeeklyAttendanceAwardWinners> {
-  const completedWeekDateRange = getMostRecentCompletedWeekDateRange(referenceDate);
-
-  const weeklyAttendances = await db.attendance.findMany({
-    where: {
-      user: {
-        is: {
-          isAdmin: false,
-          NOT: {
-            roles: {
-              has: UserRoleTypes.ADMIN,
-            },
-          },
-        },
-      },
-      login: {
-        gte: completedWeekDateRange.start,
-        lte: completedWeekDateRange.end,
-      },
-    },
-    select: {
-      userId: true,
-      login: true,
-      logout: true,
-      workSegments: true,
-    },
-  });
-
-  const weeklyAwardMetricsByUserId = new Map<string, WeeklyAttendanceAwardMetrics>();
-
-  for (const attendance of weeklyAttendances) {
-    const loginTimeOfDay = getTimeOfDayInMilliseconds(attendance.login);
-    const userMetrics = weeklyAwardMetricsByUserId.get(attendance.userId) ?? {
-      userId: attendance.userId,
-      loginTimes: [],
-      earlyBirdLoginTimes: [],
-      lazyBeaverLoginTimes: [],
-      nightOwlActiveMs: 0,
-      projectSwitchCount: 0,
-    };
-
-    userMetrics.loginTimes.push(loginTimeOfDay);
-
-    if (
-      loginTimeOfDay >= EARLY_BIRD_CUTOFF_IN_MS &&
-      loginTimeOfDay <= OFFICE_START_TIME_IN_MS
-    ) {
-      userMetrics.earlyBirdLoginTimes.push(loginTimeOfDay);
-    }
-
-    if (loginTimeOfDay > OFFICE_START_TIME_IN_MS) {
-      userMetrics.lazyBeaverLoginTimes.push(loginTimeOfDay);
-    }
-
-    userMetrics.nightOwlActiveMs += getNightOwlActiveMsForAttendance(
-      attendance,
-    );
-    userMetrics.projectSwitchCount += getProjectSwitchCount(attendance.workSegments);
-
-    weeklyAwardMetricsByUserId.set(attendance.userId, userMetrics);
-  }
-
-  const weeklyAwardMetrics = Array.from(weeklyAwardMetricsByUserId.values());
-
-  const earlyBirdCandidates = buildRankedAwardUserIds(
-    weeklyAwardMetrics
-      .map((userMetrics) => {
-        return {
-          userId: userMetrics.userId,
-          medianLoginTime: getMedian(userMetrics.earlyBirdLoginTimes),
-          sampleCount: userMetrics.earlyBirdLoginTimes.length,
-        };
-      })
-      .filter(
-        (
-          candidate,
-        ): candidate is {
-          userId: string;
-          medianLoginTime: number;
-          sampleCount: number;
-        } => candidate.medianLoginTime !== null,
-      )
-      .sort((firstCandidate, secondCandidate) => {
-        if (firstCandidate.medianLoginTime !== secondCandidate.medianLoginTime) {
-          return firstCandidate.medianLoginTime - secondCandidate.medianLoginTime;
-        }
-
-        if (firstCandidate.sampleCount !== secondCandidate.sampleCount) {
-          return secondCandidate.sampleCount - firstCandidate.sampleCount;
-        }
-
-        return firstCandidate.userId.localeCompare(secondCandidate.userId);
-      }),
-  );
-
-  const nightOwlCandidates = buildRankedAwardUserIds(
-    weeklyAwardMetrics
-      .filter((userMetrics) => userMetrics.nightOwlActiveMs > 0)
-      .sort((firstCandidate, secondCandidate) => {
-        if (firstCandidate.nightOwlActiveMs !== secondCandidate.nightOwlActiveMs) {
-          return secondCandidate.nightOwlActiveMs - firstCandidate.nightOwlActiveMs;
-        }
-
-        return firstCandidate.userId.localeCompare(secondCandidate.userId);
-      }),
-  );
-
-  const timelyTurtleCandidates = buildRankedAwardUserIds(
-    weeklyAwardMetrics
-      .map((userMetrics) => {
-        return {
-          userId: userMetrics.userId,
-          varianceAroundOfficeStart: getAverageSquaredDistanceFromTarget(
-            userMetrics.loginTimes,
-            OFFICE_START_TIME_IN_MS,
-          ),
-          sampleCount: userMetrics.loginTimes.length,
-        };
-      })
-      .filter(
-        (
-          candidate,
-        ): candidate is {
-          userId: string;
-          varianceAroundOfficeStart: number;
-          sampleCount: number;
-        } => candidate.varianceAroundOfficeStart !== null,
-      )
-      .sort((firstCandidate, secondCandidate) => {
-        if (
-          firstCandidate.varianceAroundOfficeStart !==
-          secondCandidate.varianceAroundOfficeStart
-        ) {
-          return (
-            firstCandidate.varianceAroundOfficeStart -
-            secondCandidate.varianceAroundOfficeStart
-          );
-        }
-
-        if (firstCandidate.sampleCount !== secondCandidate.sampleCount) {
-          return secondCandidate.sampleCount - firstCandidate.sampleCount;
-        }
-
-        return firstCandidate.userId.localeCompare(secondCandidate.userId);
-      }),
-  );
-
-  const lazyBeaverCandidates = buildRankedAwardUserIds(
-    weeklyAwardMetrics
-      .map((userMetrics) => {
-        return {
-          userId: userMetrics.userId,
-          medianLoginTime: getMedian(userMetrics.lazyBeaverLoginTimes),
-          sampleCount: userMetrics.lazyBeaverLoginTimes.length,
-        };
-      })
-      .filter(
-        (
-          candidate,
-        ): candidate is {
-          userId: string;
-          medianLoginTime: number;
-          sampleCount: number;
-        } => candidate.medianLoginTime !== null,
-      )
-      .sort((firstCandidate, secondCandidate) => {
-        if (firstCandidate.medianLoginTime !== secondCandidate.medianLoginTime) {
-          return secondCandidate.medianLoginTime - firstCandidate.medianLoginTime;
-        }
-
-        if (firstCandidate.sampleCount !== secondCandidate.sampleCount) {
-          return secondCandidate.sampleCount - firstCandidate.sampleCount;
-        }
-
-        return firstCandidate.userId.localeCompare(secondCandidate.userId);
-      }),
-  );
-
-  const projectHopperCandidates = buildRankedAwardUserIds(
-    weeklyAwardMetrics
-      .filter((userMetrics) => userMetrics.projectSwitchCount > 0)
-      .sort((firstCandidate, secondCandidate) => {
-        if (
-          firstCandidate.projectSwitchCount !== secondCandidate.projectSwitchCount
-        ) {
-          return (
-            secondCandidate.projectSwitchCount -
-            firstCandidate.projectSwitchCount
-          );
-        }
-
-        return firstCandidate.userId.localeCompare(secondCandidate.userId);
-      }),
-  );
-
-  const awardedUserIds = new Set<string>();
-
-  // Award precedence matches the Sunday announcement order.
-  const earlyBirdUserId = pickNextAwardWinner(earlyBirdCandidates, awardedUserIds);
-  const nightOwlUserId = pickNextAwardWinner(nightOwlCandidates, awardedUserIds);
-  const timelyTurtleUserId = pickNextAwardWinner(
-    timelyTurtleCandidates,
-    awardedUserIds,
-  );
-  const lazyBeaverUserId = pickNextAwardWinner(
-    lazyBeaverCandidates,
-    awardedUserIds,
-  );
-  const projectHopperUserId = pickNextAwardWinner(
-    projectHopperCandidates,
-    awardedUserIds,
-  );
-
-  return {
-    earlyBirdUserId,
-    nightOwlUserId,
-    timelyTurtleUserId,
-    lazyBeaverUserId,
-    projectHopperUserId,
-  };
-}
 
 /**
  * Build a weekday-only heatmap aggregated across Sun–Thu (Bangladesh working days).
@@ -1138,22 +578,6 @@ export async function getWeekdayAvailabilityHeatmap(
   startDate.setDate(startDate.getDate() - (days - 1));
   const startOfStart = getStartOfDay(startDate);
 
-  // Pull holidays in range
-  const holidays = await db.holiday.findMany({
-    where: {
-      isActive: true,
-      OR: [
-        { originalDate: { gte: startOfStart, lte: endOfToday } },
-        { overridenDate: { gte: startOfStart, lte: endOfToday } },
-      ],
-    },
-    select: { originalDate: true, overridenDate: true },
-  });
-  const iso = (d: Date) => d.toISOString().split("T")[0];
-  const holidaySet = new Set<string>();
-  for (const h of holidays)
-    holidaySet.add(iso(h.overridenDate ?? h.originalDate));
-
   // Fetch attendances (extend 1 day back to catch segments crossing midnight)
   const attendances = await db.attendance.findMany({
     where: {
@@ -1178,7 +602,6 @@ export async function getWeekdayAvailabilityHeatmap(
     const dayEnd = getEndOfDay(d);
     const dow = dayStart.getDay();
     if (isWeekendBD(dow)) continue; // skip Fri/Sat (BD weekend)
-    if (holidaySet.has(iso(dayStart))) continue; // skip holidays
 
     const ageDays = Math.floor(
       (endOfToday.getTime() - dayEnd.getTime()) / ONE_DAY_IN_MS,
@@ -1276,4 +699,39 @@ export async function getWeekdayAvailabilityHeatmap(
   };
 }
 
+const reviewedLeaveQuery = {
+  OR: [
+    { reviewed: null },
+    { reviewed: { isSet: false } },
+    { reviewed: { isNot: { approved: false } } },
+  ],
+};
+
+export const getLeavesInDateRange = async (
+  startDate: Date,
+  endDate: Date,
+  userId?: string
+): Promise<Leave[]> => {
+  const leaves = await db.leave.findMany({
+    where: {
+      ...(userId ? { userId } : {}),
+      ...reviewedLeaveQuery,
+    },
+    include: {
+      user: {
+        select: {
+          name: true,
+          orgEmail: true,
+        },
+      },
+    },
+  });
+
+  return leaves.filter((leave) =>
+    leave.dates.some((date) => {
+      const leaveDate = new Date(date);
+      return leaveDate >= startDate && leaveDate <= endDate;
+    })
+  );
+};
 

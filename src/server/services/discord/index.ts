@@ -8,8 +8,6 @@ import {
 } from "discord.js";
 import {
   authCommandBody,
-  getNextHolidayAnnouncementCommandBody,
-  requestLeaveCommandBody,
   recordingCommandBody,
 } from "./commands";
 import { availabilityCommandBody } from "./commands";
@@ -17,7 +15,7 @@ import { availabilityCommandBody } from "./commands";
 import { interactionHandler } from "./interaction-handlers";
 import { handleRecordingVoiceStateUpdate } from "./recording";
 import { handleVoiceStateChange } from "./voice-channel-hook.service";
-import { setNameStatus } from "./utils";
+import { setNameStatus, clearNameStatus } from "./utils";
 import { startCronJobs } from "./cron-jobs";
 declare global {
   var _discordClientGlobal: Client | undefined;
@@ -33,7 +31,7 @@ const ATTENDANCE_CHANNEL_ID = production
   : process.env.TEST_CHANNEL_ID;
 
 // Create Discord client
-export const discordClient =
+const discordClient =
   global._discordClientGlobal ||
   new Client({
     intents: [
@@ -114,7 +112,12 @@ const sendAttendanceChangeMessageAndSetStatus = (
     return;
   }
   channel.send(`<@${userDiscordId}> ${message}`);
-  setNameStatus(message.slice(0, 2).trim(), userDiscordId);
+  const statusTag = message.slice(0, 2).trim();
+  if (statusTag === process.env.STATUS_TAG_AVAILABLE) {
+    void setNameStatus(statusTag, userDiscordId);
+  } else {
+    void clearNameStatus(userDiscordId);
+  }
 };
 
 // Setup event handlers
@@ -155,8 +158,6 @@ async function registerCommands() {
 
   const commands = [
     authCommandBody,
-    getNextHolidayAnnouncementCommandBody,
-    requestLeaveCommandBody,
     availabilityCommandBody,
     recordingCommandBody,
   ];

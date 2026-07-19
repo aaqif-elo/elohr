@@ -6,7 +6,6 @@ import {
   getAttendancesInDateRange,
   countWorkingDays,
   getLeavesInDateRange,
-  getHolidaysForDateRange,
   cleanupExistingSubscription,
   registerSubscription,
   activeSubscriptions,
@@ -130,15 +129,9 @@ export const attendanceRouter = createTRPCRouter({
       );
 
       const leaves = await getLeavesInDateRange(startDate, endDate, userId);
-      const holidays = await getHolidaysForDateRange(startDate, endDate);
 
-      // Extract holiday dates
-      const holidayDates = holidays.map(
-        (h) => h.overridenDate || h.originalDate
-      );
-
-      // Calculate total work days (excluding weekends and holidays)
-      const totalWorkDays = countWorkingDays(startDate, endDate, holidayDates);
+      // Calculate total work days (excluding weekends)
+      const totalWorkDays = countWorkingDays(startDate, endDate);
 
       // Calculate days worked (with actual dates)
       const workedDates = attendances.map((a) => {
@@ -185,13 +178,10 @@ export const attendanceRouter = createTRPCRouter({
 
         const currentDateStr = currentDay.toISOString().split("T")[0];
         const isWeekend = [5, 6].includes(currentDay.getDay());
-        const isHoliday = holidayDates.some(
-          (holiday) => holiday.toISOString().split("T")[0] === currentDateStr
-        );
         const isFutureDay = currentDay > today;
 
-        // If it's a workday (not weekend, not holiday) and not in the future
-        if (!isWeekend && !isHoliday && !isFutureDay) {
+        // If it's a workday (not weekend) and not in the future
+        if (!isWeekend && !isFutureDay) {
           // And not a worked day and not a leave day
           const isWorked = uniqueWorkedDates.some(
             (date) => date.split("T")[0] === currentDateStr

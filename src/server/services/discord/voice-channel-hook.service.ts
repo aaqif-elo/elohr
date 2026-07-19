@@ -2,15 +2,10 @@ import { EAttendanceCommands } from "./discord.enums";
 import type { VoiceState } from "discord.js";
 import { getGuildMember } from ".";
 import {
-  breakEnd,
-  breakStart,
-  canBreak,
-  canBreakOrResume,
   getLoginTime,
   getUserByDiscordId,
-  isOnBreak,
   login,
-  switchProject,
+  logout,
   updateUserAvatar,
 } from "../../db";
 import type { User } from "@prisma/client";
@@ -39,14 +34,11 @@ const processNextAction = async (userId: string) => {
       await actionToExecute();
     } catch (error) {
       console.error(`Error executing action for user ${userId}:`, error);
-      // Consider more specific error handling or user notification if needed
     } finally {
       userActionInProgress[userId] = false;
-      // Attempt to process the next action in the queue for this user
       processNextAction(userId);
     }
   } else {
-    // Queue was empty, ensure flag is reset
     userActionInProgress[userId] = false;
   }
 };
@@ -82,7 +74,6 @@ const addAttendanceChange = async (attendanceChangePayload: {
               );
               return;
             }
-            // Asynchronously update avatar, non-blocking for login message
             getGuildMember(user.discordInfo.id)
               .then((member) => {
                 if (
@@ -95,9 +86,7 @@ const addAttendanceChange = async (attendanceChangePayload: {
               .catch(err => console.error("Error getting guild member for avatar update:", err));
 
             notifyDiscordUserCallback(
-              `${
-                process.env.STATUS_TAG_AVAILABLE
-              } Successfully logged in at ${loginResponse.login.toLocaleTimeString()}...`,
+              `${process.env.STATUS_TAG_AVAILABLE} Successfully logged in at ${loginResponse.login.toLocaleTimeString()}...`,
               user.discordInfo.id
             );
           } catch (error) {
@@ -110,80 +99,22 @@ const addAttendanceChange = async (attendanceChangePayload: {
         }
         break;
       }
-      case EAttendanceCommands.BREAK: {
+      case EAttendanceCommands.LOGOUT: {
         try {
-          const breakStartResponse = await breakStart(user.id);
+          const logoutResponse = await logout(user.id);
+          if (!logoutResponse) {
+            return;
+          }
           notifyDiscordUserCallback(
-            `${
-              process.env.STATUS_TAG_BREAK
-            } break started at ${breakStartResponse?.toLocaleTimeString()}...`,
+            `Logged out at ${logoutResponse.time.toLocaleTimeString()}...`,
             user.discordInfo.id
           );
         } catch (error) {
-          console.error("Error during break start action:", error);
+          console.error("Error during logout action:", error);
           notifyDiscordUserCallback(
-            `${process.env.STATUS_TAG_ERROR} An error occurred starting break.`,
+            `${process.env.STATUS_TAG_ERROR} An error occurred during logout.`,
             user.discordInfo.id
           );
-        }
-        break;
-      }
-      case EAttendanceCommands.RESUME: {
-        if (!currentVoiceChannelName) {
-          notifyDiscordUserCallback(
-            `Error ending break, you are not in a voice channel.`,
-            user.discordInfo.id
-          );
-        } else {
-          try {
-            const breakEndResponse = await breakEnd(user.id, currentVoiceChannelName);
-            let response = `${process.env.STATUS_TAG_ERROR} Error ending break!`;
-            if (breakEndResponse) {
-              response = `${process.env.STATUS_TAG_AVAILABLE} ${breakEndResponse}...`;
-            }
-            notifyDiscordUserCallback(response, user.discordInfo.id);
-          } catch (error) {
-            console.error("Error during break end action:", error);
-            notifyDiscordUserCallback(
-              `${process.env.STATUS_TAG_ERROR} An error occurred ending break.`,
-              user.discordInfo.id
-            );
-          }
-        }
-        break;
-      }
-      case EAttendanceCommands.SWITCH: {
-        if (!currentVoiceChannelName) {
-          notifyDiscordUserCallback(
-            `Error switching voice channels, you are not in a voice channel.`,
-            user.discordInfo.id
-          );
-        } else {
-          try {
-            const userIsOnBreak = await isOnBreak(user.id);
-            if (userIsOnBreak) {
-              const breakEndResponse = await breakEnd(user.id, currentVoiceChannelName);
-              notifyDiscordUserCallback(
-                `${process.env.STATUS_TAG_AVAILABLE} ${
-                  breakEndResponse as string // Ensure breakEndResponse is handled as string
-                }`,
-                user.discordInfo.id
-              );
-            } else {
-              await switchProject(user.id, currentVoiceChannelName);
-              notifyDiscordUserCallback(
-                `${process.env.STATUS_TAG_SWITCH} active project switched to ${currentVoiceChannelName}`,
-                user.discordInfo.id
-              );
-            }
-          } catch (err: unknown) {
-            const errMessage = err instanceof Error ? err.message : String(err);
-            console.error("Error during switch action:", err);
-            notifyDiscordUserCallback(
-              `${process.env.STATUS_TAG_ERROR} Error during switch: ${errMessage}`,
-              user.discordInfo.id
-            );
-          }
         }
         break;
       }
@@ -194,7 +125,7 @@ const addAttendanceChange = async (attendanceChangePayload: {
 
   pendingTimeouts[user.id] = setTimeout(() => {
     // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
-    delete pendingTimeouts[user.id]; // This specific timeout has fired
+    delete pendingTimeouts[user.id];
 
     if (!userActionQueues[user.id]) {
       userActionQueues[user.id] = [];
@@ -233,7 +164,6 @@ export const handleVoiceStateChange = async (
     throw error;
   }
 
-  // Clear any existing timeout for this user first
   if (pendingTimeouts[user.id] !== undefined) {
     clearTimeout(pendingTimeouts[user.id]);
     // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
@@ -256,42 +186,18 @@ export const handleVoiceStateChange = async (
   let voiceChannelName: string | undefined = undefined;
 
   if (goingOffline) {
-    const canWork =
-      (await canBreak(user.id)) === true &&
-      (await canBreakOrResume(user.id)) === true;
-    if (canWork) {
-      attendanceCommand = EAttendanceCommands.BREAK;
+    const isLoggedIn = (await getLoginTime(user.id)) !== null;
+    if (isLoggedIn) {
+      attendanceCommand = EAttendanceCommands.LOGOUT;
     }
   } else if (comingOnline) {
     voiceChannelName = postTransitionState.channel?.name;
-    const canResume = await isOnBreak(user.id);
-    if (canResume) {
-      attendanceCommand = EAttendanceCommands.RESUME;
-    } else {
-      const canLogin = (await getLoginTime(user.id)) === null;
-      if (canLogin) {
-        attendanceCommand = EAttendanceCommands.LOGIN;
-      }
-    }
-  } else if (postTransitionState.channel?.name) {
-    // This condition implies switching between non-AFK channels,
-    // as it's not goingOffline and not comingOnline, but is in a new channel.
-    // Ignore switching if either the source or destination channel is HR or Admin.
-    const HR_CHANNEL_ID = process.env.HR_CHANNEL_ID;
-    const ADMIN_CHANNEL_ID = process.env.ADMIN_CHANNEL_ID;
-    const fromChannelId = preTransitionState.channelId;
-    const toChannelId = postTransitionState.channelId;
-    const isIgnoredSwitch =
-      fromChannelId === HR_CHANNEL_ID ||
-      fromChannelId === ADMIN_CHANNEL_ID ||
-      toChannelId === HR_CHANNEL_ID ||
-      toChannelId === ADMIN_CHANNEL_ID;
-
-    if (!isIgnoredSwitch) {
-      attendanceCommand = EAttendanceCommands.SWITCH;
-      voiceChannelName = postTransitionState.channel?.name;
+    const canLogin = (await getLoginTime(user.id)) === null;
+    if (canLogin) {
+      attendanceCommand = EAttendanceCommands.LOGIN;
     }
   }
+  // Switching between non-AFK channels triggers no action
 
   if (attendanceCommand) {
     addAttendanceChange({
