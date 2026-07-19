@@ -5,7 +5,6 @@ import {
   attendanceEvents,
   getAttendancesInDateRange,
   countWorkingDays,
-  getLeavesInDateRange,
   cleanupExistingSubscription,
   registerSubscription,
   activeSubscriptions,
@@ -23,7 +22,7 @@ import {
 
 import { tracked } from "@trpc/server";
 import type { Attendance } from "@prisma/client";
-import type { TimeUnit, TrpcLeaveInfo } from "../../../types/attendance";
+import type { TimeUnit } from "../../../types/attendance";
 
 export const attendanceRouter = createTRPCRouter({
   getAttendance: authProcedure
@@ -128,8 +127,6 @@ export const attendanceRouter = createTRPCRouter({
         endDate
       );
 
-      const leaves = await getLeavesInDateRange(startDate, endDate, userId);
-
       // Calculate total work days (excluding weekends)
       const totalWorkDays = countWorkingDays(startDate, endDate);
 
@@ -143,59 +140,28 @@ export const attendanceRouter = createTRPCRouter({
         new Date(dateStr).toISOString()
       );
 
-      // Calculate leave dates and detailed leave info
-      const leaveDates: string[] = [];
-      const leaveInfo: TrpcLeaveInfo[] = [];
-
-      leaves.forEach((leave) => {
-        leave.dates.forEach((date) => {
-          if (date >= startDate && date <= endDate) {
-            leaveDates.push(date.toISOString());
-
-            // Add detailed leave info
-            leaveInfo.push({
-              date: date.toISOString(),
-              reason: leave.reason || undefined,
-              approved: leave.reviewed ? leave.reviewed.approved : undefined,
-              approvedBy: leave.reviewed ? leave.reviewed.by : undefined,
-              approvedDate: leave.reviewed
-                ? leave.reviewed.date.toISOString()
-                : undefined,
-            });
-          }
-        });
-      });
-
       // Calculate absent dates
       const absentDates: string[] = [];
-      // Loop through all work days in the range
       const currentDay = new Date(startDate);
       const today = new Date();
-      today.setHours(0, 0, 0, 0); // Reset time to start of day for accurate comparison
+      today.setHours(0, 0, 0, 0);
 
       while (currentDay <= endDate) {
-        currentDay.setHours(23, 59, 59, 999); // Set to end of day for accurate comparison
+        currentDay.setHours(23, 59, 59, 999);
 
         const currentDateStr = currentDay.toISOString().split("T")[0];
         const isWeekend = [5, 6].includes(currentDay.getDay());
         const isFutureDay = currentDay > today;
 
-        // If it's a workday (not weekend) and not in the future
         if (!isWeekend && !isFutureDay) {
-          // And not a worked day and not a leave day
           const isWorked = uniqueWorkedDates.some(
             (date) => date.split("T")[0] === currentDateStr
           );
-          const isLeave = leaveDates.some(
-            (date) => date.split("T")[0] === currentDateStr
-          );
-
-          if (!isWorked && !isLeave) {
+          if (!isWorked) {
             absentDates.push(currentDay.toISOString());
           }
         }
 
-        // Move to next day
         currentDay.setDate(currentDay.getDate() + 1);
       }
 
@@ -208,12 +174,9 @@ export const attendanceRouter = createTRPCRouter({
         value: unit,
         stats: {
           daysWorked: uniqueWorkedDates.length,
-          daysOnLeave: leaveDates.length,
           daysAbsent: absentDates.length,
           totalWorkDays,
           workedDates: uniqueWorkedDates,
-          leaveDates,
-          leaveInfo,
           absentDates,
         },
       };

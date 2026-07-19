@@ -21,13 +21,6 @@ import {
 import type {AttendanceSummary, TrpcAttendanceSummary} from '../types/attendance';
 
 export interface Attendance {
-  onLeave: boolean;
-  leaveReason?: string;
-  leave?: {
-    reason?: string;
-    until: Date;
-    approvedBy: string;
-  };
   loggedInTime?: Date;
   loggedOutTime?: Date;
   breaks: Break[];
@@ -68,7 +61,6 @@ const [state, setState] = createStore<State>({});
 
 const dbUserToUserState = (dbUser: User, attendance?: DbAttendance) => {
   let attendanceState: Attendance = {
-    onLeave: false,
     breaks: [],
     workSegments: [],
     totalBreakTime: 0,
@@ -109,7 +101,6 @@ export const setUser = (trpcUser: TrpcUser) => {
 
 const dbAttendanceToAttendanceState = (dbAttendance: DbAttendance) => {
   return {
-    onLeave: false,
     loggedInTime: dbAttendance.login,
     loggedOutTime: dbAttendance.logout ?? undefined,
     breaks: dbAttendance.breaks,
@@ -131,7 +122,6 @@ export const setAttendance = (attendance: TrpcAttendance | null) => {
       user: {
         ...state.user,
         attendance: {
-          onLeave: false,
           breaks: [],
           workSegments: [],
           totalBreakTime: 0,

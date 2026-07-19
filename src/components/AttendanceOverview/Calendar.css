@@ -514,19 +514,6 @@
   padding-top: 20px;
 }
 
-.leave-selected {
-  background-color: rgba(25, 118, 210, 0.25) !important;
-  border: 2px solid #1976d2 !important;
-  font-weight: bold;
-}
-
-/* Make sure leave-selected has higher priority */
-.hr-calendar-day.leave-selected {
-  z-index: 1;
-  transform: scale(1.05);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  opacity: 1 !important;
-}
 
 /* Ensure the animation works well */
 @keyframes pulse {

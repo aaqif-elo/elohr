@@ -1,4 +1,4 @@
-import { type Attendance, type Leave } from "@prisma/client";
+import { type Attendance } from "@prisma/client";
 import { db, ONE_DAY_IN_MS } from ".";
 import { getStartOfDay, getEndOfDay } from "./util";
 import EventEmitter from "events";
@@ -699,39 +699,4 @@ export async function getWeekdayAvailabilityHeatmap(
   };
 }
 
-const reviewedLeaveQuery = {
-  OR: [
-    { reviewed: null },
-    { reviewed: { isSet: false } },
-    { reviewed: { isNot: { approved: false } } },
-  ],
-};
-
-export const getLeavesInDateRange = async (
-  startDate: Date,
-  endDate: Date,
-  userId?: string
-): Promise<Leave[]> => {
-  const leaves = await db.leave.findMany({
-    where: {
-      ...(userId ? { userId } : {}),
-      ...reviewedLeaveQuery,
-    },
-    include: {
-      user: {
-        select: {
-          name: true,
-          orgEmail: true,
-        },
-      },
-    },
-  });
-
-  return leaves.filter((leave) =>
-    leave.dates.some((date) => {
-      const leaveDate = new Date(date);
-      return leaveDate >= startDate && leaveDate <= endDate;
-    })
-  );
-};
 

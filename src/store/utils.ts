@@ -9,10 +9,6 @@ import type { Attendance as AttendanceState } from "./user.store";
 
 export interface TrpcUser
   extends Omit<User, "leaves" | "contracts" | "createdAt" | "updatedAt"> {
-  leaves: {
-    remainingLeaveCount: number;
-    resetAt: string;
-  }[];
   contracts: {
     contractType: ContractType;
     startDate: string;
@@ -100,10 +96,7 @@ export const convertTrpcAttendanceToDbAttendance = (
 export const convertTrpcUserToDbUser = (user: TrpcUser): User => {
   return {
     ...user,
-    leaves: user.leaves.map((leave) => ({
-      ...leave,
-      resetAt: new Date(leave.resetAt),
-    })),
+    leaves: [],
     contracts: user.contracts.map((contract) => ({
       ...contract,
       startDate: new Date(contract.startDate),
@@ -280,16 +273,6 @@ export function convertTrpcAttendanceSummaryToAttendanceSummary(
     stats: {
       ...summary.stats,
       workedDates: summary.stats.workedDates.map((date) => new Date(date)),
-      leaveDates: summary.stats.leaveDates.map((date) => new Date(date)),
-      leaveInfo: summary.stats.leaveInfo.map((info) => ({
-        date: new Date(info.date),
-        reason: info.reason,
-        approved: info.approved,
-        approvedBy: info.approvedBy,
-        approvedDate: info.approvedDate
-          ? new Date(info.approvedDate)
-          : undefined,
-      })),
       absentDates: summary.stats.absentDates.map((date) => new Date(date)),
     },
   };

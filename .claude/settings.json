@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && pnpm run typecheck && pnpm run lint",
+            "shell": "powershell",
+            "timeout": 120,
+            "statusMessage": "Running pre-commit checks (typecheck + lint)..."
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -15,7 +15,6 @@ import {
   getLoggedInUsers,
   logout,
   getAllEmployeesWithAttendance,
-  getLeavesInDateRange,
   getWeekDateRange,
   countWorkingDays,
 } from "../../db";
@@ -262,11 +261,9 @@ export async function sendWeeklyAttendanceReportToAdmin(
     cursor.setDate(cursor.getDate() + 1);
   }
 
-  // Parallel: fetch each day's employees+attendance and the week's leaves
-  const [dailySnapshots, leaves] = await Promise.all([
-    Promise.all(dayDates.map((d) => getAllEmployeesWithAttendance(d))),
-    getLeavesInDateRange(weekStart, weekEnd),
-  ]);
+  const dailySnapshots = await Promise.all(
+    dayDates.map((d) => getAllEmployeesWithAttendance(d))
+  );
 
   const workingDayDates = dayDates;
 
@@ -280,32 +277,9 @@ export async function sendWeeklyAttendanceReportToAdmin(
   type EmployeeWeekData = {
     name: string;
     days: Map<string, EmployeeDayData>; // ISO date string -> day data
-    leaveDays: Set<string>; // ISO date strings on leave
   };
 
   const employeeMap = new Map<string, EmployeeWeekData>();
-
-  // Index leaves by userId -> set of ISO date strings
-  const leavesByUser = new Map<string, { dates: Set<string>; reason?: string }>();
-  for (const leave of leaves) {
-    const existing = leavesByUser.get(leave.userId);
-    const leaveDateStrings = leave.dates
-      .map((d) => new Date(d).toISOString().split("T")[0])
-      .filter(
-        (iso) =>
-          iso >= weekStart.toISOString().split("T")[0] &&
-          iso <= weekEnd.toISOString().split("T")[0]
-      );
-
-    if (existing) {
-      for (const ds of leaveDateStrings) existing.dates.add(ds);
-    } else {
-      leavesByUser.set(leave.userId, {
-        dates: new Set(leaveDateStrings),
-        reason: leave.reason ?? undefined,
-      });
-    }
-  }
 
   // Process daily snapshots
   for (let dayIdx = 0; dayIdx < dayDates.length; dayIdx++) {
@@ -317,18 +291,10 @@ export async function sendWeeklyAttendanceReportToAdmin(
         employeeMap.set(emp.id, {
           name: emp.name ?? "Unknown",
           days: new Map(),
-          leaveDays: new Set(),
         });
       }
       const empData = employeeMap.get(emp.id);
       if (!empData) continue;
-
-      // Mark leave days
-      const userLeave = leavesByUser.get(emp.id);
-      if (userLeave?.dates.has(dayIso)) {
-        empData.leaveDays.add(dayIso);
-        continue;
-      }
 
       // Process attendance if present
       if (emp.attendance) {
@@ -386,12 +352,10 @@ export async function sendWeeklyAttendanceReportToAdmin(
     name: string;
     daysPresent: number;
     daysAbsent: number;
-    daysOnLeave: number;
     totalHours: number;
     avgLoginMinutes: number;
     lateDays: number;
     absentDayNames: string[];
-    leaveDayNames: string[];
   };
 
   const employeeStats: EmployeeStats[] = [];
@@ -403,8 +367,7 @@ export async function sendWeeklyAttendanceReportToAdmin(
 
   for (const [userId, empData] of employeeMap) {
     const daysPresent = empData.days.size;
-    const daysOnLeave = empData.leaveDays.size;
-    const daysAbsent = workingDays - daysPresent - daysOnLeave;
+    const daysAbsent = workingDays - daysPresent;
     const totalHoursMs = [...empData.days.values()].reduce(
       (sum, d) => sum + d.totalHoursMs,
       0
@@ -418,14 +381,10 @@ export async function sendWeeklyAttendanceReportToAdmin(
       (m) => m > LATE_THRESHOLD_MINUTES
     ).length;
 
-    // Determine which working days were absent (no attendance, no leave, not holiday)
     const absentDayNames: string[] = [];
-    const leaveDayNames: string[] = [];
     for (const wd of workingDayDates) {
       const iso = wd.toISOString().split("T")[0];
-      if (empData.leaveDays.has(iso)) {
-        leaveDayNames.push(fmtDateShort(iso));
-      } else if (!empData.days.has(iso)) {
+      if (!empData.days.has(iso)) {
         absentDayNames.push(fmtDateShort(iso));
       }
     }
@@ -434,12 +393,10 @@ export async function sendWeeklyAttendanceReportToAdmin(
       name: empData.name,
       daysPresent,
       daysAbsent: Math.max(0, daysAbsent),
-      daysOnLeave,
       totalHours,
       avgLoginMinutes,
       lateDays,
       absentDayNames,
-      leaveDayNames,
     });
 
     if (daysPresent > 0) {
@@ -516,26 +473,6 @@ export async function sendWeeklyAttendanceReportToAdmin(
     )
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  // Build leave summary
-  type LeaveSummaryItem = { name: string; dayNames: string[]; reason?: string };
-  const leaveSummary: LeaveSummaryItem[] = [];
-  for (const emp of employeeStats) {
-    if (emp.daysOnLeave > 0) {
-      const userLeave = [...leavesByUser.entries()].find(([uid]) => {
-        const empEntry = [...employeeMap.entries()].find(
-          ([id]) => id === uid
-        );
-        return empEntry && empEntry[1].name === emp.name;
-      });
-      leaveSummary.push({
-        name: emp.name,
-        dayNames: emp.leaveDayNames,
-        reason: userLeave?.[1].reason,
-      });
-    }
-  }
-  leaveSummary.sort((a, b) => a.name.localeCompare(b.name));
-
   // Sort projects by hours
   const sortedProjects = [...projectTotals.entries()]
     .map(([name, rec]) => ({
@@ -582,7 +519,7 @@ export async function sendWeeklyAttendanceReportToAdmin(
     lines.push("### Highlights");
 
     if (absent.length > 0) {
-      lines.push("🔴 **Absences** (no login, no leave)");
+      lines.push("🔴 **Absences** (no login)");
       for (const e of absent) {
         lines.push(
           `- ${e.name}: ${e.absentDayNames.join(", ")} (${e.daysAbsent} day${e.daysAbsent > 1 ? "s" : ""})`
@@ -643,16 +580,6 @@ export async function sendWeeklyAttendanceReportToAdmin(
       lines.push(
         `- ${p.name}: ${fmtHours(p.hours)} (${p.employees} employee${p.employees > 1 ? "s" : ""})`
       );
-    }
-    lines.push("");
-  }
-
-  // Leave
-  if (leaveSummary.length > 0) {
-    lines.push("### Leave");
-    for (const l of leaveSummary) {
-      const reason = l.reason ? ` (${l.reason})` : "";
-      lines.push(`- ${l.name}: ${l.dayNames.join(", ")}${reason}`);
     }
     lines.push("");
   }

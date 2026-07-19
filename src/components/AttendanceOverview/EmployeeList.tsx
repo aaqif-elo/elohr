@@ -46,12 +46,8 @@ const EmployeeList: Component<EmployeeListProps> = props => {
     if (!hasAdminData()) return null;
 
     const users = adminData()?.allUsers ?? [];
-    const presentUsers = users.filter(
-      user => !user.attendance.onLeave && user.attendance.loggedInTime
-    );
-    const absentUsers = users.filter(
-      user => user.attendance.onLeave || !user.attendance.loggedInTime
-    );
+    const presentUsers = users.filter(user => user.attendance.loggedInTime);
+    const absentUsers = users.filter(user => !user.attendance.loggedInTime);
 
     // Total work and break times
     const totalWorkTime = users.reduce(
