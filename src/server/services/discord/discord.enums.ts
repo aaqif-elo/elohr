@@ -1,6 +1,6 @@
 export enum EAttendanceCommands {
-  LOGIN = "available",
-  LOGOUT = "logout",
+  START_WORK = "start_work",
+  END_WORK = "end_work",
 }
 
 export enum EAuthCommands {

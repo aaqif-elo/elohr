@@ -1,8 +1,7 @@
 import type {
   ChatInputCommandInteraction,
   Client,
-  TextChannel,
-  User} from "discord.js";
+  TextChannel} from "discord.js";
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -10,25 +9,17 @@ import {
   ChannelType
 } from "discord.js";
 import {
-  generateAttendanceImageReport,
-  getDiscordIdsFromUserIds,
-  getLoggedInUsers,
-  logout,
   getAllEmployeesWithAttendance,
   getWeekDateRange,
   countWorkingDays,
 } from "../../db";
 
 import { generateJWTFromUserDiscordId } from "../../api/routers/auth";
-import { clearNameStatus } from "./utils";
 
 const getLoginUrl = async (discordId: string) => {
   try {
-    // new: actually generate the signed JWT
     const jwtResp = await generateJWTFromUserDiscordId(discordId);
-    if (!jwtResp?.jwt) {
-      return null;
-    }
+    if (!jwtResp?.jwt) return null;
     const loginUrl = `${
       process.env.NODE_ENV === "production"
         ? process.env.FRONTEND_URL
@@ -79,156 +70,12 @@ export const getHRLoginInteractionReplyPayload = async (
   }
 };
 
-export const autoLogoutUsersWhoAreStillLoggedIn = async (
-  discordClient: Client<boolean>
-) => {
-  const attendanceChannelID =
-    process.env.NODE_ENV === "production"
-      ? process.env.ATTENDANCE_CHANNEL_ID
-      : process.env.TEST_CHANNEL_ID;
-  if (!attendanceChannelID) {
-    return;
-  }
-
-  const attendanceChannel =
-    discordClient.channels.cache.get(attendanceChannelID);
-
-  if (!attendanceChannel || attendanceChannel.type !== ChannelType.GuildText) {
-    return;
-  }
-
-  // Get the list of users (by mongo ID) who are currently logged in
-  const userIds = await getLoggedInUsers();
-  const discordIds = await getDiscordIdsFromUserIds(userIds);
-  if (!userIds.length) {
-    return;
-  }
-  await attendanceChannel.send(`Auto-logout Initiated...`);
-  const today = new Date(); // Capture current date
-  const logoutPromises = userIds.map(async (userId) => {
-    try {
-      const discordId = discordIds.find((d) => d.id === userId)?.discordId;
-
-      if (!discordId) {
-        return;
-      }
-      const logoutInfo = await logout(userId);
-
-      if (!logoutInfo) {
-        return;
-      }
-
-      await clearNameStatus(discordId);
-
-      const fetchedUser = await discordClient.users.fetch(discordId);
-
-      const imageReportPromise = generateAttendanceImageReport(userId, today);
-      await sendLogoutReport(
-        fetchedUser,
-        logoutInfo.textReport,
-        imageReportPromise
-      );
-
-      return { discordId, userId };
-    } catch (err) {
-      console.error("Error during auto-logout:", err);
-      return null;
-    }
-  });
-
-  await Promise.all(logoutPromises);
-};
-
-const sendLogoutReport = async (
-  user: User,
-  textReportOrBuffer: string | Buffer,
-  imageReportPromise?: Promise<Buffer | null>
-): Promise<void> => {
-  const loginUrl = await getLoginUrl(user.id);
-
-  if (!loginUrl) {
-    console.error("Error generating login link for user:", user.id);
-    return;
-  }
-
-  const hrLoginButton = new ButtonBuilder()
-    .setLabel("ELO HR Login")
-    .setStyle(ButtonStyle.Link)
-    .setURL(loginUrl)
-    .setEmoji("🌐");
-
-  try {
-    // If textReportOrBuffer is a Buffer, it's the old-style direct report
-    if (textReportOrBuffer instanceof Buffer) {
-      await user.send({
-        files: [textReportOrBuffer],
-        content: `Please log in to the Portal to view more details.`,
-        components: [
-          new ActionRowBuilder<ButtonBuilder>().addComponents(hrLoginButton),
-        ],
-      });
-      return;
-    }
-
-    // Otherwise it's a text report with a pending image
-    const sentMessage = await user.send({
-      content: `${textReportOrBuffer}\n\nPlease log in to the Portal to view more details.\n\n*Generating detailed report...*`,
-      components: [
-        new ActionRowBuilder<ButtonBuilder>().addComponents(hrLoginButton),
-      ],
-    });
-
-    // Wait for image report and update the message when it's ready
-    if (imageReportPromise) {
-      imageReportPromise
-        .then(async (imageBuffer) => {
-          if (imageBuffer) {
-            await sentMessage.edit({
-              content: `${textReportOrBuffer}\n\nPlease log in to the Portal to view more details.`,
-              files: [imageBuffer],
-              components: [
-                new ActionRowBuilder<ButtonBuilder>().addComponents(
-                  hrLoginButton
-                ),
-              ],
-            });
-          } else {
-            // No image buffer returned, remove the "generating" message
-            await sentMessage.edit({
-              content: `${textReportOrBuffer}\n\nPlease log in to the Portal to view more details.`,
-              components: [
-                new ActionRowBuilder<ButtonBuilder>().addComponents(
-                  hrLoginButton
-                ),
-              ],
-            });
-          }
-        })
-        .catch(async (error) => {
-          console.error("Failed to generate image report:", error);
-          // Remove the "generating" message when there's an error
-          await sentMessage.edit({
-            content: `${textReportOrBuffer}\n\nPlease log in to the Portal to view more details.`,
-            components: [
-              new ActionRowBuilder<ButtonBuilder>().addComponents(
-                hrLoginButton
-              ),
-            ],
-          });
-        });
-    }
-  } catch (error) {
-    console.error("Failed to send logout report:", error);
-  }
-};
-
 // Outlier detection thresholds (office hours: 10 AM – 6 PM)
 const LATE_THRESHOLD_MINUTES = 10 * 60 + 30; // 10:30 AM in minutes
-const LATE_MIN_DAYS = 3; // must be late on at least this many days
-const HOURS_DEVIATION_THRESHOLD = 0.2; // 20% above/below team median
+const LATE_MIN_DAYS = 3;
+const HOURS_DEVIATION_THRESHOLD = 0.2;
 const SHORT_DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-// Build and send a markdown-formatted weekly attendance report to the admin channel
 export async function sendWeeklyAttendanceReportToAdmin(
   discordClient: Client<boolean>,
   referenceDate: Date = new Date()
@@ -246,18 +93,13 @@ export async function sendWeeklyAttendanceReportToAdmin(
   }
 
   const { start: weekStart, end: weekEnd } = getWeekDateRange(referenceDate);
-
   const workingDays = countWorkingDays(weekStart, weekEnd);
 
-  // Collect per-day attendance for every employee across the work week (Sun–Thu)
   const dayDates: Date[] = [];
   const cursor = new Date(weekStart);
   while (cursor <= weekEnd) {
     const dow = cursor.getDay();
-    // Only include Sun(0)–Thu(4), skip Fri/Sat
-    if (dow >= 0 && dow <= 4) {
-      dayDates.push(new Date(cursor));
-    }
+    if (dow >= 0 && dow <= 4) dayDates.push(new Date(cursor));
     cursor.setDate(cursor.getDate() + 1);
   }
 
@@ -267,44 +109,47 @@ export async function sendWeeklyAttendanceReportToAdmin(
 
   const workingDayDates = dayDates;
 
-  // Build per-employee weekly data from daily snapshots
   type EmployeeDayData = {
-    loginMinutes: number;
+    firstSegmentMinutes: number;
     totalHoursMs: number;
     projects: Map<string, number>;
   };
 
   type EmployeeWeekData = {
     name: string;
-    days: Map<string, EmployeeDayData>; // ISO date string -> day data
+    days: Map<string, EmployeeDayData>;
   };
 
   const employeeMap = new Map<string, EmployeeWeekData>();
 
-  // Process daily snapshots
   for (let dayIdx = 0; dayIdx < dayDates.length; dayIdx++) {
     const dayIso = dayDates[dayIdx].toISOString().split("T")[0];
-    const employees = dailySnapshots[dayIdx] as { id: string; name: string; attendance?: { login: string; workSegments: { start: string; end: string; project: string }[] } }[];
+    const employees = dailySnapshots[dayIdx] as {
+      id: string;
+      name: string;
+      attendance?: { date: string; workSegments: { start: string; end: string; project: string }[] };
+    }[];
 
     for (const emp of employees) {
       if (!employeeMap.has(emp.id)) {
-        employeeMap.set(emp.id, {
-          name: emp.name ?? "Unknown",
-          days: new Map(),
-        });
+        employeeMap.set(emp.id, { name: emp.name ?? "Unknown", days: new Map() });
       }
       const empData = employeeMap.get(emp.id);
       if (!empData) continue;
 
-      // Process attendance if present
       if (emp.attendance) {
-        const login = new Date(emp.attendance.login);
-        const loginMinutes = login.getHours() * 60 + login.getMinutes();
-        let totalMs = 0;
-        const projMs = new Map<string, number>();
         const segments = Array.isArray(emp.attendance.workSegments)
           ? emp.attendance.workSegments
           : [];
+
+        // First segment start = effective "login" time for the day
+        const firstSeg = segments[0];
+        const firstSegmentMinutes = firstSeg
+          ? new Date(firstSeg.start).getHours() * 60 + new Date(firstSeg.start).getMinutes()
+          : 0;
+
+        let totalMs = 0;
+        const projMs = new Map<string, number>();
 
         for (const ws of segments) {
           const s = ws.start ? new Date(ws.start) : null;
@@ -318,7 +163,7 @@ export async function sendWeeklyAttendanceReportToAdmin(
         }
 
         empData.days.set(dayIso, {
-          loginMinutes,
+          firstSegmentMinutes,
           totalHoursMs: totalMs,
           projects: projMs,
         });
@@ -326,7 +171,6 @@ export async function sendWeeklyAttendanceReportToAdmin(
     }
   }
 
-  // Helpers
   const toHours = (ms: number) => ms / (1000 * 60 * 60);
   const fmtHours = (hrs: number) => `${hrs.toFixed(1)}h`;
   const minutesToTimeStr = (mins: number) => {
@@ -347,20 +191,19 @@ export async function sendWeeklyAttendanceReportToAdmin(
     return SHORT_DAY_NAMES[d.getDay()];
   };
 
-  // Aggregate per-employee stats
   type EmployeeStats = {
     name: string;
     daysPresent: number;
     daysAbsent: number;
     totalHours: number;
-    avgLoginMinutes: number;
+    avgFirstSegmentMinutes: number;
     lateDays: number;
     absentDayNames: string[];
   };
 
   const employeeStats: EmployeeStats[] = [];
   const allWeeklyHours: number[] = [];
-  const allLoginMinutes: number[] = [];
+  const allFirstSegmentMinutes: number[] = [];
   const projectTotals = new Map<string, { hours: number; employeeIds: Set<string> }>();
   const teamSize = employeeMap.size;
   let totalPersonDaysPresent = 0;
@@ -373,20 +216,16 @@ export async function sendWeeklyAttendanceReportToAdmin(
       0
     );
     const totalHours = toHours(totalHoursMs);
-    const loginMinutesList = [...empData.days.values()].map((d) => d.loginMinutes);
-    const avgLoginMinutes = loginMinutesList.length
-      ? loginMinutesList.reduce((a, b) => a + b, 0) / loginMinutesList.length
+    const firstSegMinutesList = [...empData.days.values()].map((d) => d.firstSegmentMinutes);
+    const avgFirstSegmentMinutes = firstSegMinutesList.length
+      ? firstSegMinutesList.reduce((a, b) => a + b, 0) / firstSegMinutesList.length
       : 0;
-    const lateDays = loginMinutesList.filter(
-      (m) => m > LATE_THRESHOLD_MINUTES
-    ).length;
+    const lateDays = firstSegMinutesList.filter((m) => m > LATE_THRESHOLD_MINUTES).length;
 
     const absentDayNames: string[] = [];
     for (const wd of workingDayDates) {
       const iso = wd.toISOString().split("T")[0];
-      if (!empData.days.has(iso)) {
-        absentDayNames.push(fmtDateShort(iso));
-      }
+      if (!empData.days.has(iso)) absentDayNames.push(fmtDateShort(iso));
     }
 
     employeeStats.push({
@@ -394,25 +233,21 @@ export async function sendWeeklyAttendanceReportToAdmin(
       daysPresent,
       daysAbsent: Math.max(0, daysAbsent),
       totalHours,
-      avgLoginMinutes,
+      avgFirstSegmentMinutes,
       lateDays,
       absentDayNames,
     });
 
     if (daysPresent > 0) {
       allWeeklyHours.push(totalHours);
-      allLoginMinutes.push(...loginMinutesList);
+      allFirstSegmentMinutes.push(...firstSegMinutesList);
     }
     totalPersonDaysPresent += daysPresent;
 
-    // Aggregate project totals
     for (const dayData of empData.days.values()) {
       for (const [proj, ms] of dayData.projects) {
         const hrs = toHours(ms);
-        const rec = projectTotals.get(proj) || {
-          hours: 0,
-          employeeIds: new Set<string>(),
-        };
+        const rec = projectTotals.get(proj) || { hours: 0, employeeIds: new Set<string>() };
         rec.hours += hrs;
         rec.employeeIds.add(userId);
         projectTotals.set(proj, rec);
@@ -428,22 +263,19 @@ export async function sendWeeklyAttendanceReportToAdmin(
   const medianWeeklyHours = median(allWeeklyHours);
   const avgDailyHours =
     allWeeklyHours.length > 0
-      ? allWeeklyHours.reduce((a, b) => a + b, 0) /
-        allWeeklyHours.length /
-        workingDays
+      ? allWeeklyHours.reduce((a, b) => a + b, 0) / allWeeklyHours.length / workingDays
       : 0;
-  const medianLoginMinutes = median(allLoginMinutes);
+  const medianFirstSegMinutes = median(allFirstSegmentMinutes);
 
-  // Classify outliers
   const absent = employeeStats
     .filter((e) => e.daysAbsent > 0)
     .sort((a, b) => b.daysAbsent - a.daysAbsent);
   const consistentlyLate = employeeStats
     .filter(
       (e) =>
-        e.lateDays >= LATE_MIN_DAYS && e.avgLoginMinutes > LATE_THRESHOLD_MINUTES
+        e.lateDays >= LATE_MIN_DAYS && e.avgFirstSegmentMinutes > LATE_THRESHOLD_MINUTES
     )
-    .sort((a, b) => b.avgLoginMinutes - a.avgLoginMinutes);
+    .sort((a, b) => b.avgFirstSegmentMinutes - a.avgFirstSegmentMinutes);
   const aboveAvgHours =
     medianWeeklyHours > 0
       ? employeeStats
@@ -469,45 +301,31 @@ export async function sendWeeklyAttendanceReportToAdmin(
       (e) =>
         e.daysPresent === workingDays &&
         e.daysAbsent === 0 &&
-        e.avgLoginMinutes <= LATE_THRESHOLD_MINUTES
+        e.avgFirstSegmentMinutes <= LATE_THRESHOLD_MINUTES
     )
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  // Sort projects by hours
   const sortedProjects = [...projectTotals.entries()]
-    .map(([name, rec]) => ({
-      name,
-      hours: rec.hours,
-      employees: rec.employeeIds.size,
-    }))
+    .map(([name, rec]) => ({ name, hours: rec.hours, employees: rec.employeeIds.size }))
     .sort((a, b) => b.hours - a.hours)
     .slice(0, 5);
 
-  // Format the report
   const fmtDate = (d: Date) =>
-    d.toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    });
+    d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
   const header = `**Weekly Attendance Report — ${fmtDate(weekStart)} to ${fmtDate(weekEnd)}**`;
 
   const lines: string[] = [header, ""];
 
-  // Overview
   lines.push("### Overview");
-  lines.push(
-    `- Team Size: ${teamSize} | Working Days: ${workingDays}`
-  );
+  lines.push(`- Team Size: ${teamSize} | Working Days: ${workingDays}`);
   lines.push(
     `- Attendance Rate: ${attendanceRate}% (${totalPersonDaysPresent}/${totalPersonDays} person-days)`
   );
   lines.push(
-    `- Avg Daily Hours: ${fmtHours(avgDailyHours)} | Median Login Time: ${minutesToTimeStr(medianLoginMinutes)}`
+    `- Avg Daily Hours: ${fmtHours(avgDailyHours)} | Median First Segment: ${minutesToTimeStr(medianFirstSegMinutes)}`
   );
   lines.push("");
 
-  // Highlights
   const hasHighlights =
     absent.length > 0 ||
     consistentlyLate.length > 0 ||
@@ -519,7 +337,7 @@ export async function sendWeeklyAttendanceReportToAdmin(
     lines.push("### Highlights");
 
     if (absent.length > 0) {
-      lines.push("🔴 **Absences** (no login)");
+      lines.push("🔴 **Absences** (no work segments)");
       for (const e of absent) {
         lines.push(
           `- ${e.name}: ${e.absentDayNames.join(", ")} (${e.daysAbsent} day${e.daysAbsent > 1 ? "s" : ""})`
@@ -529,10 +347,10 @@ export async function sendWeeklyAttendanceReportToAdmin(
     }
 
     if (consistentlyLate.length > 0) {
-      lines.push("⏰ **Consistently Late** (avg login after 10:30 AM on 3+ days)");
+      lines.push("⏰ **Consistently Late** (first segment after 10:30 AM on 3+ days)");
       for (const e of consistentlyLate) {
         lines.push(
-          `- ${e.name}: avg login ${minutesToTimeStr(e.avgLoginMinutes)} (${e.lateDays} day${e.lateDays > 1 ? "s" : ""} late)`
+          `- ${e.name}: avg start ${minutesToTimeStr(e.avgFirstSegmentMinutes)} (${e.lateDays} day${e.lateDays > 1 ? "s" : ""} late)`
         );
       }
       lines.push("");
@@ -542,12 +360,9 @@ export async function sendWeeklyAttendanceReportToAdmin(
       lines.push("📈 **Above Average Hours** (>20% above team median)");
       for (const e of aboveAvgHours) {
         const pct = (
-          ((e.totalHours - medianWeeklyHours) / medianWeeklyHours) *
-          100
+          ((e.totalHours - medianWeeklyHours) / medianWeeklyHours) * 100
         ).toFixed(0);
-        lines.push(
-          `- ${e.name}: ${fmtHours(e.totalHours)} total — ${pct}% above median`
-        );
+        lines.push(`- ${e.name}: ${fmtHours(e.totalHours)} total — ${pct}% above median`);
       }
       lines.push("");
     }
@@ -556,12 +371,9 @@ export async function sendWeeklyAttendanceReportToAdmin(
       lines.push("📉 **Below Average Hours** (>20% below team median)");
       for (const e of belowAvgHours) {
         const pct = (
-          ((medianWeeklyHours - e.totalHours) / medianWeeklyHours) *
-          100
+          ((medianWeeklyHours - e.totalHours) / medianWeeklyHours) * 100
         ).toFixed(0);
-        lines.push(
-          `- ${e.name}: ${fmtHours(e.totalHours)} total — ${pct}% below median`
-        );
+        lines.push(`- ${e.name}: ${fmtHours(e.totalHours)} total — ${pct}% below median`);
       }
       lines.push("");
     }
@@ -573,7 +385,6 @@ export async function sendWeeklyAttendanceReportToAdmin(
     }
   }
 
-  // Projects
   if (sortedProjects.length > 0) {
     lines.push("### Projects");
     for (const p of sortedProjects) {

@@ -2,10 +2,10 @@ import { EAttendanceCommands } from "./discord.enums";
 import type { VoiceState } from "discord.js";
 import { getGuildMember } from ".";
 import {
-  getLoginTime,
+  hasActiveWorkSegment,
+  startWorkSegment,
+  endWorkSegment,
   getUserByDiscordId,
-  login,
-  logout,
   updateUserAvatar,
 } from "../../db";
 import type { User } from "@prisma/client";
@@ -58,18 +58,18 @@ const addAttendanceChange = async (attendanceChangePayload: {
 
   const actionLogic = async () => {
     switch (attendanceChangeCommand) {
-      case EAttendanceCommands.LOGIN: {
+      case EAttendanceCommands.START_WORK: {
         if (!currentVoiceChannelName) {
           notifyDiscordUserCallback(
-            `Error logging in, you are not in a voice channel.`,
+            `Error starting work segment — you are not in a voice channel.`,
             user.discordInfo.id
           );
         } else {
           try {
-            const loginResponse = await login(user.id, currentVoiceChannelName);
-            if (typeof loginResponse === "string") {
+            const result = await startWorkSegment(user.id, currentVoiceChannelName);
+            if (typeof result === "string") {
               notifyDiscordUserCallback(
-                `${process.env.STATUS_TAG_ERROR} ${loginResponse}`,
+                `${process.env.STATUS_TAG_ERROR} ${result}`,
                 user.discordInfo.id
               );
               return;
@@ -80,39 +80,41 @@ const addAttendanceChange = async (attendanceChangePayload: {
                   member?.user.avatar &&
                   member.user.avatar !== user.discordInfo.avatar
                 ) {
-                  updateUserAvatar(user.id, member.user.avatar).catch(err => console.error("Error updating avatar:", err));
+                  updateUserAvatar(user.id, member.user.avatar).catch(err =>
+                    console.error("Error updating avatar:", err)
+                  );
                 }
               })
               .catch(err => console.error("Error getting guild member for avatar update:", err));
 
             notifyDiscordUserCallback(
-              `${process.env.STATUS_TAG_AVAILABLE} Successfully logged in at ${loginResponse.login.toLocaleTimeString()}...`,
+              `${process.env.STATUS_TAG_AVAILABLE} Started working on ${currentVoiceChannelName}...`,
               user.discordInfo.id
             );
           } catch (error) {
-            console.error("Error during login action:", error);
+            console.error("Error during start work action:", error);
             notifyDiscordUserCallback(
-              `${process.env.STATUS_TAG_ERROR} An error occurred during login.`,
+              `${process.env.STATUS_TAG_ERROR} An error occurred while starting a work segment.`,
               user.discordInfo.id
             );
           }
         }
         break;
       }
-      case EAttendanceCommands.LOGOUT: {
+      case EAttendanceCommands.END_WORK: {
         try {
-          const logoutResponse = await logout(user.id);
-          if (!logoutResponse) {
+          const result = await endWorkSegment(user.id);
+          if (!result) {
             return;
           }
           notifyDiscordUserCallback(
-            `Logged out at ${logoutResponse.time.toLocaleTimeString()}...`,
+            `Ended work segment at ${new Date().toLocaleTimeString()}...`,
             user.discordInfo.id
           );
         } catch (error) {
-          console.error("Error during logout action:", error);
+          console.error("Error during end work action:", error);
           notifyDiscordUserCallback(
-            `${process.env.STATUS_TAG_ERROR} An error occurred during logout.`,
+            `${process.env.STATUS_TAG_ERROR} An error occurred while ending the work segment.`,
             user.discordInfo.id
           );
         }
@@ -160,7 +162,6 @@ export const handleVoiceStateChange = async (
     if (error instanceof Error && error.message === "User not found") {
       return;
     }
-
     throw error;
   }
 
@@ -186,18 +187,17 @@ export const handleVoiceStateChange = async (
   let voiceChannelName: string | undefined = undefined;
 
   if (goingOffline) {
-    const isLoggedIn = (await getLoginTime(user.id)) !== null;
-    if (isLoggedIn) {
-      attendanceCommand = EAttendanceCommands.LOGOUT;
+    const isActive = await hasActiveWorkSegment(user.id);
+    if (isActive) {
+      attendanceCommand = EAttendanceCommands.END_WORK;
     }
   } else if (comingOnline) {
     voiceChannelName = postTransitionState.channel?.name;
-    const canLogin = (await getLoginTime(user.id)) === null;
-    if (canLogin) {
-      attendanceCommand = EAttendanceCommands.LOGIN;
+    const canStart = !(await hasActiveWorkSegment(user.id));
+    if (canStart) {
+      attendanceCommand = EAttendanceCommands.START_WORK;
     }
   }
-  // Switching between non-AFK channels triggers no action
 
   if (attendanceCommand) {
     addAttendanceChange({
