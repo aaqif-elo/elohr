@@ -53,30 +53,6 @@ export async function getUserById(userId: string) {
   return user;
 }
 
-export async function getDiscordIdsFromUserIds(
-  userIds: string[]
-): Promise<{ id: string; discordId: string }[]> {
-  const users = await db.user.findMany({
-    where: {
-      id: { in: userIds },
-      exEmployee: false,
-    },
-    select: {
-      id: true,
-      discordInfo: {
-        select: {
-          id: true,
-        },
-      },
-    },
-  });
-
-  return users.map((user) => ({
-    id: user.id,
-    discordId: user.discordInfo?.id || "",
-  }));
-}
-
 
 export async function getAllEmployeesWithAttendance(date: Date) {
   const { start, end } = getStartAndEndOfDay(date);
@@ -100,8 +76,8 @@ export async function getAllEmployeesWithAttendance(date: Date) {
                 $expr: {
                   $and: [
                     { $eq: ["$user", "$$userId"] },
-                    { $gte: ["$login", { $toDate: start.toISOString() }] },
-                    { $lte: ["$login", { $toDate: end.toISOString() }] },
+                    { $gte: ["$date", { $toDate: start.toISOString() }] },
+                    { $lte: ["$date", { $toDate: end.toISOString() }] },
                   ],
                 },
               },
@@ -109,49 +85,19 @@ export async function getAllEmployeesWithAttendance(date: Date) {
             // 3. Project and convert date and ObjectId fields.
             {
               $project: {
-                // Convert top-level date fields to strings.
-                login: {
-                  $dateToString: {
-                    date: "$login",
-                    format: "%Y-%m-%dT%H:%M:%S.%LZ",
-                  },
-                },
-                logout: {
-                  $dateToString: {
-                    date: "$logout",
-                    format: "%Y-%m-%dT%H:%M:%S.%LZ",
-                  },
-                },
                 // Convert the attendance document's own _id and user reference to strings.
                 _id: { $toString: "$_id" },
                 user: { $toString: "$user" },
-                // Convert dates in the breaks array.
-                breaks: {
-                  $map: {
-                    input: { $ifNull: ["$breaks", []] }, // Use an empty array if workSegments is null.
-                    as: "b",
-                    in: {
-                      start: {
-                        $dateToString: {
-                          date: "$$b.start",
-                          format: "%Y-%m-%dT%H:%M:%S.%LZ",
-                        },
-                      },
-                      end: {
-                        $dateToString: {
-                          date: "$$b.end",
-                          format: "%Y-%m-%dT%H:%M:%S.%LZ",
-                        },
-                      },
-                      reason: "$$b.reason",
-                      _id: { $toString: "$$b._id" },
-                    },
+                date: {
+                  $dateToString: {
+                    date: "$date",
+                    format: "%Y-%m-%dT%H:%M:%S.%LZ",
                   },
                 },
                 // Convert dates in the workSegments array.
                 workSegments: {
                   $map: {
-                    input: { $ifNull: ["$workSegments", []] }, // Use an empty array if workSegments is null.
+                    input: { $ifNull: ["$workSegments", []] },
                     as: "ws",
                     in: {
                       start: {
@@ -167,14 +113,10 @@ export async function getAllEmployeesWithAttendance(date: Date) {
                         },
                       },
                       project: "$$ws.project",
-                      _id: { $toString: "$$ws._id" },
                     },
                   },
                 },
-                // Include other fields as needed.
-                totalBreak: "$total_break",
-                totalTime: "$total_time",
-                totalWork: "$total_work",
+                totalWork: "$totalWork",
                 __v: 1,
               },
             },
