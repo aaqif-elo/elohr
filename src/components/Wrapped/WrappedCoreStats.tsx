@@ -23,37 +23,31 @@ export const WrappedCoreStats: Component<WrappedStatsProps> = (props) => {
                     </div>
                     <div class="wrapped-stat-label">Hours Worked</div>
                 </div>
-                <div class="wrapped-stat-card wrapped-animate-in wrapped-animate-in--delay-3">
-                    <div class="wrapped-stat-value wrapped-highlight--pink">
-                        {props.stats.totalBreakHours}
-                    </div>
-                    <div class="wrapped-stat-label">Hours of Breaks</div>
-                </div>
             </div>
-            <Show when={props.stats.earliestLogin || props.stats.latestLogout}>
+            <Show when={props.stats.earliestWorkStart || props.stats.latestWorkEnd}>
                 <div class="wrapped-stats-grid" style={{ "margin-top": "1rem" }}>
-                    <Show when={props.stats.earliestLogin}>
-                        {(earliestLogin) => (
-                            <div class="wrapped-stat-card wrapped-animate-in wrapped-animate-in--delay-4">
+                    <Show when={props.stats.earliestWorkStart}>
+                        {(earliestWorkStart) => (
+                            <div class="wrapped-stat-card wrapped-animate-in wrapped-animate-in--delay-3">
                                 <div class="wrapped-stat-value" style={{ "font-size": "1.75rem" }}>
-                                    {earliestLogin().time}
+                                    {earliestWorkStart().time}
                                 </div>
-                                <div class="wrapped-stat-label">Earliest Login</div>
+                                <div class="wrapped-stat-label">Earliest Start</div>
                                 <div style={{ "font-size": "0.75rem", color: "rgba(255,255,255,0.5)", "margin-top": "0.25rem" }}>
-                                    {earliestLogin().date}
+                                    {earliestWorkStart().date}
                                 </div>
                             </div>
                         )}
                     </Show>
-                    <Show when={props.stats.latestLogout}>
-                        {(latestLogout) => (
+                    <Show when={props.stats.latestWorkEnd}>
+                        {(latestWorkEnd) => (
                             <div class="wrapped-stat-card wrapped-animate-in wrapped-animate-in--delay-4">
                                 <div class="wrapped-stat-value" style={{ "font-size": "1.75rem" }}>
-                                    {latestLogout().time}
+                                    {latestWorkEnd().time}
                                 </div>
-                                <div class="wrapped-stat-label">Latest Logout</div>
+                                <div class="wrapped-stat-label">Latest End</div>
                                 <div style={{ "font-size": "0.75rem", color: "rgba(255,255,255,0.5)", "margin-top": "0.25rem" }}>
-                                    {latestLogout().date}
+                                    {latestWorkEnd().date}
                                 </div>
                             </div>
                         )}

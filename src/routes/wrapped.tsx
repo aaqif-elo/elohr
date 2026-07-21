@@ -5,7 +5,6 @@ import {
     WrappedHero,
     WrappedStats,
     WrappedProjects,
-    WrappedBreaks,
     WrappedTimePersonality,
     WrappedBadges,
     WrappedSummary,
@@ -71,12 +70,6 @@ export default function Wrapped() {
                         <button
                             class="wrapped-nav-dot"
                             onClick={() =>
-                                document.getElementById("slide-breaks")?.scrollIntoView({ behavior: "smooth" })
-                            }
-                        />
-                        <button
-                            class="wrapped-nav-dot"
-                            onClick={() =>
                                 document.getElementById("slide-time")?.scrollIntoView({ behavior: "smooth" })
                             }
                         />
@@ -105,10 +98,6 @@ export default function Wrapped() {
 
                     <WrappedSlide variant="projects" id="slide-projects">
                         <WrappedProjects insights={data().projectInsights} />
-                    </WrappedSlide>
-
-                    <WrappedSlide variant="breaks" id="slide-breaks">
-                        <WrappedBreaks patterns={data().breakPatterns} />
                     </WrappedSlide>
 
                     <WrappedSlide variant="time" id="slide-time">

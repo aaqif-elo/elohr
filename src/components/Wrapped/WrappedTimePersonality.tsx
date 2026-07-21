@@ -37,34 +37,31 @@ export const WrappedTimePersonality: Component<WrappedTimePersonalityProps> = (
             </div>
 
             <div class="wrapped-stats-grid">
-                <Show when={props.timePersonality.averageLoginTime}>
+                <Show when={props.timePersonality.averageStartTime}>
                     <div class="wrapped-stat-card wrapped-animate-in wrapped-animate-in--delay-2">
                         <div
                             class="wrapped-stat-value wrapped-highlight"
                             style={{ "font-size": "1.5rem" }}
                         >
-                            {props.timePersonality.averageLoginTime}
+                            {props.timePersonality.averageStartTime}
                         </div>
-                        <div class="wrapped-stat-label">Avg Login</div>
+                        <div class="wrapped-stat-label">Avg Start</div>
                     </div>
                 </Show>
-                <Show when={props.timePersonality.averageLogoutTime}>
+                <Show when={props.timePersonality.averageEndTime}>
                     <div class="wrapped-stat-card wrapped-animate-in wrapped-animate-in--delay-3">
                         <div
                             class="wrapped-stat-value wrapped-highlight--purple"
                             style={{ "font-size": "1.5rem" }}
                         >
-                            {props.timePersonality.averageLogoutTime}
+                            {props.timePersonality.averageEndTime}
                         </div>
-                        <div class="wrapped-stat-label">Avg Logout</div>
+                        <div class="wrapped-stat-label">Avg End</div>
                     </div>
                 </Show>
             </div>
 
-            <div
-                class="wrapped-stats-grid"
-                style={{ "margin-top": "1rem" }}
-            >
+            <div class="wrapped-stats-grid" style={{ "margin-top": "1rem" }}>
                 <Show when={props.timePersonality.longestWorkday}>
                     {(longestWorkday) => (
                         <div class="wrapped-stat-card wrapped-animate-in wrapped-animate-in--delay-3">
