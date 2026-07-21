@@ -23,7 +23,7 @@ if (process.env.JWT_EXP_IN_MS) {
   }
 }
 
-export const generateJWTFromUserId = async (userId: string) => {
+const generateJWTFromUserId = async (userId: string) => {
   const user = await getUserById(userId);
   if (!user) {
     return null;
