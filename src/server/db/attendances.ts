@@ -210,6 +210,65 @@ export const getAttendancesInDateRange = async (
   });
 };
 
+interface MonthlyWorkReport {
+  rangeStart: Date;
+  rangeEnd: Date;
+  totalMs: number;
+  daysWorked: number;
+  perProject: { project: string; ms: number }[];
+}
+
+/**
+ * Aggregate a user's work for the calendar month containing `date`.
+ * In-progress (open) segments are counted up to `now`.
+ */
+export const getMonthlyWorkReport = async (
+  userId: string,
+  date = new Date(),
+): Promise<MonthlyWorkReport> => {
+  const rangeStart = getStartOfDay(
+    new Date(date.getFullYear(), date.getMonth(), 1),
+  );
+  const rangeEnd = getEndOfDay(
+    new Date(date.getFullYear(), date.getMonth() + 1, 0),
+  );
+
+  const attendances = await getAttendancesInDateRange(
+    userId,
+    rangeStart,
+    rangeEnd,
+  );
+
+  const now = new Date();
+  const projectTotals = new Map<string, number>();
+  let totalMs = 0;
+  let daysWorked = 0;
+
+  for (const attendance of attendances) {
+    let dayMs = 0;
+    for (const segment of attendance.workSegments) {
+      const end = segment.end ?? now;
+      const ms =
+        segment.length_ms ??
+        Math.max(0, end.getTime() - segment.start.getTime());
+      if (ms <= 0) continue;
+      dayMs += ms;
+      projectTotals.set(
+        segment.project,
+        (projectTotals.get(segment.project) ?? 0) + ms,
+      );
+    }
+    if (dayMs > 0) daysWorked++;
+    totalMs += dayMs;
+  }
+
+  const perProject = [...projectTotals.entries()]
+    .map(([project, ms]) => ({ project, ms }))
+    .sort((a, b) => b.ms - a.ms);
+
+  return { rangeStart, rangeEnd, totalMs, daysWorked, perProject };
+};
+
 export const countWorkingDays = (startDate: Date, endDate: Date): number => {
   let count = 0;
   const currentDate = new Date(startDate);

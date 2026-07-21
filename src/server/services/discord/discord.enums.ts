@@ -15,6 +15,10 @@ export enum ERecordingCommands {
   RECORD = "record",
 }
 
+export enum EReportCommands {
+  REPORT = "report",
+}
+
 export enum ERecordingStage {
   STARTED = "started",
   STOPPED = "stopped",

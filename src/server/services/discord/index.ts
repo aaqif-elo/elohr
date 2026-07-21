@@ -10,7 +10,7 @@ import {
   authCommandBody,
   recordingCommandBody,
 } from "./commands";
-import { availabilityCommandBody } from "./commands";
+import { availabilityCommandBody, reportCommandBody } from "./commands";
 
 import { interactionHandler } from "./interaction-handlers";
 import { handleRecordingVoiceStateUpdate } from "./recording";
@@ -160,6 +160,7 @@ async function registerCommands() {
     authCommandBody,
     availabilityCommandBody,
     recordingCommandBody,
+    reportCommandBody,
   ];
 
   try {

@@ -1,8 +1,9 @@
 import type { CacheType, ChatInputCommandInteraction } from "discord.js";
-import { EAuthCommands, EAvailabilityCommands, ERecordingCommands } from "../discord.enums";
+import { EAuthCommands, EAvailabilityCommands, ERecordingCommands, EReportCommands } from "../discord.enums";
 import { handleAuthCommand } from "./auth.handler";
 import { handleAvailabilityCommand } from "./availability.handler";
 import { handleRecordingCommand } from "./recording.handler";
+import { handleReportCommand } from "./report.handler";
 import {
   logInteractionAckTiming,
   sendInteractionErrorResponse,
@@ -41,6 +42,12 @@ export const interactionHandler = async (
     // Recording command can run in any channel (permission check happens in handler)
     if (interaction.commandName === ERecordingCommands.RECORD) {
       await handleRecordingCommand(interaction);
+      return;
+    }
+
+    // Personal report can run in any channel (reply is ephemeral)
+    if (interaction.commandName === EReportCommands.REPORT) {
+      await handleReportCommand(interaction);
       return;
     }
 
