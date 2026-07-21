@@ -9,6 +9,7 @@ import {
   updateUserAvatar,
 } from "../../db";
 import type { User } from "@prisma/client";
+import { formatWorkedDuration } from "../../utils/time";
 
 if (!process.env.VOICE_CHANNEL_ATTENDANCE_DELAY_IN_SECONDS)
   throw new Error("VOICE_CHANNEL_ATTENDANCE_DELAY_IN_SECONDS is not defined");
@@ -107,10 +108,22 @@ const addAttendanceChange = async (attendanceChangePayload: {
           if (!result) {
             return;
           }
+          const seg = result.workSegments[result.workSegments.length - 1];
+          const timeOpts: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit" };
+          const channelName = seg?.project ?? "Unknown Channel";
+          const startTime = seg?.start ? new Date(seg.start).toLocaleTimeString([], timeOpts) : "—";
+          const endTime = seg?.end ? new Date(seg.end).toLocaleTimeString([], timeOpts) : "—";
+          const ms = seg?.length_ms ?? 0;
+          const timeWorked = formatWorkedDuration(ms);
           notifyDiscordUserCallback(
-            `Ended work segment at ${new Date().toLocaleTimeString()}...`,
+            `Ended work segment at ${endTime}`,
             user.discordInfo.id
           );
+          if (ms >= 10 * 60 * 1000) {
+            getGuildMember(user.discordInfo.id)
+              .then((member) => member?.send(`Logged work segment:\n\n${channelName}\nStart: ${startTime}\nEnd: ${endTime}\nTime Worked: ${timeWorked}`))
+              .catch((err) => console.error("Error sending work segment DM:", err));
+          }
         } catch (error) {
           console.error("Error during end work action:", error);
           notifyDiscordUserCallback(
