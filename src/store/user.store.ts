@@ -1,5 +1,4 @@
 import type {
-  Break,
   ContractType,
   User,
   UserRoleTypes,
@@ -12,20 +11,15 @@ import type {
   TrpcUser,
   TrpcUserWithAttendance} from './utils';
 import {
-  calculateMsWorkedOrBreaksTaken,
+  calculateTotalWorkMs,
   convertTrpcAttendanceToDbAttendance,
   convertTrpcUserToDbUser,
-  generateTimeSegmentPreState,
   convertTrpcAttendanceSummaryToAttendanceSummary,
 } from './utils';
 import type {AttendanceSummary, TrpcAttendanceSummary} from '../types/attendance';
 
 export interface Attendance {
-  loggedInTime?: Date;
-  loggedOutTime?: Date;
-  breaks: Break[];
   workSegments: WorkSegment[];
-  totalBreakTime: number;
   totalWorkTime: number;
 }
 
@@ -60,15 +54,10 @@ interface State {
 const [state, setState] = createStore<State>({});
 
 const dbUserToUserState = (dbUser: User, attendance?: DbAttendance) => {
-  let attendanceState: Attendance = {
-    breaks: [],
-    workSegments: [],
-    totalBreakTime: 0,
-    totalWorkTime: 0,
-  };
-  if (attendance) {
-    attendanceState = dbAttendanceToAttendanceState(attendance);
-  }
+  const attendanceState: Attendance = attendance
+    ? dbAttendanceToAttendanceState(attendance)
+    : { workSegments: [], totalWorkTime: 0 };
+
   return {
     name: dbUser.name,
     dbID: dbUser.id,
@@ -95,23 +84,13 @@ const dbUserToUserState = (dbUser: User, attendance?: DbAttendance) => {
 export const setUser = (trpcUser: TrpcUser) => {
   const dbUser = convertTrpcUserToDbUser(trpcUser);
   const userState = dbUserToUserState(dbUser);
-
   setState('user', userState);
 };
 
-const dbAttendanceToAttendanceState = (dbAttendance: DbAttendance) => {
+const dbAttendanceToAttendanceState = (dbAttendance: DbAttendance): Attendance => {
   return {
-    loggedInTime: dbAttendance.login,
-    loggedOutTime: dbAttendance.logout ?? undefined,
-    breaks: dbAttendance.breaks,
     workSegments: dbAttendance.workSegments,
-    totalBreakTime: dbAttendance.totalBreak || calculateMsWorkedOrBreaksTaken(dbAttendance.breaks),
-    totalWorkTime:
-      dbAttendance.totalWork ||
-      calculateMsWorkedOrBreaksTaken(
-        dbAttendance.workSegments ||
-          generateTimeSegmentPreState(dbAttendance).filter(segment => segment.type === 'work')
-      ),
+    totalWorkTime: dbAttendance.totalWork || calculateTotalWorkMs(dbAttendance.workSegments),
   };
 };
 
@@ -121,12 +100,7 @@ export const setAttendance = (attendance: TrpcAttendance | null) => {
     setState({
       user: {
         ...state.user,
-        attendance: {
-          breaks: [],
-          workSegments: [],
-          totalBreakTime: 0,
-          totalWorkTime: 0,
-        },
+        attendance: { workSegments: [], totalWorkTime: 0 },
       },
     });
     return;
@@ -153,11 +127,7 @@ export const setAdmin = (allUsers: TrpcUserWithAttendance[]) => {
     userStates.push(userState);
   });
 
-  setState({
-    admin: {
-      allUsers: userStates,
-    },
-  });
+  setState({ admin: { allUsers: userStates } });
 };
 
 export const getAdmin = () => state.admin;
@@ -167,7 +137,6 @@ export const getAvatarUrl = (discordID: string, discordAvatarId: string) =>
 
 export const setAttendanceSummary = (summary: TrpcAttendanceSummary) => {
   if (!state.user) return;
-
   const convertedSummary = convertTrpcAttendanceSummaryToAttendanceSummary(summary);
   setState({
     user: {

@@ -46,36 +46,32 @@ const EmployeeList: Component<EmployeeListProps> = props => {
     if (!hasAdminData()) return null;
 
     const users = adminData()?.allUsers ?? [];
-    const presentUsers = users.filter(user => user.attendance.loggedInTime);
-    const absentUsers = users.filter(user => !user.attendance.loggedInTime);
+    const presentUsers = users.filter(user => user.attendance.workSegments.length > 0);
+    const absentUsers = users.filter(user => user.attendance.workSegments.length === 0);
 
-    // Total work and break times
     const totalWorkTime = users.reduce(
       (sum, user) => sum + (user.attendance.totalWorkTime || 0),
       0
     );
-    const totalBreakTime = users.reduce(
-      (sum, user) => sum + (user.attendance.totalBreakTime || 0),
-      0
-    );
-
     const averageWorkTime = totalWorkTime / users.length || 0;
-    const averageBreakTime = totalBreakTime / users.length || 0;
 
-    // Median login and logout times
-    const loginTimes = users
-      .map(user => user.attendance.loggedInTime)
-      .filter((t): t is Date => t !== null && t !== undefined)
+    // Median first-segment start time and last-segment end time
+    const firstSegmentTimes = users
+      .map(user => user.attendance.workSegments[0]?.start)
+      .filter((t): t is Date => t != null)
       .sort((a, b) => a.getTime() - b.getTime());
-    const logoutTimes = users
-      .map(user => user.attendance.loggedOutTime)
-      .filter((t): t is Date => t !== null && t !== undefined)
+    const lastSegmentTimes = users
+      .map(user => {
+        const segs = user.attendance.workSegments;
+        return segs[segs.length - 1]?.end ?? null;
+      })
+      .filter((t): t is Date => t != null)
       .sort((a, b) => a.getTime() - b.getTime());
 
     const medianLoginTime =
-      loginTimes[Math.floor(loginTimes.length / 2)]?.toLocaleTimeString() || 'N/A';
+      firstSegmentTimes[Math.floor(firstSegmentTimes.length / 2)]?.toLocaleTimeString() || 'N/A';
     const medianLogoutTime =
-      logoutTimes[Math.floor(logoutTimes.length / 2)]?.toLocaleTimeString() || 'N/A';
+      lastSegmentTimes[Math.floor(lastSegmentTimes.length / 2)]?.toLocaleTimeString() || 'N/A';
 
     // Most active project
     const projectCounts = new Map<string, number>();
@@ -104,7 +100,6 @@ const EmployeeList: Component<EmployeeListProps> = props => {
       presentCount: presentUsers.length,
       absentCount: absentUsers.length,
       averageWorkTime: formatDuration(averageWorkTime),
-      averageBreakTime: formatDuration(averageBreakTime),
       medianLoginTime,
       medianLogoutTime,
       mostActiveProject,
@@ -181,8 +176,7 @@ const EmployeeList: Component<EmployeeListProps> = props => {
   const sortedFilteredUsers = createMemo((): UserState[] => {
     const statusOrder: Record<string, number> = {
       present: 0,
-      'on break': 1,
-      absent: 2,
+      absent: 1,
     };
 
     return [...filteredUsers()].sort((a, b) => {
@@ -243,15 +237,11 @@ const EmployeeList: Component<EmployeeListProps> = props => {
                 {attendanceSummary()?.averageWorkTime || '00:00:00'}
               </div>
               <div>
-                <span class="font-bold">Avg Break Time:</span>{' '}
-                {attendanceSummary()?.averageBreakTime || '00:00:00'}
-              </div>
-              <div>
-                <span class="font-bold">Median Login Time:</span>{' '}
+                <span class="font-bold">Median First Segment:</span>{' '}
                 {attendanceSummary()?.medianLoginTime || 'N/A'}
               </div>
               <div>
-                <span class="font-bold">Median Logout Time:</span>{' '}
+                <span class="font-bold">Median Last Segment:</span>{' '}
                 {attendanceSummary()?.medianLogoutTime || 'N/A'}
               </div>
               <div>

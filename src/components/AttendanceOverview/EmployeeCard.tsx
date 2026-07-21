@@ -48,7 +48,7 @@ const EmployeeCard: Component<EmployeeCardProps> = props => {
   const statusChipStyle = (): JSX.CSSProperties => ({
     display: 'inline-flex',
     'align-items': 'center',
-    'background-color': status() === 'present' ? 'green' : status() === 'on break' ? 'orange' : 'red',
+    'background-color': status() === 'present' ? 'green' : 'red',
     color: 'white',
     padding: '4px 8px',
     'border-radius': '12px',
@@ -97,16 +97,13 @@ const EmployeeCard: Component<EmployeeCardProps> = props => {
           )}</For>
         </div>
         <Show
-          when={props.attendance?.loggedInTime}
+          when={props.attendance?.workSegments?.length}
           fallback={<div style={{'margin-top': '8px', 'font-size': '14px'}}>Absent</div>}
         >
           <div style={{'margin-top': '8px', 'font-size': '14px'}}>
             <div style={statusChipStyle()}>{status()}</div>
             {typeof props.attendance?.totalWorkTime === 'number' && (
               <div>Total Worked: {formatDuration(props.attendance.totalWorkTime)}</div>
-            )}
-            {typeof props.attendance?.totalBreakTime === 'number' && (
-              <div>Total Breaks: {formatDuration(props.attendance.totalBreakTime)}</div>
             )}
             {mostActiveProject() && <div>Most Active Project: {mostActiveProject()}</div>}
           </div>

@@ -34,49 +34,27 @@ export const AttendanceOverview: Component<AttendanceOverviewProps> = props => {
 
   const currentStatus = createMemo(() => {
     const segments = generateTimeSegments(overviewUser().attendance);
-    const lastSegment = segments[segments.length - 1];
-
-    if (!overviewUser().attendance.loggedInTime) {
-      return {status: 'Not Logged In', duration: null};
+    if (!segments.length) {
+      return {status: 'No Work Recorded', duration: null};
     }
 
-    if (overviewUser().attendance.loggedOutTime) {
-      return {
-        status: 'Logged Out',
-        duration: null,
-        time: overviewUser().attendance.loggedOutTime,
-      };
+    const openSeg = segments.slice().reverse().find(s => !s.end);
+    if (openSeg) {
+      const duration = Math.floor(currentTime().getTime() - openSeg.start.getTime());
+      return {status: `Working in ${openSeg.channel}`, duration};
     }
 
-    if (!lastSegment || currentTime() < lastSegment.start) {
-      return {status: 'Not Logged In', duration: null};
-    }
-
-    if (
-      currentTime() >= lastSegment.start &&
-      currentTime() <= getEffectiveEndTime(lastSegment, currentTime())
-    ) {
-      const duration = Math.floor(currentTime().getTime() - lastSegment.start.getTime());
-      return {
-        status: lastSegment.type === 'work' ? `Working in ${lastSegment.channel}` : 'On Break',
-        duration,
-      };
-    }
-
-    return {status: 'Status Unknown', duration: null};
+    return {status: 'Work Ended', duration: null};
   });
 
   const hoursWorked = createMemo(() => {
     const time = currentTime();
     return formatDuration(
       generateTimeSegments(overviewUser().attendance).reduce((total, segment) => {
-        if (segment.type === 'work') {
-          return (
-            total +
-            (getEffectiveEndTime(segment, time).getTime() - segment.start.getTime())
-          );
-        }
-        return total;
+        return (
+          total +
+          (getEffectiveEndTime(segment, time).getTime() - segment.start.getTime())
+        );
       }, 0)
     );
   });
@@ -85,7 +63,7 @@ export const AttendanceOverview: Component<AttendanceOverviewProps> = props => {
     const time = currentTime();
     const projectDurations = generateTimeSegments(overviewUser().attendance).reduce(
       (acc, segment) => {
-        if (segment.type === 'work' && segment.channel) {
+        if (segment.channel) {
           const duration =
             getEffectiveEndTime(segment, time).getTime() - segment.start.getTime();
           acc[segment.channel] = (acc[segment.channel] || 0) + duration;
@@ -116,6 +94,9 @@ export const AttendanceOverview: Component<AttendanceOverviewProps> = props => {
     );
   };
 
+  const firstSegmentStart = () =>
+    overviewUser().attendance.workSegments[0]?.start;
+
   return (
     <div class="mx-auto h-full">
       <div class="mb-4 flex items-center space-x-4">
@@ -133,9 +114,7 @@ export const AttendanceOverview: Component<AttendanceOverviewProps> = props => {
             class={`rounded-full px-3 py-1 ${
               currentStatus().status.includes('Working')
                 ? 'bg-green-100 text-green-800'
-                : currentStatus().status.includes('Break')
-                  ? 'bg-yellow-100 text-yellow-800'
-                  : 'bg-gray-100 text-gray-800'
+                : 'bg-gray-100 text-gray-800'
             }`}
           >
             {currentStatus().status}
@@ -145,10 +124,6 @@ export const AttendanceOverview: Component<AttendanceOverviewProps> = props => {
             })()}
           </span>
         )}
-        {getStatsRow('Login Time', formatTime(overviewUser().attendance.loggedInTime))}
-        <Show when={overviewUser().attendance.loggedOutTime}>
-          {getStatsRow('Logout Time', formatTime(overviewUser().attendance.loggedOutTime))}
-        </Show>
         {getStatsRow('Hours Worked Today', `${hoursWorked()}`)}
         {getStatsRow(
           'Scrum Attendance',
@@ -160,7 +135,7 @@ export const AttendanceOverview: Component<AttendanceOverviewProps> = props => {
             }`}
           >
             {wasInScrum(overviewUser().attendance)
-              ? `Present (${formatTime(getScrumTime(new Date(overviewUser().attendance.loggedInTime || new Date())))})`
+              ? `Present (${formatTime(getScrumTime(new Date(firstSegmentStart() || new Date())))})`
               : 'Absent'}
           </span>
         )}
