@@ -1,9 +1,10 @@
-import type { CacheType, ChatInputCommandInteraction } from "discord.js";
-import { EAuthCommands, EAvailabilityCommands, ERecordingCommands, EReportCommands } from "../discord.enums";
+import type { AutocompleteInteraction, CacheType, ChatInputCommandInteraction } from "discord.js";
+import { EAuthCommands, EAvailabilityCommands, EProjectCommands, ERecordingCommands, EReportCommands } from "../discord.enums";
 import { handleAuthCommand } from "./auth.handler";
 import { handleAvailabilityCommand } from "./availability.handler";
 import { handleRecordingCommand } from "./recording.handler";
 import { handleReportCommand } from "./report.handler";
+import { handleProjectCommand, handleProjectAutocomplete } from "./project.handler";
 import {
   logInteractionAckTiming,
   sendInteractionErrorResponse,
@@ -27,6 +28,19 @@ const sendErrorInteractionResponse = async (
   );
 };
 
+// Route autocomplete requests to the command that owns them.
+export const autocompleteHandler = async (
+  interaction: AutocompleteInteraction<CacheType>
+) => {
+  try {
+    if (interaction.commandName === EProjectCommands.PROJECT) {
+      await handleProjectAutocomplete(interaction);
+    }
+  } catch (error) {
+    console.error("Error handling autocomplete:", error);
+  }
+};
+
 export const interactionHandler = async (
   interaction: ChatInputCommandInteraction<CacheType>
 ) => {
@@ -48,6 +62,12 @@ export const interactionHandler = async (
     // Personal report can run in any channel (reply is ephemeral)
     if (interaction.commandName === EReportCommands.REPORT) {
       await handleReportCommand(interaction);
+      return;
+    }
+
+    // Project management (admin-channel enforcement happens in the handler)
+    if (interaction.commandName === EProjectCommands.PROJECT) {
+      await handleProjectCommand(interaction);
       return;
     }
 

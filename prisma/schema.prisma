@@ -87,3 +87,31 @@ model Attendance {
 
   @@map("attendances")
 }
+
+// A project groups one or more Discord voice channels. Only voice channels
+// assigned to a project count toward attendance and work tracking.
+model Project {
+  id       String        @id @default(auto()) @map("_id") @db.ObjectId
+  name     String        @unique
+  channels WorkChannel[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("projects")
+}
+
+// A Discord voice channel assigned to a project. The bot only reacts to voice
+// state changes involving channels tracked here. `channelName` is cached for
+// display so admins can identify channels that may since have been renamed or deleted.
+model WorkChannel {
+  id          String  @id @default(auto()) @map("_id") @db.ObjectId
+  channelId   String  @unique // Discord voice channel (snowflake) ID
+  channelName String
+  projectId   String  @db.ObjectId
+  project     Project @relation(fields: [projectId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("work_channels")
+}
