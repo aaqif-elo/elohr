@@ -1,7 +1,10 @@
-import type { Project, WorkChannel } from "@prisma/client";
+import type { Project, User, WorkChannel } from "@prisma/client";
 import { db } from ".";
 
-type ProjectWithChannels = Project & { channels: WorkChannel[] };
+type ProjectWithChannels = Project & {
+  channels: WorkChannel[];
+  manager: User;
+};
 
 // Projects are always referenced by their (case-insensitive) name — admins
 // interact via Discord and never see the underlying database id.
@@ -10,12 +13,12 @@ const findProjectByName = (
 ): Promise<ProjectWithChannels | null> =>
   db.project.findFirst({
     where: { name: { equals: name.trim(), mode: "insensitive" } },
-    include: { channels: true },
+    include: { channels: true, manager: true },
   });
 
 export const listProjects = (): Promise<ProjectWithChannels[]> =>
   db.project.findMany({
-    include: { channels: true },
+    include: { channels: true, manager: true },
     orderBy: { name: "asc" },
   });
 
@@ -38,8 +41,11 @@ type CreateProjectResult =
   | { ok: false; message: string }
   | { ok: true; project: Project };
 
+// The creator becomes the project's initial manager; an admin can reassign it
+// later via `setProjectManager`.
 export const createProject = async (
   name: string,
+  managerId: string,
 ): Promise<CreateProjectResult> => {
   const trimmed = name.trim();
   if (!trimmed) {
@@ -53,8 +59,39 @@ export const createProject = async (
     return { ok: false, message: `A project named **${existing.name}** already exists.` };
   }
 
-  const project = await db.project.create({ data: { name: trimmed } });
+  const project = await db.project.create({
+    data: { name: trimmed, managerId },
+  });
   return { ok: true, project };
+};
+
+type SetManagerResult =
+  | { ok: false; message: string }
+  | { ok: true; projectName: string; managerName: string };
+
+// Reassign a project's manager. Caller is responsible for verifying the new
+// manager is an eligible (admin) user before calling.
+export const setProjectManager = async (
+  projectName: string,
+  manager: User,
+): Promise<SetManagerResult> => {
+  const project = await findProjectByName(projectName);
+  if (!project) {
+    return { ok: false, message: `No project named \`${projectName}\`.` };
+  }
+
+  if (project.managerId === manager.id) {
+    return {
+      ok: false,
+      message: `**${manager.name}** already manages **${project.name}**.`,
+    };
+  }
+
+  await db.project.update({
+    where: { id: project.id },
+    data: { managerId: manager.id },
+  });
+  return { ok: true, projectName: project.name, managerName: manager.name };
 };
 
 type DeleteProjectResult =

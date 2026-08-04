@@ -11,6 +11,7 @@ import {
   deleteProject,
   getUserByDiscordId,
   listProjects,
+  setProjectManager,
   unassignChannel,
 } from "../../../db";
 
@@ -29,7 +30,7 @@ const handleList = async (
 
   const lines: string[] = ["📁 **Projects & tracked voice channels**", ""];
   for (const project of projects) {
-    lines.push(`**${project.name}**`);
+    lines.push(`**${project.name}** — manager: <@${project.manager.discordInfo.id}>`);
     if (!project.channels.length) {
       lines.push("  • _no channels assigned_");
     } else {
@@ -43,13 +44,45 @@ const handleList = async (
 };
 
 const handleCreate = async (
-  interaction: ChatInputCommandInteraction<CacheType>
+  interaction: ChatInputCommandInteraction<CacheType>,
+  creator: User
 ) => {
   const name = interaction.options.getString("name", true);
-  const result = await createProject(name);
+  const result = await createProject(name, creator.id);
   await interaction.editReply({
     content: result.ok
-      ? `✅ Created project **${result.project.name}**.`
+      ? `✅ Created project **${result.project.name}** — manager: <@${creator.discordInfo.id}>.`
+      : `❌ ${result.message}`,
+  });
+};
+
+const handleManager = async (
+  interaction: ChatInputCommandInteraction<CacheType>
+) => {
+  const projectName = interaction.options.getString("project", true);
+  const target = interaction.options.getUser("user", true);
+
+  let manager: User;
+  try {
+    manager = await getUserByDiscordId(target.id);
+  } catch {
+    await interaction.editReply({
+      content: `❌ Couldn't resolve <@${target.id}> to an employee in the system.`,
+    });
+    return;
+  }
+
+  if (!manager.isAdmin) {
+    await interaction.editReply({
+      content: `❌ <@${target.id}> must be an admin to manage a project.`,
+    });
+    return;
+  }
+
+  const result = await setProjectManager(projectName, manager);
+  await interaction.editReply({
+    content: result.ok
+      ? `✅ **${result.projectName}** is now managed by <@${manager.discordInfo.id}>.`
       : `❌ ${result.message}`,
   });
 };
@@ -148,7 +181,7 @@ export const handleProjectCommand = async (
         await handleList(interaction);
         break;
       case EProjectSubcommands.CREATE:
-        await handleCreate(interaction);
+        await handleCreate(interaction, user);
         break;
       case EProjectSubcommands.DELETE:
         await handleDelete(interaction);
@@ -158,6 +191,9 @@ export const handleProjectCommand = async (
         break;
       case EProjectSubcommands.UNASSIGN:
         await handleUnassign(interaction);
+        break;
+      case EProjectSubcommands.MANAGER:
+        await handleManager(interaction);
         break;
       default:
         await interaction.editReply({ content: "❌ Unknown subcommand." });

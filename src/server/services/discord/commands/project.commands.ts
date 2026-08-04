@@ -64,6 +64,24 @@ const projectCommand = new SlashCommandBuilder()
           .setRequired(true)
           .setAutocomplete(true)
       )
+  )
+  .addSubcommand((sub) =>
+    sub
+      .setName(EProjectSubcommands.MANAGER)
+      .setDescription("Reassign a project's manager")
+      .addStringOption((opt) =>
+        opt
+          .setName("project")
+          .setDescription("Project to reassign")
+          .setRequired(true)
+          .setAutocomplete(true)
+      )
+      .addUserOption((opt) =>
+        opt
+          .setName("user")
+          .setDescription("New manager (must be an admin)")
+          .setRequired(true)
+      )
   );
 
 export const projectCommandBody: RESTPostAPIChatInputApplicationCommandsJSONBody =

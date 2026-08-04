@@ -39,10 +39,11 @@ type DiscordInfo {
 }
 
 type WorkSegment {
-  start     DateTime
-  end       DateTime?
-  length_ms Int?
-  project   String
+  start       DateTime
+  end         DateTime?
+  length_ms   Int?
+  project     String
+  description String?
 }
 
 type Contract {
@@ -69,7 +70,8 @@ model User {
   contracts           Contract[] // Now using composite type
 
   // Relations
-  attendances   Attendance[]
+  attendances     Attendance[]
+  managedProjects Project[]    @relation("ProjectManager")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -91,9 +93,11 @@ model Attendance {
 // A project groups one or more Discord voice channels. Only voice channels
 // assigned to a project count toward attendance and work tracking.
 model Project {
-  id       String        @id @default(auto()) @map("_id") @db.ObjectId
-  name     String        @unique
-  channels WorkChannel[]
+  id        String        @id @default(auto()) @map("_id") @db.ObjectId
+  name      String        @unique
+  channels  WorkChannel[]
+  managerId String        @db.ObjectId
+  manager   User          @relation("ProjectManager", fields: [managerId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
