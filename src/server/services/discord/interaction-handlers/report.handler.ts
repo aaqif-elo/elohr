@@ -1,22 +1,108 @@
 import type { CacheType, ChatInputCommandInteraction } from "discord.js";
-import type { Contract, User } from "@prisma/client";
+import { AttachmentBuilder } from "discord.js";
+import type { User } from "@prisma/client";
 import { EReportCommands } from "../discord.enums";
-import { getUserByDiscordId, getMonthlyWorkReport } from "../../../db";
+import {
+  getUserByDiscordId,
+  getMonthlyWorkReport,
+  getMonthlyWorkReportForAllEmployees,
+} from "../../../db";
 import { formatWorkedDuration } from "../../../utils/time";
+import {
+  MS_PER_HOUR,
+  getLatestContract,
+  formatBDT,
+  rowsToCsv,
+} from "./report.utils";
 
-// The user's most recent contract by start date holds their current rate.
-const getLatestContract = (contracts: Contract[]): Contract | undefined => {
-  if (!contracts.length) return undefined;
-  return [...contracts].sort(
-    (a, b) => b.startDate.getTime() - a.startDate.getTime()
-  )[0];
+/**
+ * Admin-only: build a downloadable CSV of every employee's work this month,
+ * with estimated pay derived from each employee's latest contract rate, plus a
+ * TOTAL row for the overall cost of work. Used to disburse payments.
+ */
+const sendAllEmployeesCsvReport = async (
+  interaction: ChatInputCommandInteraction<CacheType>
+) => {
+  const now = new Date();
+  const monthLabel = now.toLocaleString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+
+  const reports = await getMonthlyWorkReportForAllEmployees(now);
+  const worked = reports
+    .filter((report) => report.totalMs > 0)
+    .sort((a, b) => a.user.name.localeCompare(b.user.name));
+
+  if (!worked.length) {
+    await interaction.editReply({
+      content: `ℹ️ No employees logged work in ${monthLabel}.`,
+    });
+    return;
+  }
+
+  const header = [
+    "Employee",
+    "Discord Username",
+    "Days Worked",
+    "Total Hours",
+    "Hourly Rate (BDT)",
+    "Estimated Pay (BDT)",
+    "Projects",
+  ];
+  const rows: string[][] = [header];
+
+  let totalHoursAll = 0;
+  let totalPayAll = 0;
+
+  for (const { user, totalMs, daysWorked, perProject } of worked) {
+    const totalHours = totalMs / MS_PER_HOUR;
+    totalHoursAll += totalHours;
+
+    const rate = getLatestContract(user.contracts)?.salaryInBDT;
+    const pay = rate !== undefined ? totalHours * rate : undefined;
+    if (pay !== undefined) totalPayAll += pay;
+
+    const projects = perProject
+      .map((p) => `${p.project} (${(p.ms / MS_PER_HOUR).toFixed(2)}h)`)
+      .join("; ");
+
+    rows.push([
+      user.name,
+      user.discordInfo.username,
+      String(daysWorked),
+      totalHours.toFixed(2),
+      rate !== undefined ? String(rate) : "",
+      pay !== undefined ? pay.toFixed(2) : "",
+      projects,
+    ]);
+  }
+
+  rows.push([
+    "TOTAL",
+    "",
+    "",
+    totalHoursAll.toFixed(2),
+    "",
+    totalPayAll.toFixed(2),
+    "",
+  ]);
+
+  const csv = rowsToCsv(rows);
+  const fileName = `work-report-${now.getFullYear()}-${String(
+    now.getMonth() + 1
+  ).padStart(2, "0")}.csv`;
+  const attachment = new AttachmentBuilder(Buffer.from(csv, "utf-8"), {
+    name: fileName,
+  });
+
+  const summary =
+    `📊 **Monthly work report — ${monthLabel}**\n` +
+    `Employees with work: ${worked.length} • Total hours: ${totalHoursAll.toFixed(2)} • ` +
+    `Estimated total cost: ${formatBDT(totalPayAll)}`;
+
+  await interaction.editReply({ content: summary, files: [attachment] });
 };
-
-const formatBDT = (amount: number): string =>
-  `৳${amount.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
 
 export const handleReportCommand = async (
   interaction: ChatInputCommandInteraction<CacheType>
@@ -33,6 +119,20 @@ export const handleReportCommand = async (
     await interaction.editReply({
       content: "❌ Couldn't find your employee record in the system.",
     });
+    return;
+  }
+
+  // In the admin channel, an admin gets a downloadable CSV covering everyone.
+  const isAdminChannel = interaction.channelId === process.env.ADMIN_CHANNEL_ID;
+  if (isAdminChannel && user.isAdmin) {
+    try {
+      await sendAllEmployeesCsvReport(interaction);
+    } catch (e) {
+      console.error("/report admin csv error", e);
+      await interaction.editReply({
+        content: "❌ Failed to build the monthly work report.",
+      });
+    }
     return;
   }
 
@@ -53,7 +153,7 @@ export const handleReportCommand = async (
 
     const hourlyRate = getLatestContract(user.contracts)?.salaryInBDT;
     const msToSalary = (ms: number): number =>
-      (ms / 3600000) * (hourlyRate ?? 0);
+      (ms / MS_PER_HOUR) * (hourlyRate ?? 0);
 
     const lines: string[] = [
       `📊 **Work report — ${monthLabel}**`,
@@ -75,7 +175,7 @@ export const handleReportCommand = async (
     }
 
     if (hourlyRate !== undefined) {
-      const totalHours = report.totalMs / 3600000;
+      const totalHours = report.totalMs / MS_PER_HOUR;
       lines.push(
         "",
         `Estimated salary: ${formatBDT(msToSalary(report.totalMs))} (${totalHours.toFixed(2)} hrs × ৳${hourlyRate.toLocaleString("en-US")}/hr)`

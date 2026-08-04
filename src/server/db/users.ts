@@ -53,6 +53,10 @@ export async function getUserById(userId: string) {
   return user;
 }
 
+// All current (non-ex) employees with their embedded contracts, for reporting.
+export const getActiveEmployees = (): Promise<User[]> =>
+  db.user.findMany({ where: { exEmployee: false } });
+
 
 export async function getAllEmployeesWithAttendance(date: Date) {
   const { start, end } = getStartAndEndOfDay(date);

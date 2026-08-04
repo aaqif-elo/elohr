@@ -31,6 +31,7 @@ export enum EProjectSubcommands {
   ASSIGN = "assign",
   UNASSIGN = "unassign",
   MANAGER = "manager",
+  REPORT = "report",
 }
 
 export enum ERecordingStage {

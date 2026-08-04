@@ -12,9 +12,14 @@ import {
   getAllEmployeesWithAttendance,
   getWeekDateRange,
   countWorkingDays,
+  listProjects,
+  getProjectWorkReport,
+  getActiveEmployees,
 } from "../../db";
 
 import { generateJWTFromUserDiscordId } from "../../api/routers/auth";
+import { formatWorkedDuration } from "../../utils/time";
+import { getLatestContract, formatBDT } from "./interaction-handlers/report.utils";
 
 const getLoginUrl = async (discordId: string) => {
   try {
@@ -208,6 +213,18 @@ export async function sendWeeklyAttendanceReportToAdmin(
   const teamSize = employeeMap.size;
   let totalPersonDaysPresent = 0;
 
+  // Hourly rate per employee (latest contract) drives expense estimates.
+  const employees = await getActiveEmployees();
+  const rateByUserId = new Map(
+    employees.map((e) => [e.id, getLatestContract(e.contracts)?.salaryInBDT ?? 0])
+  );
+
+  // Financials accumulated alongside the existing stats.
+  const projectExpense = new Map<string, number>();
+  const employeeFinancials: { name: string; hours: number; expense: number }[] = [];
+  let totalHoursAll = 0;
+  let totalExpenseAll = 0;
+
   for (const [userId, empData] of employeeMap) {
     const daysPresent = empData.days.size;
     const daysAbsent = workingDays - daysPresent;
@@ -244,6 +261,14 @@ export async function sendWeeklyAttendanceReportToAdmin(
     }
     totalPersonDaysPresent += daysPresent;
 
+    const rate = rateByUserId.get(userId) ?? 0;
+    const expense = totalHours * rate;
+    totalHoursAll += totalHours;
+    totalExpenseAll += expense;
+    if (totalHours > 0) {
+      employeeFinancials.push({ name: empData.name, hours: totalHours, expense });
+    }
+
     for (const dayData of empData.days.values()) {
       for (const [proj, ms] of dayData.projects) {
         const hrs = toHours(ms);
@@ -251,6 +276,7 @@ export async function sendWeeklyAttendanceReportToAdmin(
         rec.hours += hrs;
         rec.employeeIds.add(userId);
         projectTotals.set(proj, rec);
+        projectExpense.set(proj, (projectExpense.get(proj) ?? 0) + hrs * rate);
       }
     }
   }
@@ -310,6 +336,28 @@ export async function sendWeeklyAttendanceReportToAdmin(
     .sort((a, b) => b.hours - a.hours)
     .slice(0, 5);
 
+  // Top-3 leaderboards by hours and by estimated expense.
+  const TOP_N = 3;
+  const rankByHours = <T extends { hours: number }>(items: T[]): T[] =>
+    [...items].sort((a, b) => b.hours - a.hours).slice(0, TOP_N);
+  const rankByExpense = <T extends { expense: number }>(items: T[]): T[] =>
+    [...items].sort((a, b) => b.expense - a.expense).slice(0, TOP_N);
+
+  const projectFinancials = [...projectTotals.entries()].map(([name, rec]) => ({
+    name,
+    hours: rec.hours,
+    expense: projectExpense.get(name) ?? 0,
+  }));
+  const topProjectsByHours = rankByHours(projectFinancials);
+  const topProjectsByExpense = rankByExpense(projectFinancials);
+  const topEmployeesByHours = rankByHours(employeeFinancials);
+  const topEmployeesByExpense = rankByExpense(employeeFinancials);
+
+  const fmtHoursRank = (items: { name: string; hours: number }[]): string =>
+    items.map((it, i) => `${i + 1}. ${it.name} — ${fmtHours(it.hours)}`).join(" · ");
+  const fmtExpenseRank = (items: { name: string; expense: number }[]): string =>
+    items.map((it, i) => `${i + 1}. ${it.name} — ${formatBDT(it.expense)}`).join(" · ");
+
   const fmtDate = (d: Date) =>
     d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
   const header = `**Weekly Attendance Report — ${fmtDate(weekStart)} to ${fmtDate(weekEnd)}**`;
@@ -324,6 +372,24 @@ export async function sendWeeklyAttendanceReportToAdmin(
   lines.push(
     `- Avg Daily Hours: ${fmtHours(avgDailyHours)} | Median First Segment: ${minutesToTimeStr(medianFirstSegMinutes)}`
   );
+  lines.push("");
+
+  lines.push("### This Week — Financials");
+  lines.push(
+    `- Total Hours: ${fmtHours(totalHoursAll)} | Total Expenses: ${formatBDT(totalExpenseAll)}`
+  );
+  if (topProjectsByHours.length) {
+    lines.push(`- Top Projects (hours): ${fmtHoursRank(topProjectsByHours)}`);
+  }
+  if (topProjectsByExpense.length) {
+    lines.push(`- Top Projects (expense): ${fmtExpenseRank(topProjectsByExpense)}`);
+  }
+  if (topEmployeesByHours.length) {
+    lines.push(`- Top Employees (hours): ${fmtHoursRank(topEmployeesByHours)}`);
+  }
+  if (topEmployeesByExpense.length) {
+    lines.push(`- Top Employees (expense): ${fmtExpenseRank(topEmployeesByExpense)}`);
+  }
   lines.push("");
 
   const hasHighlights =
@@ -397,4 +463,71 @@ export async function sendWeeklyAttendanceReportToAdmin(
 
   const content = lines.join("\n");
   await (channel as TextChannel).send({ content });
+}
+
+/**
+ * DM each project's manager a summary of that project's work for the week
+ * (Sun–Thu). Sent every Thursday night. Managers with DMs closed, or projects
+ * with no work, are handled gracefully (the latter still get a short note).
+ */
+export async function sendWeeklyProjectReportsToManagers(
+  discordClient: Client<boolean>,
+  referenceDate: Date = new Date()
+) {
+  const { start: weekStart, end: weekEnd } = getWeekDateRange(referenceDate);
+  const projects = await listProjects();
+
+  const fmtDate = (d: Date) =>
+    d.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+  const rangeLabel = `${fmtDate(weekStart)} – ${fmtDate(weekEnd)}`;
+  const MAX_NOTES_PER_CONTRIBUTOR = 5;
+
+  for (const project of projects) {
+    try {
+      const report = await getProjectWorkReport(project.name, weekStart, weekEnd);
+
+      const lines: string[] = [
+        `📊 **Weekly project report — ${project.name}**`,
+        rangeLabel,
+        "",
+      ];
+
+      if (!report.perEmployee.length) {
+        lines.push("No work was logged on this project this week.");
+      } else {
+        const contributors = report.perEmployee.length;
+        lines.push(
+          `Total: ${formatWorkedDuration(report.totalMs)} across ${contributors} contributor${contributors > 1 ? "s" : ""}`,
+          "",
+          "By contributor:"
+        );
+        for (const { user, totalMs, daysWorked, descriptions } of report.perEmployee) {
+          lines.push(
+            `• **${user.name}** — ${formatWorkedDuration(totalMs)} (${daysWorked} day${daysWorked > 1 ? "s" : ""})`
+          );
+          const notes = [...new Set(descriptions)];
+          for (const note of notes.slice(0, MAX_NOTES_PER_CONTRIBUTOR)) {
+            lines.push(`    – ${note}`);
+          }
+          if (notes.length > MAX_NOTES_PER_CONTRIBUTOR) {
+            lines.push(`    – …and ${notes.length - MAX_NOTES_PER_CONTRIBUTOR} more`);
+          }
+        }
+      }
+
+      const manager = await discordClient.users.fetch(
+        project.manager.discordInfo.id
+      );
+      await manager.send({ content: lines.join("\n") });
+    } catch (err) {
+      console.error(
+        `Failed to send weekly report for project ${project.name}:`,
+        err
+      );
+    }
+  }
 }

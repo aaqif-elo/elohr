@@ -3,17 +3,28 @@ import type {
   CacheType,
   ChatInputCommandInteraction,
 } from "discord.js";
+import { AttachmentBuilder } from "discord.js";
 import type { User } from "@prisma/client";
 import { EProjectCommands, EProjectSubcommands } from "../discord.enums";
 import {
   assignChannelToProject,
   createProject,
   deleteProject,
+  getProjectByName,
+  getProjectWorkReport,
+  getStartOfDay,
+  getEndOfDay,
   getUserByDiscordId,
   listProjects,
   setProjectManager,
   unassignChannel,
 } from "../../../db";
+import {
+  MS_PER_HOUR,
+  getLatestContract,
+  formatBDT,
+  rowsToCsv,
+} from "./report.utils";
 
 const handleList = async (
   interaction: ChatInputCommandInteraction<CacheType>
@@ -141,6 +152,99 @@ const handleUnassign = async (
   });
 };
 
+// Admin-only downloadable CSV of this month's work on one project, broken down
+// per contributor with hours, estimated pay, and the task descriptions logged.
+const handleReport = async (
+  interaction: ChatInputCommandInteraction<CacheType>
+) => {
+  const projectName = interaction.options.getString("project", true);
+  const project = await getProjectByName(projectName);
+  if (!project) {
+    await interaction.editReply({
+      content: `❌ No project named \`${projectName}\`.`,
+    });
+    return;
+  }
+
+  const now = new Date();
+  const rangeStart = getStartOfDay(new Date(now.getFullYear(), now.getMonth(), 1));
+  const rangeEnd = getEndOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+  const monthLabel = now.toLocaleString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+
+  const report = await getProjectWorkReport(project.name, rangeStart, rangeEnd);
+  if (!report.perEmployee.length) {
+    await interaction.editReply({
+      content: `ℹ️ No work logged on **${project.name}** in ${monthLabel}.`,
+    });
+    return;
+  }
+
+  const header = [
+    "Employee",
+    "Discord Username",
+    "Days Worked",
+    "Total Hours",
+    "Hourly Rate (BDT)",
+    "Estimated Pay (BDT)",
+    "Task Descriptions",
+  ];
+  const rows: string[][] = [header];
+
+  let totalHoursAll = 0;
+  let totalPayAll = 0;
+
+  for (const { user, totalMs, daysWorked, descriptions } of report.perEmployee) {
+    const totalHours = totalMs / MS_PER_HOUR;
+    totalHoursAll += totalHours;
+
+    const rate = getLatestContract(user.contracts)?.salaryInBDT;
+    const pay = rate !== undefined ? totalHours * rate : undefined;
+    if (pay !== undefined) totalPayAll += pay;
+
+    // Collapse repeated notes so the cell stays readable.
+    const notes = [...new Set(descriptions)].join(" | ");
+
+    rows.push([
+      user.name,
+      user.discordInfo.username,
+      String(daysWorked),
+      totalHours.toFixed(2),
+      rate !== undefined ? String(rate) : "",
+      pay !== undefined ? pay.toFixed(2) : "",
+      notes,
+    ]);
+  }
+
+  rows.push([
+    "TOTAL",
+    "",
+    "",
+    totalHoursAll.toFixed(2),
+    "",
+    totalPayAll.toFixed(2),
+    "",
+  ]);
+
+  const csv = rowsToCsv(rows);
+  const safeName = project.name.replace(/[^a-z0-9-_]+/gi, "_");
+  const fileName = `project-${safeName}-${now.getFullYear()}-${String(
+    now.getMonth() + 1
+  ).padStart(2, "0")}.csv`;
+  const attachment = new AttachmentBuilder(Buffer.from(csv, "utf-8"), {
+    name: fileName,
+  });
+
+  const summary =
+    `📊 **${project.name} — ${monthLabel}**\n` +
+    `Contributors: ${report.perEmployee.length} • Total hours: ${totalHoursAll.toFixed(2)} • ` +
+    `Estimated cost: ${formatBDT(totalPayAll)}`;
+
+  await interaction.editReply({ content: summary, files: [attachment] });
+};
+
 export const handleProjectCommand = async (
   interaction: ChatInputCommandInteraction<CacheType>
 ) => {
@@ -194,6 +298,9 @@ export const handleProjectCommand = async (
         break;
       case EProjectSubcommands.MANAGER:
         await handleManager(interaction);
+        break;
+      case EProjectSubcommands.REPORT:
+        await handleReport(interaction);
         break;
       default:
         await interaction.editReply({ content: "❌ Unknown subcommand." });

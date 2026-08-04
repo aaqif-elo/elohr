@@ -22,6 +22,11 @@ export const listProjects = (): Promise<ProjectWithChannels[]> =>
     orderBy: { name: "asc" },
   });
 
+// Public, name-based lookup for callers that need the resolved project record.
+export const getProjectByName = (
+  name: string,
+): Promise<ProjectWithChannels | null> => findProjectByName(name);
+
 /**
  * Resolve the project a Discord voice channel belongs to, or null if the
  * channel isn't assigned to any project. Used by the voice hook to decide

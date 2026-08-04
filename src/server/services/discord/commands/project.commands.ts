@@ -82,6 +82,18 @@ const projectCommand = new SlashCommandBuilder()
           .setDescription("New manager (must be an admin)")
           .setRequired(true)
       )
+  )
+  .addSubcommand((sub) =>
+    sub
+      .setName(EProjectSubcommands.REPORT)
+      .setDescription("Download a CSV of this month's work on a project")
+      .addStringOption((opt) =>
+        opt
+          .setName("project")
+          .setDescription("Project to report on")
+          .setRequired(true)
+          .setAutocomplete(true)
+      )
   );
 
 export const projectCommandBody: RESTPostAPIChatInputApplicationCommandsJSONBody =
