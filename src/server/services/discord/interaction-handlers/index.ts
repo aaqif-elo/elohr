@@ -1,10 +1,16 @@
-import type { AutocompleteInteraction, CacheType, ChatInputCommandInteraction } from "discord.js";
+import type { AutocompleteInteraction, ButtonInteraction, CacheType, ChatInputCommandInteraction, ModalSubmitInteraction } from "discord.js";
 import { EAuthCommands, EAvailabilityCommands, EProjectCommands, ERecordingCommands, EReportCommands } from "../discord.enums";
 import { handleAuthCommand } from "./auth.handler";
 import { handleAvailabilityCommand } from "./availability.handler";
 import { handleRecordingCommand } from "./recording.handler";
 import { handleReportCommand } from "./report.handler";
 import { handleProjectCommand, handleProjectAutocomplete } from "./project.handler";
+import {
+  isWorkSegmentDescriptionButton,
+  handleWorkSegmentDescriptionButton,
+  isWorkSegmentDescriptionModal,
+  handleWorkSegmentDescriptionModal,
+} from "./worksegment-description.handler";
 import {
   logInteractionAckTiming,
   sendInteractionErrorResponse,
@@ -26,6 +32,32 @@ const sendErrorInteractionResponse = async (
     `❌ Error handling command \`/${interaction.commandName}\`! Notifying: <@${modID}>`,
     { phase: "interaction-handler-error" },
   );
+};
+
+// Route button clicks to the feature that owns their customId.
+export const buttonHandler = async (
+  interaction: ButtonInteraction<CacheType>
+) => {
+  try {
+    if (isWorkSegmentDescriptionButton(interaction.customId)) {
+      await handleWorkSegmentDescriptionButton(interaction);
+    }
+  } catch (error) {
+    console.error("Error handling button interaction:", error);
+  }
+};
+
+// Route modal submissions to the feature that owns their customId.
+export const modalSubmitHandler = async (
+  interaction: ModalSubmitInteraction<CacheType>
+) => {
+  try {
+    if (isWorkSegmentDescriptionModal(interaction.customId)) {
+      await handleWorkSegmentDescriptionModal(interaction);
+    }
+  } catch (error) {
+    console.error("Error handling modal submit:", error);
+  }
 };
 
 // Route autocomplete requests to the command that owns them.

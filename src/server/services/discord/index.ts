@@ -10,9 +10,18 @@ import {
   authCommandBody,
   recordingCommandBody,
 } from "./commands";
-import { availabilityCommandBody, reportCommandBody } from "./commands";
+import {
+  availabilityCommandBody,
+  reportCommandBody,
+  projectCommandBody,
+} from "./commands";
 
-import { interactionHandler } from "./interaction-handlers";
+import {
+  interactionHandler,
+  autocompleteHandler,
+  buttonHandler,
+  modalSubmitHandler,
+} from "./interaction-handlers";
 import { handleRecordingVoiceStateUpdate } from "./recording";
 import { handleVoiceStateChange } from "./voice-channel-hook.service";
 import { setNameStatus, clearNameStatus } from "./utils";
@@ -144,6 +153,15 @@ function setupEventHandlers() {
   // Handle interactions (slash commands)
   discordClient.on("interactionCreate", async (interaction) => {
     if (interaction.isButton()) {
+      await buttonHandler(interaction);
+      return;
+    }
+    if (interaction.isModalSubmit()) {
+      await modalSubmitHandler(interaction);
+      return;
+    }
+    if (interaction.isAutocomplete()) {
+      await autocompleteHandler(interaction);
       return;
     }
     if (!interaction.isChatInputCommand()) return;
@@ -161,6 +179,7 @@ async function registerCommands() {
     availabilityCommandBody,
     recordingCommandBody,
     reportCommandBody,
+    projectCommandBody,
   ];
 
   try {

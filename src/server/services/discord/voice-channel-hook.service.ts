@@ -6,10 +6,19 @@ import {
   startWorkSegment,
   endWorkSegment,
   getUserByDiscordId,
+  getProjectByChannelId,
+  getWorkSegmentDescription,
   updateUserAvatar,
 } from "../../db";
 import type { User } from "@prisma/client";
 import { formatWorkedDuration } from "../../utils/time";
+import { buildDescriptionButton } from "./interaction-handlers/worksegment-description.handler";
+
+const DESCRIPTION_MIN_SEGMENT_MS = 10 * 60 * 1000;
+const DESCRIPTION_REMINDER_DELAY_MS =
+  (Number(process.env.WORK_SEGMENT_DESCRIPTION_REMINDER_MINUTES) || 30) *
+  60 *
+  1000;
 
 if (!process.env.VOICE_CHANNEL_ATTENDANCE_DELAY_IN_SECONDS)
   throw new Error("VOICE_CHANNEL_ATTENDANCE_DELAY_IN_SECONDS is not defined");
@@ -44,97 +53,194 @@ const processNextAction = async (userId: string) => {
   }
 };
 
+type NotifyCallback = (msg: string, userDiscordId: string) => void;
+
+// Refresh the stored avatar from the live guild member (fire-and-forget).
+const refreshAvatarFromGuild = (user: User) => {
+  getGuildMember(user.discordInfo.id)
+    .then((member) => {
+      if (
+        member?.user.avatar &&
+        member.user.avatar !== user.discordInfo.avatar
+      ) {
+        updateUserAvatar(user.id, member.user.avatar).catch((err) =>
+          console.error("Error updating avatar:", err)
+        );
+      }
+    })
+    .catch((err) =>
+      console.error("Error getting guild member for avatar update:", err)
+    );
+};
+
+// Open a new work segment on `projectName`. Notifies the user and returns false
+// if a segment couldn't be started (e.g. one is already open).
+const startWorkForUser = async (
+  user: User,
+  projectName: string,
+  notify: NotifyCallback
+): Promise<boolean> => {
+  const result = await startWorkSegment(user.id, projectName);
+  if (typeof result === "string") {
+    notify(`${process.env.STATUS_TAG_ERROR} ${result}`, user.discordInfo.id);
+    return false;
+  }
+  refreshAvatarFromGuild(user);
+  return true;
+};
+
+// DM the user a summary of their just-ended segment with an "add description"
+// button, then schedule a single gentle reminder if it's still blank later.
+const promptForSegmentDescription = (payload: {
+  user: User;
+  attendanceId: string;
+  segmentStartMs: number;
+  projectName: string;
+  summary: string;
+}) => {
+  const { user, attendanceId, segmentStartMs, projectName, summary } = payload;
+
+  getGuildMember(user.discordInfo.id)
+    .then((member) =>
+      member?.send({
+        content: `${summary}\n\nMind adding a quick note on what you worked on?`,
+        components: [buildDescriptionButton(attendanceId, segmentStartMs)],
+      })
+    )
+    .catch((err) => console.error("Error sending work segment DM:", err));
+
+  setTimeout(() => {
+    void (async () => {
+      try {
+        const { found, description } = await getWorkSegmentDescription(
+          attendanceId,
+          segmentStartMs
+        );
+        // Skip the reminder if the segment is gone or already described.
+        if (!found || description) return;
+
+        const member = await getGuildMember(user.discordInfo.id);
+        await member?.send({
+          content: `👋 Quick reminder: your earlier work segment on **${projectName}** still has no description. No worries if you'd rather skip it.`,
+          components: [buildDescriptionButton(attendanceId, segmentStartMs)],
+        });
+      } catch (err) {
+        console.error("Error sending description reminder:", err);
+      }
+    })();
+  }, DESCRIPTION_REMINDER_DELAY_MS);
+};
+
+// Close the user's open work segment, DMing a summary for segments >= 10 min.
+// Returns the formatted end time, or null if there was nothing open to close.
+const endWorkForUser = async (
+  user: User
+): Promise<{ endTime: string } | null> => {
+  const result = await endWorkSegment(user.id);
+  if (!result) return null;
+
+  const seg = result.workSegments[result.workSegments.length - 1];
+  const timeOpts: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit" };
+  const projectName = seg?.project ?? "Unknown Project";
+  const startTime = seg?.start ? new Date(seg.start).toLocaleTimeString([], timeOpts) : "—";
+  const endTime = seg?.end ? new Date(seg.end).toLocaleTimeString([], timeOpts) : "—";
+  const ms = seg?.length_ms ?? 0;
+  const timeWorked = formatWorkedDuration(ms);
+
+  if (ms >= DESCRIPTION_MIN_SEGMENT_MS && seg) {
+    const summary = `Logged work segment:\n\n${projectName}\nStart: ${startTime}\nEnd: ${endTime}\nTime Worked: ${timeWorked}`;
+    promptForSegmentDescription({
+      user,
+      attendanceId: result.id,
+      segmentStartMs: seg.start.getTime(),
+      projectName,
+      summary,
+    });
+  }
+
+  return { endTime };
+};
+
 const addAttendanceChange = async (attendanceChangePayload: {
   attendanceChangeCommand: EAttendanceCommands;
   user: User;
-  attendanceChangeCallBack: (msg: string, userDiscordId: string) => void;
-  currentVoiceChannelName?: string;
+  attendanceChangeCallBack: NotifyCallback;
+  projectName?: string;
 }) => {
   const {
     attendanceChangeCommand,
     user,
     attendanceChangeCallBack: notifyDiscordUserCallback,
-    currentVoiceChannelName,
+    projectName,
   } = attendanceChangePayload;
 
   const actionLogic = async () => {
-    switch (attendanceChangeCommand) {
-      case EAttendanceCommands.START_WORK: {
-        if (!currentVoiceChannelName) {
-          notifyDiscordUserCallback(
-            `Error starting work segment — you are not in a voice channel.`,
-            user.discordInfo.id
-          );
-        } else {
-          try {
-            const result = await startWorkSegment(user.id, currentVoiceChannelName);
-            if (typeof result === "string") {
-              notifyDiscordUserCallback(
-                `${process.env.STATUS_TAG_ERROR} ${result}`,
-                user.discordInfo.id
-              );
-              return;
-            }
-            getGuildMember(user.discordInfo.id)
-              .then((member) => {
-                if (
-                  member?.user.avatar &&
-                  member.user.avatar !== user.discordInfo.avatar
-                ) {
-                  updateUserAvatar(user.id, member.user.avatar).catch(err =>
-                    console.error("Error updating avatar:", err)
-                  );
-                }
-              })
-              .catch(err => console.error("Error getting guild member for avatar update:", err));
-
+    try {
+      switch (attendanceChangeCommand) {
+        case EAttendanceCommands.START_WORK: {
+          if (!projectName) {
             notifyDiscordUserCallback(
-              `${process.env.STATUS_TAG_AVAILABLE} Started working on ${currentVoiceChannelName}...`,
+              `Error starting work segment — you are not in a tracked project channel.`,
               user.discordInfo.id
             );
-          } catch (error) {
-            console.error("Error during start work action:", error);
+            break;
+          }
+          const started = await startWorkForUser(
+            user,
+            projectName,
+            notifyDiscordUserCallback
+          );
+          if (started) {
             notifyDiscordUserCallback(
-              `${process.env.STATUS_TAG_ERROR} An error occurred while starting a work segment.`,
+              `${process.env.STATUS_TAG_AVAILABLE} Started working on ${projectName}...`,
               user.discordInfo.id
             );
           }
+          break;
         }
-        break;
-      }
-      case EAttendanceCommands.END_WORK: {
-        try {
-          const result = await endWorkSegment(user.id);
-          if (!result) {
-            return;
+        case EAttendanceCommands.END_WORK: {
+          const ended = await endWorkForUser(user);
+          if (ended) {
+            notifyDiscordUserCallback(
+              `Ended work segment at ${ended.endTime}`,
+              user.discordInfo.id
+            );
           }
-          const seg = result.workSegments[result.workSegments.length - 1];
-          const timeOpts: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit" };
-          const channelName = seg?.project ?? "Unknown Channel";
-          const startTime = seg?.start ? new Date(seg.start).toLocaleTimeString([], timeOpts) : "—";
-          const endTime = seg?.end ? new Date(seg.end).toLocaleTimeString([], timeOpts) : "—";
-          const ms = seg?.length_ms ?? 0;
-          const timeWorked = formatWorkedDuration(ms);
-          notifyDiscordUserCallback(
-            `Ended work segment at ${endTime}`,
-            user.discordInfo.id
-          );
-          if (ms >= 10 * 60 * 1000) {
-            getGuildMember(user.discordInfo.id)
-              .then((member) => member?.send(`Logged work segment:\n\n${channelName}\nStart: ${startTime}\nEnd: ${endTime}\nTime Worked: ${timeWorked}`))
-              .catch((err) => console.error("Error sending work segment DM:", err));
-          }
-        } catch (error) {
-          console.error("Error during end work action:", error);
-          notifyDiscordUserCallback(
-            `${process.env.STATUS_TAG_ERROR} An error occurred while ending the work segment.`,
-            user.discordInfo.id
-          );
+          break;
         }
-        break;
+        case EAttendanceCommands.SWITCH_WORK: {
+          if (!projectName) {
+            notifyDiscordUserCallback(
+              `Error switching work segment — you are not in a tracked project channel.`,
+              user.discordInfo.id
+            );
+            break;
+          }
+          // Close the current project's segment (DMs a summary), then open a
+          // fresh one on the project the user just switched into.
+          await endWorkForUser(user);
+          const switched = await startWorkForUser(
+            user,
+            projectName,
+            notifyDiscordUserCallback
+          );
+          if (switched) {
+            notifyDiscordUserCallback(
+              `${process.env.STATUS_TAG_AVAILABLE} Switched to ${projectName}...`,
+              user.discordInfo.id
+            );
+          }
+          break;
+        }
+        default:
+          break;
       }
-      default:
-        break;
+    } catch (error) {
+      console.error("Error executing attendance action:", error);
+      notifyDiscordUserCallback(
+        `${process.env.STATUS_TAG_ERROR} An error occurred while updating your work segment.`,
+        user.discordInfo.id
+      );
     }
   };
 
@@ -162,11 +268,24 @@ export const handleVoiceStateChange = async (
     preTransitionState.channelId === postTransitionState.channelId;
   if (isSameChannel) return;
 
-  if (
-    !preTransitionState.guild.afkChannel ||
-    !postTransitionState.guild.afkChannel
-  )
-    return;
+  // Only channels assigned to a project count toward attendance. Resolve the
+  // project (if any) on both sides of the transition so we can decide whether
+  // the user entered or left a tracked work channel.
+  const [preProject, postProject] = await Promise.all([
+    preTransitionState.channelId
+      ? getProjectByChannelId(preTransitionState.channelId)
+      : Promise.resolve(null),
+    postTransitionState.channelId
+      ? getProjectByChannelId(postTransitionState.channelId)
+      : Promise.resolve(null),
+  ]);
+
+  // Neither side of the transition is a tracked channel — nothing to do.
+  if (!preProject && !postProject) return;
+
+  // Moving between two channels of the *same* project keeps the current
+  // segment running; only a change of project is a start/stop/switch boundary.
+  if (preProject && postProject && preProject.id === postProject.id) return;
 
   let user: User;
   try {
@@ -184,28 +303,23 @@ export const handleVoiceStateChange = async (
     delete pendingTimeouts[user.id];
   }
 
-  const isAFK =
-    postTransitionState.guild.afkChannel.id === postTransitionState.channelId;
-  const isNotInVoiceChannel = postTransitionState.channelId === null;
-  const wasInNonAFKVoiceChannel =
-    preTransitionState.channelId !== null &&
-    preTransitionState.guild.afkChannel.id !== preTransitionState.channelId;
-
-  const goingOffline =
-    wasInNonAFKVoiceChannel && (isAFK || isNotInVoiceChannel);
-  const comingOnline =
-    !wasInNonAFKVoiceChannel && !isAFK && !isNotInVoiceChannel;
-
   let attendanceCommand: EAttendanceCommands | null = null;
-  let voiceChannelName: string | undefined = undefined;
+  let projectName: string | undefined = undefined;
 
-  if (goingOffline) {
+  if (preProject && postProject) {
+    // Switched from one project's channel to another's: end the old segment
+    // and start a new one on the new project.
+    projectName = postProject.name;
+    attendanceCommand = EAttendanceCommands.SWITCH_WORK;
+  } else if (preProject) {
+    // Left a tracked channel for an untracked one (or disconnected).
     const isActive = await hasActiveWorkSegment(user.id);
     if (isActive) {
       attendanceCommand = EAttendanceCommands.END_WORK;
     }
-  } else if (comingOnline) {
-    voiceChannelName = postTransitionState.channel?.name;
+  } else if (postProject) {
+    // Entered a tracked channel from an untracked one.
+    projectName = postProject.name;
     const canStart = !(await hasActiveWorkSegment(user.id));
     if (canStart) {
       attendanceCommand = EAttendanceCommands.START_WORK;
@@ -217,7 +331,7 @@ export const handleVoiceStateChange = async (
       attendanceChangeCommand: attendanceCommand,
       user,
       attendanceChangeCallBack,
-      currentVoiceChannelName: voiceChannelName,
+      projectName,
     });
   }
 };
