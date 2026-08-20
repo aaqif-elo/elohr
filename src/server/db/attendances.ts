@@ -231,31 +231,98 @@ const getMonthRange = (date: Date): { rangeStart: Date; rangeEnd: Date } => ({
 });
 
 /**
+ * Median duration (in ms) of a user's *closed* work segments. Used as the basis
+ * for estimating open (corrupted) segments. Open segments are excluded so the
+ * estimate never feeds on itself. Returns 0 when there's nothing to learn from.
+ */
+const medianClosedSegmentMs = (attendances: Attendance[]): number => {
+  const durations: number[] = [];
+  for (const attendance of attendances) {
+    for (const segment of attendance.workSegments) {
+      const ms =
+        segment.length_ms ??
+        (segment.end ? segment.end.getTime() - segment.start.getTime() : null);
+      if (ms != null && ms > 0) durations.push(ms);
+    }
+  }
+  if (!durations.length) return 0;
+  durations.sort((a, b) => a - b);
+  const mid = Math.floor(durations.length / 2);
+  return durations.length % 2 === 0
+    ? (durations[mid - 1] + durations[mid]) / 2
+    : durations[mid];
+};
+
+/**
  * Sum work across a set of attendances, grouped by project.
- * In-progress (open) segments are counted up to `now`.
+ *
+ * Open (never-closed) segments are corrupted data (a missed logout). When
+ * `medianSessionMs` is provided, each one is *estimated* as that typical session
+ * length, capped by the latest it could plausibly have run — the next segment's
+ * start or the end of its day, whichever is earlier. Without a median (the user
+ * has no closed sessions to learn from) the open segment is skipped. Either way
+ * every open segment is logged so it can be verified/fixed manually.
  */
 const aggregateWork = (
   attendances: Attendance[],
-  now: Date,
+  medianSessionMs = 0,
 ): WorkAggregate => {
   const projectTotals = new Map<string, number>();
   let totalMs = 0;
   let daysWorked = 0;
 
   for (const attendance of attendances) {
+    const dayEndMs = getEndOfDay(attendance.date).getTime();
+    const segments = [...attendance.workSegments].sort(
+      (a, b) => a.start.getTime() - b.start.getTime(),
+    );
     let dayMs = 0;
-    for (const segment of attendance.workSegments) {
-      const end = segment.end ?? now;
-      const ms =
-        segment.length_ms ??
-        Math.max(0, end.getTime() - segment.start.getTime());
-      if (ms <= 0) continue;
+
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+      const isOpen = !segment.end && segment.length_ms == null;
+
+      let ms: number;
+      if (isOpen) {
+        // Ceiling: the open segment can't have run past the next segment's
+        // start, nor past the end of its own day.
+        const nextStartMs = segments[i + 1]?.start.getTime() ?? dayEndMs;
+        const ceilingMs =
+          Math.min(nextStartMs, dayEndMs) - segment.start.getTime();
+
+        if (medianSessionMs <= 0 || ceilingMs <= 0) {
+          console.warn(
+            "[aggregateWork] skipping open work segment (no basis to estimate): " +
+              `user=${attendance.userId} date=${attendance.date.toISOString()} ` +
+              `project=${segment.project} start=${segment.start.toISOString()}`,
+          );
+          continue;
+        }
+
+        ms = Math.min(medianSessionMs, ceilingMs);
+        console.warn(
+          "[aggregateWork] estimating open work segment (corrupted data): " +
+            `user=${attendance.userId} date=${attendance.date.toISOString()} ` +
+            `project=${segment.project} start=${segment.start.toISOString()} ` +
+            `estimatedMs=${Math.round(ms)} ` +
+            `(median=${Math.round(medianSessionMs)}, ceiling=${Math.round(ceilingMs)})`,
+        );
+      } else {
+        ms =
+          segment.length_ms ??
+          (segment.end
+            ? Math.max(0, segment.end.getTime() - segment.start.getTime())
+            : 0);
+        if (ms <= 0) continue;
+      }
+
       dayMs += ms;
       projectTotals.set(
         segment.project,
         (projectTotals.get(segment.project) ?? 0) + ms,
       );
     }
+
     if (dayMs > 0) daysWorked++;
     totalMs += dayMs;
   }
@@ -275,14 +342,20 @@ export const getMonthlyWorkReport = async (
   date = new Date(),
 ): Promise<MonthlyWorkReport> => {
   const { rangeStart, rangeEnd } = getMonthRange(date);
-  console.log("Getting attendances in range", rangeStart, rangeEnd);
-  const attendances = await getAttendancesInDateRange(
-    userId,
+  const [attendances, recentAttendances] = await Promise.all([
+    getAttendancesInDateRange(userId, rangeStart, rangeEnd),
+    getAttendancesInDateRange(
+      userId,
+      new Date(Date.now() - 30 * ONE_DAY_IN_MS),
+      new Date(),
+    ),
+  ]);
+  const medianSessionMs = medianClosedSegmentMs(recentAttendances);
+  return {
     rangeStart,
     rangeEnd,
-  );
-  console.log("Aggregated work", aggregateWork(attendances, new Date()));
-  return { rangeStart, rangeEnd, ...aggregateWork(attendances, new Date()) };
+    ...aggregateWork(attendances, medianSessionMs),
+  };
 };
 
 /**
@@ -294,25 +367,36 @@ export const getMonthlyWorkReportForAllEmployees = async (
   date = new Date(),
 ): Promise<EmployeeMonthlyWork[]> => {
   const { rangeStart, rangeEnd } = getMonthRange(date);
+  const recentWindowStart = new Date(Date.now() - 30 * ONE_DAY_IN_MS);
 
-  const [employees, attendances] = await Promise.all([
+  const [employees, attendances, recentAttendances] = await Promise.all([
     db.user.findMany({ where: { exEmployee: false } }),
     db.attendance.findMany({
       where: { date: { gte: rangeStart, lte: rangeEnd } },
     }),
+    db.attendance.findMany({
+      where: { date: { gte: recentWindowStart } },
+    }),
   ]);
 
-  const attendancesByUser = new Map<string, Attendance[]>();
-  for (const attendance of attendances) {
-    const list = attendancesByUser.get(attendance.userId) ?? [];
-    list.push(attendance);
-    attendancesByUser.set(attendance.userId, list);
-  }
+  const groupByUser = (records: Attendance[]): Map<string, Attendance[]> => {
+    const map = new Map<string, Attendance[]>();
+    for (const record of records) {
+      const list = map.get(record.userId) ?? [];
+      list.push(record);
+      map.set(record.userId, list);
+    }
+    return map;
+  };
+  const attendancesByUser = groupByUser(attendances);
+  const recentByUser = groupByUser(recentAttendances);
 
-  const now = new Date();
   return employees.map((user) => ({
     user,
-    ...aggregateWork(attendancesByUser.get(user.id) ?? [], now),
+    ...aggregateWork(
+      attendancesByUser.get(user.id) ?? [],
+      medianClosedSegmentMs(recentByUser.get(user.id) ?? []),
+    ),
   }));
 };
 
@@ -465,20 +549,40 @@ export const startWorkSegment = async (userId: string, project: string) => {
 };
 
 /**
- * End the latest open work segment for the user.
- * Returns null if no open segment exists today.
+ * End the user's most recent open work segment.
+ *
+ * Looks back to the start of yesterday, not just "today", so a session that
+ * crossed local midnight (opened before midnight, closed after it) can still be
+ * closed. Attendance records are dated to the day the segment *started*, so
+ * without this a midnight-crossing segment would be orphaned open forever —
+ * its parent attendance sits on the previous day and today's query never sees
+ * it. Returns null if no open segment exists in that window.
  */
 export const endWorkSegment = async (userId: string) => {
   const now = new Date();
-  const attendance = await db.attendance.findFirst({
-    where: { userId, date: getDateRangePayload(now) },
+  const lookbackStart = getStartOfDay(new Date(now.getTime() - ONE_DAY_IN_MS));
+  const recentAttendances = await db.attendance.findMany({
+    where: { userId, date: { gte: lookbackStart, lte: now } },
+    orderBy: { date: "desc" },
   });
 
+  // Most recent attendance that still has an open (unclosed) segment.
+  const attendance = recentAttendances.find((a) =>
+    a.workSegments.some((seg) => !seg.end),
+  );
   if (!attendance) return null;
 
   const segments = [...attendance.workSegments];
-  const lastSeg = segments[segments.length - 1];
-  if (!lastSeg || lastSeg.end) return null;
+  // The open segment is the last one without an end time.
+  let openIndex = -1;
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (!segments[i].end) {
+      openIndex = i;
+      break;
+    }
+  }
+  if (openIndex === -1) return null;
+  const lastSeg = segments[openIndex];
 
   lastSeg.end = now;
   lastSeg.length_ms = now.getTime() - lastSeg.start.getTime();

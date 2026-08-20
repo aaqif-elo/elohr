@@ -32,7 +32,15 @@ const sendAllEmployeesCsvReport = async (
   const reports = await getMonthlyWorkReportForAllEmployees(now);
   const worked = reports
     .filter((report) => report.totalMs > 0)
-    .sort((a, b) => a.user.name.localeCompare(b.user.name));
+    .map((report) => {
+      const totalHours = report.totalMs / MS_PER_HOUR;
+      const rate = getLatestContract(report.user.contracts)?.salaryInBDT;
+      const pay = rate !== undefined ? totalHours * rate : undefined;
+      return { ...report, totalHours, rate, pay };
+    })
+    // Sort by estimated pay, most to least; employees without a contract rate
+    // (no computable pay) sort to the bottom.
+    .sort((a, b) => (b.pay ?? 0) - (a.pay ?? 0));
 
   if (!worked.length) {
     await interaction.editReply({
@@ -55,12 +63,8 @@ const sendAllEmployeesCsvReport = async (
   let totalHoursAll = 0;
   let totalPayAll = 0;
 
-  for (const { user, totalMs, daysWorked, perProject } of worked) {
-    const totalHours = totalMs / MS_PER_HOUR;
+  for (const { user, daysWorked, perProject, totalHours, rate, pay } of worked) {
     totalHoursAll += totalHours;
-
-    const rate = getLatestContract(user.contracts)?.salaryInBDT;
-    const pay = rate !== undefined ? totalHours * rate : undefined;
     if (pay !== undefined) totalPayAll += pay;
 
     const projects = perProject
@@ -87,6 +91,38 @@ const sendAllEmployeesCsvReport = async (
     totalPayAll.toFixed(2),
     "",
   ]);
+
+  // Second section: the same work aggregated by project, each project listing
+  // its contributors in brackets (inverse of the per-employee view above).
+  const projectAgg = new Map<
+    string,
+    { hours: number; cost: number; contributors: { name: string; hours: number }[] }
+  >();
+  for (const { user, perProject, rate } of worked) {
+    for (const { project, ms } of perProject) {
+      const hours = ms / MS_PER_HOUR;
+      const entry = projectAgg.get(project) ?? { hours: 0, cost: 0, contributors: [] };
+      entry.hours += hours;
+      if (rate !== undefined) entry.cost += hours * rate;
+      entry.contributors.push({ name: user.name, hours });
+      projectAgg.set(project, entry);
+    }
+  }
+
+  const projectRows = [...projectAgg.entries()]
+    .map(([project, agg]) => ({ project, ...agg }))
+    .sort((a, b) => b.cost - a.cost || b.hours - a.hours);
+
+  rows.push([""]);
+  rows.push(["Project", "Total Hours", "Estimated Cost (BDT)", "Employees"]);
+  for (const p of projectRows) {
+    const employees = [...p.contributors]
+      .sort((a, b) => b.hours - a.hours)
+      .map((c) => `${c.name} (${c.hours.toFixed(2)}h)`)
+      .join("; ");
+    rows.push([p.project, p.hours.toFixed(2), p.cost.toFixed(2), employees]);
+  }
+  rows.push(["TOTAL", totalHoursAll.toFixed(2), totalPayAll.toFixed(2), ""]);
 
   const csv = rowsToCsv(rows);
   const fileName = `work-report-${now.getFullYear()}-${String(

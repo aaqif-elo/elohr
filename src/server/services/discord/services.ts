@@ -11,7 +11,6 @@ import {
 import {
   getAllEmployeesWithAttendance,
   getWeekDateRange,
-  countWorkingDays,
   listProjects,
   getProjectWorkReport,
   getActiveEmployees,
@@ -75,12 +74,6 @@ export const getHRLoginInteractionReplyPayload = async (
   }
 };
 
-// Outlier detection thresholds (office hours: 10 AM – 6 PM)
-const LATE_THRESHOLD_MINUTES = 10 * 60 + 30; // 10:30 AM in minutes
-const LATE_MIN_DAYS = 3;
-const HOURS_DEVIATION_THRESHOLD = 0.2;
-const SHORT_DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
 export async function sendWeeklyAttendanceReportToAdmin(
   discordClient: Client<boolean>,
   referenceDate: Date = new Date()
@@ -98,7 +91,6 @@ export async function sendWeeklyAttendanceReportToAdmin(
   }
 
   const { start: weekStart, end: weekEnd } = getWeekDateRange(referenceDate);
-  const workingDays = countWorkingDays(weekStart, weekEnd);
 
   const dayDates: Date[] = [];
   const cursor = new Date(weekStart);
@@ -111,8 +103,6 @@ export async function sendWeeklyAttendanceReportToAdmin(
   const dailySnapshots = await Promise.all(
     dayDates.map((d) => getAllEmployeesWithAttendance(d))
   );
-
-  const workingDayDates = dayDates;
 
   type EmployeeDayData = {
     firstSegmentMinutes: number;
@@ -178,40 +168,6 @@ export async function sendWeeklyAttendanceReportToAdmin(
 
   const toHours = (ms: number) => ms / (1000 * 60 * 60);
   const fmtHours = (hrs: number) => `${hrs.toFixed(1)}h`;
-  const minutesToTimeStr = (mins: number) => {
-    const h = Math.floor(mins / 60);
-    const m = Math.round(mins % 60);
-    const period = h >= 12 ? "PM" : "AM";
-    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-    return `${h12}:${m.toString().padStart(2, "0")} ${period}`;
-  };
-  const median = (nums: number[]) => {
-    if (!nums.length) return 0;
-    const s = [...nums].sort((a, b) => a - b);
-    const mid = Math.floor(s.length / 2);
-    return s.length % 2 === 0 ? (s[mid - 1] + s[mid]) / 2 : s[mid];
-  };
-  const fmtDateShort = (isoDate: string) => {
-    const d = new Date(isoDate);
-    return SHORT_DAY_NAMES[d.getDay()];
-  };
-
-  type EmployeeStats = {
-    name: string;
-    daysPresent: number;
-    daysAbsent: number;
-    totalHours: number;
-    avgFirstSegmentMinutes: number;
-    lateDays: number;
-    absentDayNames: string[];
-  };
-
-  const employeeStats: EmployeeStats[] = [];
-  const allWeeklyHours: number[] = [];
-  const allFirstSegmentMinutes: number[] = [];
-  const projectTotals = new Map<string, { hours: number; employeeIds: Set<string> }>();
-  const teamSize = employeeMap.size;
-  let totalPersonDaysPresent = 0;
 
   // Hourly rate per employee (latest contract) drives expense estimates.
   const employees = await getActiveEmployees();
@@ -219,144 +175,54 @@ export async function sendWeeklyAttendanceReportToAdmin(
     employees.map((e) => [e.id, getLatestContract(e.contracts)?.salaryInBDT ?? 0])
   );
 
-  // Financials accumulated alongside the existing stats.
-  const projectExpense = new Map<string, number>();
-  const employeeFinancials: { name: string; hours: number; expense: number }[] = [];
-  let totalHoursAll = 0;
-  let totalExpenseAll = 0;
+  // Per-project financial breakdown: for each project, every contributing
+  // employee's hours and estimated expense (rate × hours).
+  type ProjectEmployee = { name: string; hours: number; expense: number };
+  type ProjectBreakdown = {
+    hours: number;
+    expense: number;
+    employees: Map<string, ProjectEmployee>;
+  };
+  const projectBreakdown = new Map<string, ProjectBreakdown>();
 
   for (const [userId, empData] of employeeMap) {
-    const daysPresent = empData.days.size;
-    const daysAbsent = workingDays - daysPresent;
-    const totalHoursMs = [...empData.days.values()].reduce(
-      (sum, d) => sum + d.totalHoursMs,
-      0
-    );
-    const totalHours = toHours(totalHoursMs);
-    const firstSegMinutesList = [...empData.days.values()].map((d) => d.firstSegmentMinutes);
-    const avgFirstSegmentMinutes = firstSegMinutesList.length
-      ? firstSegMinutesList.reduce((a, b) => a + b, 0) / firstSegMinutesList.length
-      : 0;
-    const lateDays = firstSegMinutesList.filter((m) => m > LATE_THRESHOLD_MINUTES).length;
-
-    const absentDayNames: string[] = [];
-    for (const wd of workingDayDates) {
-      const iso = wd.toISOString().split("T")[0];
-      if (!empData.days.has(iso)) absentDayNames.push(fmtDateShort(iso));
-    }
-
-    employeeStats.push({
-      name: empData.name,
-      daysPresent,
-      daysAbsent: Math.max(0, daysAbsent),
-      totalHours,
-      avgFirstSegmentMinutes,
-      lateDays,
-      absentDayNames,
-    });
-
-    if (daysPresent > 0) {
-      allWeeklyHours.push(totalHours);
-      allFirstSegmentMinutes.push(...firstSegMinutesList);
-    }
-    totalPersonDaysPresent += daysPresent;
-
     const rate = rateByUserId.get(userId) ?? 0;
-    const expense = totalHours * rate;
-    totalHoursAll += totalHours;
-    totalExpenseAll += expense;
-    if (totalHours > 0) {
-      employeeFinancials.push({ name: empData.name, hours: totalHours, expense });
-    }
-
     for (const dayData of empData.days.values()) {
       for (const [proj, ms] of dayData.projects) {
-        const hrs = toHours(ms);
-        const rec = projectTotals.get(proj) || { hours: 0, employeeIds: new Set<string>() };
-        rec.hours += hrs;
-        rec.employeeIds.add(userId);
-        projectTotals.set(proj, rec);
-        projectExpense.set(proj, (projectExpense.get(proj) ?? 0) + hrs * rate);
+        const hours = toHours(ms);
+        const expense = hours * rate;
+        const rec = projectBreakdown.get(proj) ?? {
+          hours: 0,
+          expense: 0,
+          employees: new Map<string, ProjectEmployee>(),
+        };
+        rec.hours += hours;
+        rec.expense += expense;
+        const empRec = rec.employees.get(userId) ?? {
+          name: empData.name,
+          hours: 0,
+          expense: 0,
+        };
+        empRec.hours += hours;
+        empRec.expense += expense;
+        rec.employees.set(userId, empRec);
+        projectBreakdown.set(proj, rec);
       }
     }
   }
 
-  const totalPersonDays = teamSize * workingDays;
-  const attendanceRate =
-    totalPersonDays > 0
-      ? ((totalPersonDaysPresent / totalPersonDays) * 100).toFixed(0)
-      : "0";
-  const medianWeeklyHours = median(allWeeklyHours);
-  const avgDailyHours =
-    allWeeklyHours.length > 0
-      ? allWeeklyHours.reduce((a, b) => a + b, 0) / allWeeklyHours.length / workingDays
-      : 0;
-  const medianFirstSegMinutes = median(allFirstSegmentMinutes);
+  // Projects sorted by spend; employees within each project by their spend.
+  const projectsBySpend = [...projectBreakdown.entries()]
+    .map(([name, rec]) => ({
+      name,
+      hours: rec.hours,
+      expense: rec.expense,
+      employees: [...rec.employees.values()].sort((a, b) => b.expense - a.expense),
+    }))
+    .sort((a, b) => b.expense - a.expense);
 
-  const absent = employeeStats
-    .filter((e) => e.daysAbsent > 0)
-    .sort((a, b) => b.daysAbsent - a.daysAbsent);
-  const consistentlyLate = employeeStats
-    .filter(
-      (e) =>
-        e.lateDays >= LATE_MIN_DAYS && e.avgFirstSegmentMinutes > LATE_THRESHOLD_MINUTES
-    )
-    .sort((a, b) => b.avgFirstSegmentMinutes - a.avgFirstSegmentMinutes);
-  const aboveAvgHours =
-    medianWeeklyHours > 0
-      ? employeeStats
-          .filter(
-            (e) =>
-              e.daysPresent > 0 &&
-              e.totalHours > medianWeeklyHours * (1 + HOURS_DEVIATION_THRESHOLD)
-          )
-          .sort((a, b) => b.totalHours - a.totalHours)
-      : [];
-  const belowAvgHours =
-    medianWeeklyHours > 0
-      ? employeeStats
-          .filter(
-            (e) =>
-              e.daysPresent > 0 &&
-              e.totalHours < medianWeeklyHours * (1 - HOURS_DEVIATION_THRESHOLD)
-          )
-          .sort((a, b) => a.totalHours - b.totalHours)
-      : [];
-  const perfectAttendance = employeeStats
-    .filter(
-      (e) =>
-        e.daysPresent === workingDays &&
-        e.daysAbsent === 0 &&
-        e.avgFirstSegmentMinutes <= LATE_THRESHOLD_MINUTES
-    )
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  const sortedProjects = [...projectTotals.entries()]
-    .map(([name, rec]) => ({ name, hours: rec.hours, employees: rec.employeeIds.size }))
-    .sort((a, b) => b.hours - a.hours)
-    .slice(0, 5);
-
-  // Top-3 leaderboards by hours and by estimated expense.
-  const TOP_N = 3;
-  const rankByHours = <T extends { hours: number }>(items: T[]): T[] =>
-    [...items].sort((a, b) => b.hours - a.hours).slice(0, TOP_N);
-  const rankByExpense = <T extends { expense: number }>(items: T[]): T[] =>
-    [...items].sort((a, b) => b.expense - a.expense).slice(0, TOP_N);
-
-  const projectFinancials = [...projectTotals.entries()].map(([name, rec]) => ({
-    name,
-    hours: rec.hours,
-    expense: projectExpense.get(name) ?? 0,
-  }));
-  const topProjectsByHours = rankByHours(projectFinancials);
-  const topProjectsByExpense = rankByExpense(projectFinancials);
-  const topEmployeesByHours = rankByHours(employeeFinancials);
-  const topEmployeesByExpense = rankByExpense(employeeFinancials);
-
-  const fmtHoursRank = (items: { name: string; hours: number }[]): string =>
-    items.map((it, i) => `${i + 1}. ${it.name} — ${fmtHours(it.hours)}`).join(" · ");
-  const fmtExpenseRank = (items: { name: string; expense: number }[]): string =>
-    items.map((it, i) => `${i + 1}. ${it.name} — ${formatBDT(it.expense)}`).join(" · ");
+  const totalHoursAll = projectsBySpend.reduce((sum, p) => sum + p.hours, 0);
+  const totalExpenseAll = projectsBySpend.reduce((sum, p) => sum + p.expense, 0);
 
   const fmtDate = (d: Date) =>
     d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
@@ -364,101 +230,20 @@ export async function sendWeeklyAttendanceReportToAdmin(
 
   const lines: string[] = [header, ""];
 
-  lines.push("### Overview");
-  lines.push(`- Team Size: ${teamSize} | Working Days: ${workingDays}`);
-  lines.push(
-    `- Attendance Rate: ${attendanceRate}% (${totalPersonDaysPresent}/${totalPersonDays} person-days)`
-  );
-  lines.push(
-    `- Avg Daily Hours: ${fmtHours(avgDailyHours)} | Median First Segment: ${minutesToTimeStr(medianFirstSegMinutes)}`
-  );
-  lines.push("");
-
-  lines.push("### This Week — Financials");
-  lines.push(
-    `- Total Hours: ${fmtHours(totalHoursAll)} | Total Expenses: ${formatBDT(totalExpenseAll)}`
-  );
-  if (topProjectsByHours.length) {
-    lines.push(`- Top Projects (hours): ${fmtHoursRank(topProjectsByHours)}`);
-  }
-  if (topProjectsByExpense.length) {
-    lines.push(`- Top Projects (expense): ${fmtExpenseRank(topProjectsByExpense)}`);
-  }
-  if (topEmployeesByHours.length) {
-    lines.push(`- Top Employees (hours): ${fmtHoursRank(topEmployeesByHours)}`);
-  }
-  if (topEmployeesByExpense.length) {
-    lines.push(`- Top Employees (expense): ${fmtExpenseRank(topEmployeesByExpense)}`);
-  }
-  lines.push("");
-
-  const hasHighlights =
-    absent.length > 0 ||
-    consistentlyLate.length > 0 ||
-    aboveAvgHours.length > 0 ||
-    belowAvgHours.length > 0 ||
-    perfectAttendance.length > 0;
-
-  if (hasHighlights) {
-    lines.push("### Highlights");
-
-    if (absent.length > 0) {
-      lines.push("🔴 **Absences** (no work segments)");
-      for (const e of absent) {
-        lines.push(
-          `- ${e.name}: ${e.absentDayNames.join(", ")} (${e.daysAbsent} day${e.daysAbsent > 1 ? "s" : ""})`
-        );
+  lines.push("### Projects — Financials");
+  if (projectsBySpend.length === 0) {
+    lines.push("_No work recorded this week._");
+  } else {
+    for (const p of projectsBySpend) {
+      lines.push(`**${p.name}** — ${fmtHours(p.hours)} · ${formatBDT(p.expense)}`);
+      for (const e of p.employees) {
+        lines.push(`- ${e.name}: ${fmtHours(e.hours)} · ${formatBDT(e.expense)}`);
       }
       lines.push("");
     }
-
-    if (consistentlyLate.length > 0) {
-      lines.push("⏰ **Consistently Late** (first segment after 10:30 AM on 3+ days)");
-      for (const e of consistentlyLate) {
-        lines.push(
-          `- ${e.name}: avg start ${minutesToTimeStr(e.avgFirstSegmentMinutes)} (${e.lateDays} day${e.lateDays > 1 ? "s" : ""} late)`
-        );
-      }
-      lines.push("");
-    }
-
-    if (aboveAvgHours.length > 0) {
-      lines.push("📈 **Above Average Hours** (>20% above team median)");
-      for (const e of aboveAvgHours) {
-        const pct = (
-          ((e.totalHours - medianWeeklyHours) / medianWeeklyHours) * 100
-        ).toFixed(0);
-        lines.push(`- ${e.name}: ${fmtHours(e.totalHours)} total — ${pct}% above median`);
-      }
-      lines.push("");
-    }
-
-    if (belowAvgHours.length > 0) {
-      lines.push("📉 **Below Average Hours** (>20% below team median)");
-      for (const e of belowAvgHours) {
-        const pct = (
-          ((medianWeeklyHours - e.totalHours) / medianWeeklyHours) * 100
-        ).toFixed(0);
-        lines.push(`- ${e.name}: ${fmtHours(e.totalHours)} total — ${pct}% below median`);
-      }
-      lines.push("");
-    }
-
-    if (perfectAttendance.length > 0) {
-      lines.push("⭐ **Perfect Attendance** (all days, on time)");
-      lines.push(`- ${perfectAttendance.map((e) => e.name).join(", ")}`);
-      lines.push("");
-    }
-  }
-
-  if (sortedProjects.length > 0) {
-    lines.push("### Projects");
-    for (const p of sortedProjects) {
-      lines.push(
-        `- ${p.name}: ${fmtHours(p.hours)} (${p.employees} employee${p.employees > 1 ? "s" : ""})`
-      );
-    }
-    lines.push("");
+    lines.push(
+      `**Total (all projects)** — ${fmtHours(totalHoursAll)} · ${formatBDT(totalExpenseAll)}`
+    );
   }
 
   const content = lines.join("\n");

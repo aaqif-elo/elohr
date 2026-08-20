@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented below.
 
+## v2.1.1 [2026-08-20]
+
+### Fixed
+
+- Work sessions that crossed local midnight could never be closed. Logout only searched the current day's attendance, so a segment opened before midnight and left with its logout landing after it was orphaned open forever — massively inflating reported hours. Logout now closes the most recent open segment, looking back to the previous day.
+
+### Changed
+
+- Monthly work reports no longer count open (never-closed) work segments up to the current time. Each is instead estimated from the employee's median closed-session length over the trailing 30 days, capped by the next segment's start or end of day, and logged so it can be verified/fixed manually.
+- The admin `/report` CSV is now sorted by estimated pay, highest first.
+- The weekly admin attendance report was restructured into a single per-project financial breakdown: projects sorted by spend, each employee listed under their project sorted by spend, with a cumulative all-projects total.
+
 ## v2.1.0 [2026-04-18]
 
 ### Changed

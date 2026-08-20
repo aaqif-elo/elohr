@@ -60,9 +60,9 @@ On startup `initializeDiscord()`:
 3. Attaches voice state and interaction event handlers
 4. Starts cron jobs
 
-**Voice-to-attendance flow** (production only): when a user joins/leaves a non-AFK voice channel, `handleVoiceStateChange` queues a login or logout action with a configurable delay (`VOICE_CHANNEL_ATTENDANCE_DELAY_IN_SECONDS`). The queue per user ensures serialized execution.
+**Voice-to-attendance flow** (production only): when a user joins/leaves a non-AFK voice channel, `handleVoiceStateChange` queues a login or logout action with a configurable delay (`VOICE_CHANNEL_ATTENDANCE_DELAY_IN_SECONDS`). The queue per user ensures serialized execution. Logout (`endWorkSegment`) closes the user's most recent open segment, looking back to the previous day so a session that crossed local midnight is still closed rather than orphaned open.
 
-**Cron jobs** (`cron-jobs.ts`): auto-logout at 23:59 daily; weekly attendance report to admin on Thursdays.
+**Cron jobs** (`cron-jobs.ts`): a single nightly job at 23:59 that, on Thursdays only, sends the weekly attendance report to the admin channel and DMs each project manager their weekly project report. There is **no** automatic logout — segments are closed when the user leaves voice (see above). Any segment that is still never closed is treated as corrupted data by the reporting layer (`aggregateWork` in `db/attendances.ts`), which estimates it from the employee's median closed-session length (trailing 30 days), capped by the next segment's start or end of day.
 
 **Interaction routing** (`interaction-handlers/index.ts`): `/availability` and `/record` work server-wide; `/hr` is restricted to the attendance channel.
 
