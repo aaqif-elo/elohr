@@ -12,8 +12,7 @@ import {
   deleteProject,
   getProjectByName,
   getProjectWorkReport,
-  getStartOfDay,
-  getEndOfDay,
+  getWorkSegmentBreakdown,
   getUserByDiscordId,
   listProjects,
   setProjectManager,
@@ -24,6 +23,9 @@ import {
   getLatestContract,
   formatBDT,
   rowsToCsv,
+  buildWorkBreakdownCsv,
+  resolveMonthRange,
+  recentMonthChoices,
 } from "./report.utils";
 
 const handleList = async (
@@ -152,8 +154,10 @@ const handleUnassign = async (
   });
 };
 
-// Admin-only downloadable CSV of this month's work on one project, broken down
-// per contributor with hours, estimated pay, and the task descriptions logged.
+// Admin-only downloadable CSV of one project's work for a month. By default a
+// per-contributor summary (hours, estimated pay, task descriptions); with
+// `breakdown:true`, a task-wise CSV with one row per work segment across all
+// contributors.
 const handleReport = async (
   interaction: ChatInputCommandInteraction<CacheType>
 ) => {
@@ -166,13 +170,45 @@ const handleReport = async (
     return;
   }
 
-  const now = new Date();
-  const rangeStart = getStartOfDay(new Date(now.getFullYear(), now.getMonth(), 1));
-  const rangeEnd = getEndOfDay(new Date(now.getFullYear(), now.getMonth() + 1, 0));
-  const monthLabel = now.toLocaleString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
+  const monthRange = resolveMonthRange(interaction.options.getString("month"));
+  if ("error" in monthRange) {
+    await interaction.editReply({ content: monthRange.error });
+    return;
+  }
+  const { rangeStart, rangeEnd, monthLabel, monthKey } = monthRange;
+
+  const safeName = project.name.replace(/[^a-z0-9-_]+/gi, "_");
+
+  // Task-wise breakdown: one row per work segment across all contributors.
+  if (interaction.options.getBoolean("breakdown")) {
+    const { rows } = await getWorkSegmentBreakdown(
+      { projectName: project.name },
+      rangeStart,
+      rangeEnd
+    );
+    if (!rows.length) {
+      await interaction.editReply({
+        content: `ℹ️ No work logged on **${project.name}** in ${monthLabel}.`,
+      });
+      return;
+    }
+
+    const { csv, totalMs, totalEarnings, employeeCount } = buildWorkBreakdownCsv(
+      rows,
+      { includeEmployeeColumn: true }
+    );
+    const fileName = `project-${safeName}-breakdown-${monthKey}.csv`;
+    const attachment = new AttachmentBuilder(Buffer.from(csv, "utf-8"), {
+      name: fileName,
+    });
+    const summary =
+      `📊 **${project.name} — ${monthLabel}** (task breakdown)\n` +
+      `Contributors: ${employeeCount} • Tasks: ${rows.length} • ` +
+      `Total hours: ${(totalMs / MS_PER_HOUR).toFixed(2)} • ` +
+      `Estimated cost: ${formatBDT(totalEarnings)}`;
+    await interaction.editReply({ content: summary, files: [attachment] });
+    return;
+  }
 
   const report = await getProjectWorkReport(project.name, rangeStart, rangeEnd);
   if (!report.perEmployee.length) {
@@ -229,10 +265,7 @@ const handleReport = async (
   ]);
 
   const csv = rowsToCsv(rows);
-  const safeName = project.name.replace(/[^a-z0-9-_]+/gi, "_");
-  const fileName = `project-${safeName}-${now.getFullYear()}-${String(
-    now.getMonth() + 1
-  ).padStart(2, "0")}.csv`;
+  const fileName = `project-${safeName}-${monthKey}.csv`;
   const attachment = new AttachmentBuilder(Buffer.from(csv, "utf-8"), {
     name: fileName,
   });
@@ -333,7 +366,19 @@ export const handleProjectAutocomplete = async (
     return;
   }
 
-  const query = interaction.options.getFocused().trim().toLowerCase();
+  const focused = interaction.options.getFocused(true);
+  const query = focused.value.trim().toLowerCase();
+
+  // The `month` option (on the report subcommand) is data-independent.
+  if (focused.name === "month") {
+    const choices = recentMonthChoices().filter(
+      (choice) =>
+        choice.name.toLowerCase().includes(query) ||
+        choice.value.includes(query)
+    );
+    await interaction.respond(choices);
+    return;
+  }
 
   try {
     const projects = await listProjects();

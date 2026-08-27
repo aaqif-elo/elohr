@@ -3,7 +3,7 @@ import { EAuthCommands, EAvailabilityCommands, EProjectCommands, ERecordingComma
 import { handleAuthCommand } from "./auth.handler";
 import { handleAvailabilityCommand } from "./availability.handler";
 import { handleRecordingCommand } from "./recording.handler";
-import { handleReportCommand } from "./report.handler";
+import { handleReportCommand, handleReportAutocomplete } from "./report.handler";
 import { handleProjectCommand, handleProjectAutocomplete } from "./project.handler";
 import {
   isWorkSegmentDescriptionButton,
@@ -67,6 +67,8 @@ export const autocompleteHandler = async (
   try {
     if (interaction.commandName === EProjectCommands.PROJECT) {
       await handleProjectAutocomplete(interaction);
+    } else if (interaction.commandName === EReportCommands.REPORT) {
+      await handleReportAutocomplete(interaction);
     }
   } catch (error) {
     console.error("Error handling autocomplete:", error);

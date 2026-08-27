@@ -254,6 +254,27 @@ const medianClosedSegmentMs = (attendances: Attendance[]): number => {
 };
 
 /**
+ * Estimate the duration of an open (never-closed) work segment.
+ *
+ * The estimate is the employee's typical session length (`medianSessionMs`),
+ * capped by the latest the segment could plausibly have run — the next segment's
+ * start or the end of its own day, whichever is earlier. Returns `null` when
+ * there is no basis to estimate (no median, or the ceiling is non-positive), in
+ * which case callers skip the segment. Shared by `aggregateWork` and
+ * `getWorkSegmentBreakdown` so both treat corrupted data identically.
+ */
+const estimateOpenSegmentMs = (
+  segmentStartMs: number,
+  nextStartMs: number,
+  dayEndMs: number,
+  medianSessionMs: number,
+): { ms: number; ceilingMs: number } | null => {
+  const ceilingMs = Math.min(nextStartMs, dayEndMs) - segmentStartMs;
+  if (medianSessionMs <= 0 || ceilingMs <= 0) return null;
+  return { ms: Math.min(medianSessionMs, ceilingMs), ceilingMs };
+};
+
+/**
  * Sum work across a set of attendances, grouped by project.
  *
  * Open (never-closed) segments are corrupted data (a missed logout). When
@@ -284,13 +305,17 @@ const aggregateWork = (
 
       let ms: number;
       if (isOpen) {
-        // Ceiling: the open segment can't have run past the next segment's
-        // start, nor past the end of its own day.
+        // The open segment can't have run past the next segment's start, nor
+        // past the end of its own day.
         const nextStartMs = segments[i + 1]?.start.getTime() ?? dayEndMs;
-        const ceilingMs =
-          Math.min(nextStartMs, dayEndMs) - segment.start.getTime();
+        const estimate = estimateOpenSegmentMs(
+          segment.start.getTime(),
+          nextStartMs,
+          dayEndMs,
+          medianSessionMs,
+        );
 
-        if (medianSessionMs <= 0 || ceilingMs <= 0) {
+        if (!estimate) {
           console.warn(
             "[aggregateWork] skipping open work segment (no basis to estimate): " +
               `user=${attendance.userId} date=${attendance.date.toISOString()} ` +
@@ -299,13 +324,13 @@ const aggregateWork = (
           continue;
         }
 
-        ms = Math.min(medianSessionMs, ceilingMs);
+        ms = estimate.ms;
         console.warn(
           "[aggregateWork] estimating open work segment (corrupted data): " +
             `user=${attendance.userId} date=${attendance.date.toISOString()} ` +
             `project=${segment.project} start=${segment.start.toISOString()} ` +
             `estimatedMs=${Math.round(ms)} ` +
-            `(median=${Math.round(medianSessionMs)}, ceiling=${Math.round(ceilingMs)})`,
+            `(median=${Math.round(medianSessionMs)}, ceiling=${Math.round(estimate.ceilingMs)})`,
         );
       } else {
         ms =
@@ -482,6 +507,170 @@ export const getProjectWorkReport = async (
   perEmployee.sort((a, b) => b.totalMs - a.totalMs);
 
   return { rangeStart: startDate, rangeEnd: endDate, totalMs, perEmployee };
+};
+
+export interface WorkSegmentBreakdownRow {
+  user: User;
+  date: Date;
+  project: string;
+  description: string | null;
+  start: Date;
+  end: Date | null;
+  ms: number;
+  // True when `ms` was estimated because the segment was never closed.
+  estimated: boolean;
+}
+
+interface WorkSegmentBreakdown {
+  rows: WorkSegmentBreakdownRow[];
+  rangeStart: Date;
+  rangeEnd: Date;
+}
+
+type WorkSegmentBreakdownFilter = { userId: string } | { projectName: string };
+
+/**
+ * Task-level breakdown of work within a date range: one row per work segment,
+ * either for a single employee (`{ userId }`) or a single project
+ * (`{ projectName }`, matched case-insensitively). Open (never-closed) segments
+ * are estimated and flagged (`estimated: true`) using each employee's trailing
+ * 30-day median closed-session length — the same basis as the aggregate reports.
+ * Rows are sorted by day, then segment start.
+ */
+export const getWorkSegmentBreakdown = async (
+  filter: WorkSegmentBreakdownFilter,
+  startDate: Date,
+  endDate: Date,
+): Promise<WorkSegmentBreakdown> => {
+  const byUser = "userId" in filter;
+  const userScope = byUser ? { userId: filter.userId } : {};
+  const projectTarget = byUser ? null : filter.projectName.toLowerCase();
+
+  const recentWindowStart = new Date(Date.now() - 30 * ONE_DAY_IN_MS);
+  const [attendances, recentAttendances] = await Promise.all([
+    db.attendance.findMany({
+      where: { date: { gte: startDate, lte: endDate }, ...userScope },
+    }),
+    db.attendance.findMany({
+      where: { date: { gte: recentWindowStart }, ...userScope },
+    }),
+  ]);
+
+  // Median closed-session length per user, computed lazily and memoized, drives
+  // estimation of that user's open segments.
+  const recentByUser = new Map<string, Attendance[]>();
+  for (const record of recentAttendances) {
+    const list = recentByUser.get(record.userId) ?? [];
+    list.push(record);
+    recentByUser.set(record.userId, list);
+  }
+  const medianByUser = new Map<string, number>();
+  const medianFor = (userId: string): number => {
+    const cached = medianByUser.get(userId);
+    if (cached !== undefined) return cached;
+    const median = medianClosedSegmentMs(recentByUser.get(userId) ?? []);
+    medianByUser.set(userId, median);
+    return median;
+  };
+
+  interface RawRow {
+    userId: string;
+    date: Date;
+    project: string;
+    description: string | null;
+    start: Date;
+    end: Date | null;
+    ms: number;
+    estimated: boolean;
+  }
+  const rawRows: RawRow[] = [];
+
+  for (const attendance of attendances) {
+    const dayEndMs = getEndOfDay(attendance.date).getTime();
+    const segments = [...attendance.workSegments].sort(
+      (a, b) => a.start.getTime() - b.start.getTime(),
+    );
+
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+      if (projectTarget && segment.project.toLowerCase() !== projectTarget) {
+        continue;
+      }
+
+      const isOpen = !segment.end && segment.length_ms == null;
+      let ms: number;
+      let estimated = false;
+      let end: Date | null = segment.end ?? null;
+
+      if (isOpen) {
+        const nextStartMs = segments[i + 1]?.start.getTime() ?? dayEndMs;
+        const estimate = estimateOpenSegmentMs(
+          segment.start.getTime(),
+          nextStartMs,
+          dayEndMs,
+          medianFor(attendance.userId),
+        );
+        if (!estimate) {
+          console.warn(
+            "[getWorkSegmentBreakdown] skipping open work segment (no basis to estimate): " +
+              `user=${attendance.userId} date=${attendance.date.toISOString()} ` +
+              `project=${segment.project} start=${segment.start.toISOString()}`,
+          );
+          continue;
+        }
+        ms = estimate.ms;
+        estimated = true;
+        end = null;
+      } else {
+        ms =
+          segment.length_ms ??
+          (segment.end
+            ? Math.max(0, segment.end.getTime() - segment.start.getTime())
+            : 0);
+        if (ms <= 0) continue;
+      }
+
+      rawRows.push({
+        userId: attendance.userId,
+        date: attendance.date,
+        project: segment.project,
+        description: segment.description ?? null,
+        start: segment.start,
+        end,
+        ms,
+        estimated,
+      });
+    }
+  }
+
+  const userIds = [...new Set(rawRows.map((row) => row.userId))];
+  const users = userIds.length
+    ? await db.user.findMany({ where: { id: { in: userIds } } })
+    : [];
+  const userById = new Map(users.map((user) => [user.id, user]));
+
+  const rows: WorkSegmentBreakdownRow[] = [];
+  for (const raw of rawRows) {
+    const user = userById.get(raw.userId);
+    if (!user) continue;
+    rows.push({
+      user,
+      date: raw.date,
+      project: raw.project,
+      description: raw.description,
+      start: raw.start,
+      end: raw.end,
+      ms: raw.ms,
+      estimated: raw.estimated,
+    });
+  }
+  rows.sort(
+    (a, b) =>
+      a.date.getTime() - b.date.getTime() ||
+      a.start.getTime() - b.start.getTime(),
+  );
+
+  return { rows, rangeStart: startDate, rangeEnd: endDate };
 };
 
 export const countWorkingDays = (startDate: Date, endDate: Date): number => {

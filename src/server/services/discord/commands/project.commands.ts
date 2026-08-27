@@ -94,6 +94,23 @@ const projectCommand = new SlashCommandBuilder()
           .setRequired(true)
           .setAutocomplete(true)
       )
+      .addBooleanOption((opt) =>
+        opt
+          .setName("breakdown")
+          .setDescription(
+            "Task-wise CSV: one row per work segment across all contributors"
+          )
+          .setRequired(false)
+      )
+      .addStringOption((opt) =>
+        opt
+          .setName("month")
+          .setDescription(
+            "Which month to report on (defaults to the current month)"
+          )
+          .setRequired(false)
+          .setAutocomplete(true)
+      )
   );
 
 export const projectCommandBody: RESTPostAPIChatInputApplicationCommandsJSONBody =

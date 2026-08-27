@@ -1,4 +1,8 @@
-import type { CacheType, ChatInputCommandInteraction } from "discord.js";
+import type {
+  AutocompleteInteraction,
+  CacheType,
+  ChatInputCommandInteraction,
+} from "discord.js";
 import { AttachmentBuilder } from "discord.js";
 import type { User } from "@prisma/client";
 import { EReportCommands } from "../discord.enums";
@@ -6,6 +10,7 @@ import {
   getUserByDiscordId,
   getMonthlyWorkReport,
   getMonthlyWorkReportForAllEmployees,
+  getWorkSegmentBreakdown,
 } from "../../../db";
 import { formatWorkedDuration } from "../../../utils/time";
 import {
@@ -13,7 +18,11 @@ import {
   getLatestContract,
   formatBDT,
   rowsToCsv,
+  buildWorkBreakdownCsv,
+  resolveMonthRange,
+  recentMonthChoices,
 } from "./report.utils";
+import type { MonthRange } from "./report.utils";
 
 /**
  * Admin-only: build a downloadable CSV of every employee's work this month,
@@ -21,9 +30,10 @@ import {
  * TOTAL row for the overall cost of work. Used to disburse payments.
  */
 const sendAllEmployeesCsvReport = async (
-  interaction: ChatInputCommandInteraction<CacheType>
+  interaction: ChatInputCommandInteraction<CacheType>,
+  reportDate: Date
 ) => {
-  const now = new Date();
+  const now = reportDate;
   const monthLabel = now.toLocaleString("en-US", {
     month: "long",
     year: "numeric",
@@ -140,6 +150,47 @@ const sendAllEmployeesCsvReport = async (
   await interaction.editReply({ content: summary, files: [attachment] });
 };
 
+/**
+ * Admin-only: task-wise CSV for one employee — one row per work segment across
+ * all their projects for the given month (Date, Project, Task Description,
+ * Start/End Time, Hours Spent, Earnings), plus a TOTAL row.
+ */
+const sendEmployeeBreakdownCsvReport = async (
+  interaction: ChatInputCommandInteraction<CacheType>,
+  target: User,
+  monthRange: MonthRange
+) => {
+  const { rows } = await getWorkSegmentBreakdown(
+    { userId: target.id },
+    monthRange.rangeStart,
+    monthRange.rangeEnd
+  );
+
+  if (!rows.length) {
+    await interaction.editReply({
+      content: `ℹ️ No work logged by **${target.name}** in ${monthRange.monthLabel}.`,
+    });
+    return;
+  }
+
+  const { csv, totalMs, totalEarnings } = buildWorkBreakdownCsv(rows, {
+    includeEmployeeColumn: false,
+  });
+
+  const safeName = target.name.replace(/[^a-z0-9-_]+/gi, "_");
+  const fileName = `report-${safeName}-${monthRange.monthKey}.csv`;
+  const attachment = new AttachmentBuilder(Buffer.from(csv, "utf-8"), {
+    name: fileName,
+  });
+
+  const summary =
+    `📊 **${target.name} — ${monthRange.monthLabel}**\n` +
+    `Tasks: ${rows.length} • Total hours: ${(totalMs / MS_PER_HOUR).toFixed(2)} • ` +
+    `Estimated earnings: ${formatBDT(totalEarnings)}`;
+
+  await interaction.editReply({ content: summary, files: [attachment] });
+};
+
 export const handleReportCommand = async (
   interaction: ChatInputCommandInteraction<CacheType>
 ) => {
@@ -158,11 +209,48 @@ export const handleReportCommand = async (
     return;
   }
 
+  const monthRange = resolveMonthRange(interaction.options.getString("month"));
+  if ("error" in monthRange) {
+    await interaction.editReply({ content: monthRange.error });
+    return;
+  }
+
+  // Admins can pass `employee` to pull anyone's task-wise breakdown CSV.
+  const targetUser = interaction.options.getUser("employee");
+  if (targetUser) {
+    if (!user.isAdmin) {
+      await interaction.editReply({
+        content: "❌ Only admins can pull another employee's report.",
+      });
+      return;
+    }
+
+    let target: User;
+    try {
+      target = await getUserByDiscordId(targetUser.id);
+    } catch {
+      await interaction.editReply({
+        content: `❌ Couldn't resolve <@${targetUser.id}> to an employee in the system.`,
+      });
+      return;
+    }
+
+    try {
+      await sendEmployeeBreakdownCsvReport(interaction, target, monthRange);
+    } catch (e) {
+      console.error("/report employee breakdown error", e);
+      await interaction.editReply({
+        content: "❌ Failed to build the employee work report.",
+      });
+    }
+    return;
+  }
+
   // In the admin channel, an admin gets a downloadable CSV covering everyone.
   const isAdminChannel = interaction.channelId === process.env.ADMIN_CHANNEL_ID;
   if (isAdminChannel && user.isAdmin) {
     try {
-      await sendAllEmployeesCsvReport(interaction);
+      await sendAllEmployeesCsvReport(interaction, monthRange.rangeStart);
     } catch (e) {
       console.error("/report admin csv error", e);
       await interaction.editReply({
@@ -173,12 +261,8 @@ export const handleReportCommand = async (
   }
 
   try {
-    const now = new Date();
-    const report = await getMonthlyWorkReport(user.id, now);
-    const monthLabel = now.toLocaleString("en-US", {
-      month: "long",
-      year: "numeric",
-    });
+    const report = await getMonthlyWorkReport(user.id, monthRange.rangeStart);
+    const monthLabel = monthRange.monthLabel;
 
     if (report.totalMs <= 0) {
       await interaction.editReply({
@@ -227,4 +311,25 @@ export const handleReportCommand = async (
       content: "❌ Failed to compute your work report.",
     });
   }
+};
+
+/**
+ * Autocomplete for `/report` — only the `month` option is autocompleted, offering
+ * the current and recent calendar months.
+ */
+export const handleReportAutocomplete = async (
+  interaction: AutocompleteInteraction<CacheType>
+) => {
+  if (interaction.commandName !== EReportCommands.REPORT) return;
+  if (interaction.options.getFocused(true).name !== "month") {
+    await interaction.respond([]);
+    return;
+  }
+
+  const query = interaction.options.getFocused().trim().toLowerCase();
+  const choices = recentMonthChoices().filter(
+    (choice) =>
+      choice.name.toLowerCase().includes(query) || choice.value.includes(query)
+  );
+  await interaction.respond(choices);
 };
